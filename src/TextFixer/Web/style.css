@@ -79,7 +79,7 @@ pre { background:var(--room-1); color:var(--text); border:1px solid var(--edge);
 .empty { padding:17px; background:var(--good-bg); color:var(--good); border-radius:8px; }
 footer { font-size:11px; color:var(--dim); text-align:center; padding:5px 20px 23px; }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); }
-.inline-text { background:var(--room-1); border:1px solid var(--edge); border-radius:9px; padding:20px; white-space:pre-wrap; overflow-wrap:anywhere; font:15px/2.1 "Segoe UI",Arial; max-height:420px; overflow:auto; }
+.inline-text { background:var(--room-1); border:1px solid var(--edge); border-radius:9px; padding:20px; white-space:pre-wrap; overflow-wrap:anywhere; font:15px/23.8px "Segoe UI",Arial; max-height:420px; overflow:auto; }
 .inline-correction { display:inline; border:0; border-radius:4px; background:transparent; padding:2px 1px; margin:0 1px; font:inherit; white-space:pre-wrap; text-align:left; line-height:inherit; vertical-align:baseline; }
 .inline-correction:hover { background:var(--room-2); box-shadow:0 0 0 2px var(--accent-edge); }
 .inline-correction del,.inline-correction ins { padding:1px 3px; border-radius:3px; }
@@ -106,3 +106,44 @@ dialog .chrome-setup { margin-bottom:0; }
 .connection { display:flex; align-items:center; justify-content:space-between; gap:15px; flex-wrap:wrap; background:var(--room-2); padding:17px 20px; border:1px solid var(--edge); border-radius:10px; margin-bottom:22px; }
 .connection p { font-size:12px; color:var(--muted); margin:4px 0 0; }
 @media(max-width:800px) { header { padding:20px; flex-wrap:wrap; } main { padding:20px; } .connection,.toolbar { align-items:flex-start; flex-direction:column; } }
+
+.route { padding:7px 12px; width:fit-content; margin-bottom:14px; }
+.route strong { font-size:11px; }
+#help p,#help li { font-size:14px; line-height:1.7; }
+
+/* Keep the app identity and daily controls on the same row at the minimum window size. */
+header { flex-wrap:nowrap; padding:22px 24px; }
+.brand { min-width:0; flex:1; }
+.brand > div { min-width:0; }
+.brand p { font-size:13px; }
+.header-actions { flex-wrap:nowrap; flex-shrink:0; gap:10px; }
+.header-actions button { padding:10px 14px; }
+@media(max-width:800px) { header { flex-wrap:nowrap; padding:18px; gap:12px; } .brand { gap:10px; } .mark { width:38px; height:38px; } .brand p { font-size:12px; } .header-actions { gap:8px; } .header-actions button { padding:9px 11px; } }
+
+.review-details { display:flex; flex-wrap:wrap; gap:0 24px; align-items:flex-start; }
+.review-details details[open] { flex-basis:100%; }
+.review-details #original-text { max-height:360px; }
+
+body { padding-bottom:48px; }
+.status-bar { position:fixed; bottom:0; left:0; right:0; z-index:10; margin:0; border:0; border-top:1px solid var(--edge); border-radius:0; padding:9px 20px; background:var(--room-2); color:var(--muted); text-align:left; font-size:12px; line-height:1.5; max-height:25vh; overflow:auto; box-shadow:0 -2px 8px #0002; }
+
+.status-bar { display:flex; align-items:center; gap:10px; }
+.status-bar #notice { margin:0; padding:0; border:0; background:transparent; color:inherit; border-radius:0; font-size:12px; }
+.status-bar #cancel { padding:3px 10px; font-size:12px; flex-shrink:0; }
+.capture-icon { display:inline-flex; align-items:center; color:var(--accent); flex-shrink:0; }
+.capture-icon svg [hidden] { display:none; }
+
+.formatting-suggestion { margin:14px 0; }
+.formatting-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:13px; margin-bottom:8px; }
+.formatting-context { max-height:none; padding:14px 18px; }
+.formatting-correction { display:inline-flex; flex-wrap:wrap; gap:6px; padding:3px; margin:0 3px; font:inherit; line-height:inherit; background:transparent; border:1px solid var(--edge); vertical-align:middle; text-align:left; }
+.formatting-correction:hover { border-color:var(--accent); }
+.formatting-before,.formatting-after { display:inline-block; padding:0 6px; border-radius:4px; white-space:pre-wrap; }
+.formatting-before { background:var(--bad-bg); color:var(--bad); }
+.formatting-after { background:var(--good-bg); color:var(--good); }
+.formatting-correction small { display:block; font-size:10px; line-height:1.4; color:var(--muted); text-decoration:none; }
+.formatting-correction.accepted { border-color:var(--good); background:var(--good-bg); }
+.formatting-correction[aria-pressed="false"] .formatting-after { opacity:.65; }
+.format-underline,.format-link { text-decoration-line:underline; text-underline-offset:3px; text-decoration-skip-ink:none; }
+.format-strikethrough { text-decoration-line:line-through; }
+.format-space { display:inline; white-space:pre; }

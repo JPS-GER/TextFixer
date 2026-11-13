@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace TextFixer.Native;
 
 // CF_HTML is UTF-8 with byte offsets, not .NET character offsets. No HTML is executed.
-internal sealed record HtmlClipboard(string Prefix, string Fragment, string Suffix, string? SourceUrl = null)
+internal sealed partial record HtmlClipboard(string Prefix, string Fragment, string Suffix, string? SourceUrl = null)
 {
     internal static HtmlClipboard? Parse(string value)
     {
@@ -172,3 +172,4 @@ internal sealed record HtmlClipboard(string Prefix, string Fragment, string Suff
         return result;
     }
 }
+

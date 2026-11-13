@@ -35,12 +35,22 @@ internal sealed class ReviewWindow : Form
         ForeColor = Color.FromArgb(0xe8, 0xee, 0xf1);
         Icon = _windowIcon;
         Disposed += (_, _) => _windowIcon.Dispose();
-        Size = new Size(1000, 800);
         MinimumSize = new Size(740, 600);
-        StartPosition = FormStartPosition.CenterScreen;
+        StartPosition = FormStartPosition.Manual;
         Controls.Add(_web);
         Shown += async (_, _) => { if (!_ready && !_initializing) await InitializeAsync(); };
         FormClosing += (_, e) => { if (!_shutdown) { e.Cancel = true; Hide(); } };
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        // OnLoad runs once, after WinForms has established the window's DPI.
+        var workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        Location = workingArea.Location;
+        var layout = WindowLayout.Initial(workingArea, DeviceDpi);
+        MinimumSize = layout.Minimum;
+        Bounds = layout.Bounds;
+        base.OnLoad(e);
     }
 
     [DllImport("dwmapi.dll")]
@@ -224,7 +234,7 @@ internal sealed class ReviewWindow : Form
                         if (_capture is not null && _capture.Text != original) _capture = null;
                         if (_chromeCapture is not null && _chromeCapture.Text != original) _chromeCapture = null;
                         var result = await _service.CheckAsync(original, _operation.Token);
-                        Send(new { type = "result", original, result, canReplace = _capture is not null || _chromeCapture is not null, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        Send(new { type = "result", original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = _capture is not null || _chromeCapture is not null, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "copy":
                         var copyText = ReadText(root);
@@ -277,7 +287,8 @@ internal sealed class ReviewWindow : Form
         if (!root.TryGetProperty("original", out var original) || original.GetString() != _capture.Text)
             throw new InvalidOperationException("The review no longer matches the copied formatting. Capture the text again.");
         var edits = EditorEdits.Validate(_capture.Text, revision, root.GetProperty("edits"));
-        return html.Rewrite(_capture.Text, edits);
+        var ids = root.TryGetProperty("formattingIds", out var selections) ? selections.EnumerateArray().Select(x => x.GetInt32()).ToArray() : [];
+        return html.FixFormatting(_capture.Text, ids, edits).Rewrite(_capture.Text, edits);
     }
 
     private async Task ApplyChromeAsync(JsonElement root, string revision, CancellationToken cancellationToken)

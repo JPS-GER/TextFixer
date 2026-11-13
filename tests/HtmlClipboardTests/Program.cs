@@ -54,4 +54,23 @@ var withUrl = unicode with { SourceUrl = "https://example.test/folder/Größe/" 
 Check(HtmlClipboard.Parse(withUrl.Encode()) == withUrl, "source URL and UTF-8 offsets survive round trip");
 var rewrittenWithUrl = HtmlClipboard.Parse(withUrl.Rewrite("Grüße 🙂 & a tesst.", Edits("Grüße 🙂 & a tesst.", "Grüße 🙂 & a test.", (13, 18, "tesst", "test"))));
 Check(rewrittenWithUrl?.SourceUrl == withUrl.SourceUrl, "source URL remains available after text patch");
+
+HtmlClipboard Simple(string fragment) => new("<html><body><!--StartFragment-->", fragment, "<!--EndFragment--></body></html>");
+var formatted = Simple("<p><u>word </u>next</p>");
+var fixes = formatted.FindFormatting("word next");
+Check(fixes.Length == 1 && fixes[0].Start == 4, "trailing underline space detected");
+Check(fixes[0].Property == "underline" && fixes[0].RunStart == 0 && fixes[0].RunEnd == 5, "preview carries exact decoration and run boundaries");
+Check(formatted.FixFormatting("word next", [fixes[0].Id], []).Fragment == "<p><u>word</u> next</p>", "only edge space moved out of underline");
+var leading = Simple("<p>first<u> word</u></p>");
+Check(leading.FixFormatting("first word", [leading.FindFormatting("first word")[0].Id], []).Fragment == "<p>first <u>word</u></p>", "leading space moved outside underline");
+foreach (var fragment in new[] { "<p><u>word  </u>next</p>", "<p><u> </u>next</p>", "<p><u>word </u></p>", "<p><u>two words</u></p>", "<p><b>word </b>next</p>", "<p class='x'><u>word </u>next</p>", "<p><u><u>word </u>next</u></p>" })
+    Check(Simple(fragment).FindFormatting("word next").Length == 0, "ambiguous or intentional formatting skipped: " + fragment);
+var linked = Simple("<p><a href='https://example.test'>word </a>next</p>");
+Check(linked.FixFormatting("word next", [linked.FindFormatting("word next")[0].Id], []).Fragment == "<p><a href='https://example.test'>word</a> next</p>", "link preserved, space unlinked");
+var nbsp = Simple("<p><s>word&nbsp;</s>next</p>");
+Check(nbsp.FixFormatting("word\u00a0next", [nbsp.FindFormatting("word\u00a0next")[0].Id], []).Fragment == "<p><s>word</s>&nbsp;next</p>", "NBSP encoding retained");
+reject = false;
+try { formatted.FixFormatting("word next", [fixes[0].Id], [new EditorEdit(3, 4, "d", "D")]); } catch (InvalidOperationException) { reject = true; }
+Check(reject, "abutting text correction rejected");
+Check(formatted.FixFormatting("word next", [], []).Fragment == formatted.Fragment, "no acceptance means no formatting change");
 Console.WriteLine($"PASS: {count} rich clipboard paragraph, formatting, Unicode, entity, byte-offset and refusal checks.");

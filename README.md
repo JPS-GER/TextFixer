@@ -97,3 +97,9 @@ Optional development generator: `dotnet run --project tools/BrandAssets -c Relea
 - Shared build output lock: `.build.lock`. Acquire with exclusive file creation before builds; remove after completion or failure. Do not build while another session holds it.
 
 Credentials must remain in the C# process and be protected with Windows DPAPI. Never expose tokens to WebView2 or logs.
+
+### Optional Alt+Q formatting checks
+
+Capture with Alt+Q and check the text as usual. Formatting is checked automatically when copied HTML is available. Any formatting suggestions appear separately in the review and start unchecked. Accept each desired fix before "Paste with formatting" or "Copy with formatting". These checks run locally and apply only to the Alt+Q HTML clipboard path.
+
+The first rule handles a single edge space in simple explicit underline, strikethrough or link tags, where adjacent unformatted text makes the boundary clear. It preserves the text and moves the space outside that tag. Complex/nested formatting, CSS-dependent decoration, paragraph-end spaces, repeated spaces and ambiguous captures are skipped. A text correction touching the same space must be rejected before applying its formatting fix. Destination apps still control HTML paste rendering. Chrome direct editing is unchanged.

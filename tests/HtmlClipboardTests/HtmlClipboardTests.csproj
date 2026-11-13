@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
-  <ItemGroup><Compile Include="../../src/TextFixer/Native/HtmlClipboard.cs" Link="HtmlClipboard.cs" /><Compile Include="../../src/TextFixer/EditorEdits.cs" Link="EditorEdits.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/TextFixer/Native/HtmlClipboard.Formatting.cs" Link="HtmlClipboard.Formatting.cs" /><Compile Include="../../src/TextFixer/Native/HtmlClipboard.cs" Link="HtmlClipboard.cs" /><Compile Include="../../src/TextFixer/EditorEdits.cs" Link="EditorEdits.cs" /></ItemGroup>
 </Project>
