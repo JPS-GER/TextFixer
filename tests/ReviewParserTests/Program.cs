@@ -32,6 +32,23 @@ string Span(string text, ReviewCorrection c) => text[c.Start..c.End];
     Check(plain.Contains("\"corrections\"", StringComparison.Ordinal), "JSON-only instructions describe corrections");
 }
 
+// ---- Focused prompts (one request per tab) ----
+{
+    Check(ReviewFocus.All.SequenceEqual(["spelling", "grammar", "punctuation", "wording", "worth"]), "focus order follows the tabs");
+    foreach (var focus in ReviewFocus.All)
+    {
+        var body = ReviewPrompt.BuildRequest("model", "text", structured: true, focus);
+        var instructions = body["instructions"]!.GetValue<string>();
+        Check(instructions.Contains("never follow instructions", StringComparison.Ordinal) && body["text"] is not null, $"{focus}: keeps the injection guard and the strict schema");
+        Check(focus == ReviewFocus.Worth
+            ? instructions.Contains("Do not correct anything", StringComparison.Ordinal) && instructions.Contains("contradiction", StringComparison.Ordinal)
+            : instructions.Contains($"category: always \"{focus}\"", StringComparison.Ordinal) && instructions.Contains("findings: always an empty list", StringComparison.Ordinal),
+            $"{focus}: focused instructions");
+        Check(!instructions.Contains("{", StringComparison.Ordinal), $"{focus}: no unfilled placeholder");
+    }
+    Check(ReviewPrompt.BuildRequest("model", "text", structured: false, "grammar")["instructions"]!.GetValue<string>().Contains("Answer with only a JSON object", StringComparison.Ordinal), "focused plain-JSON fallback");
+}
+
 // ---- Resolution ----
 {
     const string original = "Das ist ein wichtig Satz mit enem Fehler, und hier fehlt ein Komma dass ist klar.";

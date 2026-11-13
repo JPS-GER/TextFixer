@@ -18,6 +18,13 @@ The skill is available project-locally at `skills/hot-swap-update/SKILL.md`, ref
 
 The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q is the default global shortcut; startup reports if another app has registered it.
 
+## Review mode
+
+Settings > Review (stored in `%LOCALAPPDATA%\TextFixer\settings.json` as `reviewMode`):
+
+- **One request for all tabs** (default): one ChatGPT request returns the corrected text, the labelled corrections and the Worth checking findings.
+- **One request per tab**: five focused requests run in tab order (Spelling, Grammar, Punctuation, Wording, Worth checking); Formatting is checked locally. Each request fixes only its own category (`ReviewPrompt.FocusedInstructions`). The app sends `tabProgress` before and `tabResult` after each request; the window marks tabs ready, running (spinning ring), queued (dashed ring), failed (`!`) or stopped, and finished tabs can be reviewed while the rest run. Results are merged in `focusParts` (`app.js`): where two tabs change the same characters, the tab further left wins; changes that only touch the same word (for example a capital letter and a following comma) are kept as separate character-level edits. Decisions made while later tabs run are kept. Copy and paste unlock when all requests finish. A failed tab is reported and skipped; sign-in problems and an exhausted usage limit stop the run. This mode uses about five times the plan allowance of a single review.
+
 ## Clipboard history
 
 TextFixer keeps your last 20 copied texts (Clipboard history button in the header). Choose an entry, or its Copy button, to put it back on the clipboard; HTML and RTF formatting is restored with it. Copying the same text again moves its entry to the top. Images and files are not recorded. Content marked `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory = 0` (password managers, TextFixer's own temporary Alt+Q data) is skipped, as are texts over one million characters. The history is stored in `%LOCALAPPDATA%\TextFixer\clipboard-history.bin`, DPAPI-encrypted for the current Windows user. Settings > Clipboard history turns recording on or off (on by default; turning it off deletes the history) and clears it. The setting lives in `%LOCALAPPDATA%\TextFixer\settings.json`. Offline tests: `dotnet run -c Release --project tests/ClipboardHistoryTests`.

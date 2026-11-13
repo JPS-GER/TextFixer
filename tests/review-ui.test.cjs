@@ -275,3 +275,31 @@ console.log('PASS: neutral Alt+Q paste status and retained-clipboard information
  assert.equal(element('readonly-hint').hidden,true);
 }
 console.log('PASS: read-only Alt+Q capture offers copy only.');
+{
+ // One request per tab: progressive results, tab states, merged edits, decisions kept across updates.
+ const original='Leute und frauen die dass wissen.';
+ const meta={canReplace:true,readOnly:false,canPreserveFormatting:false,formattingSuggestions:[],model:'m',mode:'clipboard'};
+ const all=['spelling','grammar','punctuation','wording','worth'];
+ message({type:'capture',text:original,canReplace:true});
+ message({type:'busy',busy:true,action:'check'});
+ const step=(i,result,error=null)=>{message({type:'tabProgress',original,running:all[i],done:all.slice(0,i),pending:all.slice(i+1)});message({type:'tabResult',original,focus:all[i],result,error,pending:all.slice(i+1),...meta});};
+ message({type:'tabProgress',original,running:'spelling',done:[],pending:all.slice(1)});
+ const states=()=>element('review-tabs').children.map(b=>b.className.replace('review-tab','').replace('selected','').trim());
+ assert.deepEqual(states().slice(0,5),['state-running','state-queued','state-queued','state-queued','state-queued'],'first tab running, rest queued');
+ step(0,{correctedText:original.replace('frauen','Frauen'),findings:[],corrections:[]});
+ assert.equal(element('results').hidden,false,'first tab result is shown while the rest run');
+ assert.equal(element('copy').disabled,true,'copy waits for the remaining tabs');
+ const spelling=element('inline-text').children.find(c=>c.tag==='button');
+ assert.equal(spelling.disabled,false,'finished tab can be reviewed while the rest run');
+ spelling.onclick();
+ step(1,{correctedText:original.replace('dass','das'),findings:[],corrections:[]});
+ step(2,{correctedText:original.replace('frauen die','frauen, die'),findings:[],corrections:[]});
+ assert.deepEqual(states().slice(0,5),['state-ready','state-ready','state-ready','state-queued','state-queued'],'answered tabs ready, later tabs queued until their request starts');
+ step(3,null,'Network error');
+ step(4,{correctedText:original,corrections:[],findings:[{kind:'ambiguity',explanation:'?',quotes:['Leute'],suggestedRewrite:null}]});
+ message({type:'busy',busy:false});
+ assert.equal(states()[3],'state-failed','failed tab is marked');
+ assert.equal(element('preview').textContent,'Leute und frauen, die das wissen.','left tab wins only on real conflicts; rejected spelling stays rejected; comma insertion beside it is kept');
+ assert.ok(element('notice').textContent.includes('Not checked: Wording (Network error)'));
+}
+console.log('PASS: one request per tab shows progressive results with tab states.');

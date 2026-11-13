@@ -2,6 +2,10 @@ const $=id=>document.getElementById(id);
 const post=(action,extra={})=>window.chrome.webview.postMessage({action,...extra});
 let connected=false,busy=false,canReplace=false,readOnlyCapture=false,sourceText='',reviewOriginal='',parts=[],captureMode='clipboard',richClipboard=false;
 let pendingAutoCheck=false;
+// "One request per tab" review: tabState holds ready | running | queued | failed | stopped per requested tab.
+let reviewMode='single',partialReview=false,tabState={},tabResults={},tabErrors={},autoTab=true;
+const focusOrder=['spelling','grammar','punctuation','wording','worth'];
+function locked(){return busy&&!partialReview;}
 let activeTab='spelling',reviewFindings=[],wordings=[];
 const reviewTabs=[['spelling','Spelling'],['grammar','Grammar'],['punctuation','Punctuation'],['wording','Wording'],['worth','Worth checking'],['formatting','Formatting']];
 function activeCorrection(p){return p.category===activeTab&&!p.layoutProtected&&(p.category==='worth'||!reviewSuperseded(p,wordings));}
@@ -15,10 +19,13 @@ function renderTabs(){
   reviewTabs.forEach(([key,title])=>{
     const button=document.createElement('button');button.type='button';button.id='tab-'+key;button.className='review-tab'+(activeTab===key?' selected':'');
     button.dataset.category=key;button.setAttribute('role','tab');button.setAttribute('aria-selected',String(activeTab===key));
-    button.disabled=tabCount(key)===0;button.tabIndex=activeTab===key||(!tabCount(activeTab)&&reviewTabs.find(([k])=>tabCount(k)>0)?.[0]===key)?0:-1;
+    const state=tabState[key];
+    button.disabled=tabCount(key)===0||(state&&state!=='ready');if(state)button.className+=' state-'+state;button.tabIndex=activeTab===key||(!tabCount(activeTab)&&reviewTabs.find(([k])=>tabCount(k)>0)?.[0]===key)?0:-1;
     const name=document.createElement('span');name.textContent=title;
-    const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);button.append(name,count);
-    button.onclick=()=>{if(button.disabled)return;activeTab=key;showChanges();$('tab-'+key)?.focus();};
+    const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);
+    if(state&&state!=='ready'){count.className='tab-state';count.textContent=state==='failed'?'!':state==='stopped'?'-':'';button.title=tabStateTitle[state];}
+    button.append(name,count);
+    button.onclick=()=>{if(button.disabled)return;autoTab=false;activeTab=key;showChanges();$('tab-'+key)?.focus();};
     button.onkeydown=e=>{
       if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();
       const available=reviewTabs.filter(([k])=>tabCount(k)>0).map(([k])=>k),i=available.indexOf(key);
@@ -30,6 +37,44 @@ function renderTabs(){
   $('worth-results').hidden=activeTab!=='worth';
   $('formatting-results').hidden=activeTab!=='formatting'||captureMode==='chrome'||!formattingSuggestions.length;
 }
+const tabStateTitle={running:'Checking now',queued:'Queued',failed:'Could not be checked',stopped:'Stopped'};
+function focusParts(original){
+  // Each tab answer fixes only its own category. Earlier (left) tabs win where two answers touch the same text.
+  const previous=new Map(parts.filter(p=>p.changed).map(p=>[`${p.start}|${p.end}|${p.after}`,p.accepted]));
+  const kept=[];
+  // Changes may touch at a boundary; two insertions at one position, or any shared character, conflict.
+  const clash=(a,b)=>a.start===a.end&&b.start===b.end?a.start===b.start:a.start===a.end?b.start<a.start&&a.start<b.end:b.start===b.end?a.start<b.start&&b.start<a.end:a.start<b.end&&b.start<a.end;
+  for(const focus of focusOrder){
+    const r=tabResults[focus];if(!r||focus==='worth')continue;
+    for(const p of reviewParts(original,r.correctedText,r.corrections)){
+      if(!p.changed)continue;
+      if(!kept.some(k=>clash(k,p))){kept.push({...p,category:focus});continue;}
+      // Same word changed by two tabs (for example "frauen" -> "Frauen" and "frauen" -> "frauen,"): keep the character-level edit when it fits.
+      const e=minimalTextEdit(p.start,p.before,p.after);
+      if(e&&!kept.some(k=>clash(k,e)))kept.push({...e,changed:true,accepted:true,category:focus,layoutProtected:/[\r\n]/.test(e.before+e.after)});
+    }
+  }
+  kept.sort((a,b)=>a.start-b.start||a.end-b.end);
+  const merged=[];let position=0;
+  for(const p of kept){
+    if(p.start>position)merged.push({before:original.slice(position,p.start),after:original.slice(position,p.start),changed:false,accepted:true,start:position,end:p.start});
+    const key=`${p.start}|${p.end}|${p.after}`;if(previous.has(key)&&!p.layoutProtected)p.accepted=previous.get(key);
+    merged.push(p);position=Math.max(position,p.end);
+  }
+  if(position<original.length)merged.push({before:original.slice(position),after:original.slice(position),changed:false,accepted:true,start:position,end:original.length});
+  return merged;
+}
+function tabProgressNotice(){
+  const running=focusOrder.find(k=>tabState[k]==='running');
+  if(!running)return;
+  notice(`Checking ${reviewTabs.find(([k])=>k===running)[1]} (${focusOrder.indexOf(running)+1} of ${focusOrder.length}). Finished tabs are ready to review.`);
+}
+function applyReviewMeta(m){captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;showFormatting(m.formattingSuggestions||[]);$('model').textContent=m.model||'';}
+function readyNotice(){
+  const failed=focusOrder.filter(k=>tabState[k]==='failed');
+  if(failed.length){notice('Review ready. Not checked: '+failed.map(k=>reviewTabs.find(([t])=>t===k)[1]+' ('+tabErrors[k]+')').join('; '));return;}
+  notice(parts.some(p=>p.layoutProtected)?'Review ready. Suggestions that would change line breaks were excluded to preserve your paragraph layout.':(readOnlyCapture?'Review ready. Accept or reject corrections, then copy your text.':'Review ready. Accept or reject corrections, then copy or replace your text.'));
+}
 function startCapturedReview(){
   if(!pendingAutoCheck||!connected||busy||!sourceText.trim())return;
   pendingAutoCheck=false;
@@ -40,15 +85,15 @@ function update(){
   $('count').textContent=`${$('source').value.length.toLocaleString()} / 30,000`;
   $('signin').disabled=busy;$('signout').disabled=busy;$('source').disabled=busy;
   $('cancel').hidden=!busy;
-  document.querySelectorAll('#formatting-findings input, #formatting-findings button').forEach(x=>x.disabled=busy||$('allow-plain-text').checked);
+  document.querySelectorAll('#formatting-findings input, #formatting-findings button').forEach(x=>x.disabled=locked()||$('allow-plain-text').checked);
   const formattedPaste=captureMode!=='chrome'&&richClipboard&&!$('allow-plain-text').checked;
   $('copy').disabled=busy;$('apply').disabled=busy||!canReplace||(captureMode!=='chrome'&&!formattedPaste&&!$('allow-plain-text').checked);
   $('allow-plain-text').disabled=busy;$('plain-text-option').hidden=captureMode==='chrome'||!canReplace;
   $('apply').hidden=readOnlyCapture;$('copy').classList.toggle('primary',readOnlyCapture);$('readonly-hint').hidden=!readOnlyCapture;
   const bulkCount=activeTab==='worth'?wordings.filter(w=>w.created&&!w.layoutProtected).length:tabCount(activeTab);
-  $('accept-all').disabled=busy||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);$('reject-all').disabled=busy||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);
-  document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=busy||control.dataset.layoutProtected==='true'||control.dataset.inactive==='true');
-  document.querySelectorAll('#findings button').forEach(control=>control.disabled=busy||control.dataset.layoutProtected==='true');
+  $('accept-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);$('reject-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);
+  document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true'||control.dataset.inactive==='true');
+  document.querySelectorAll('#findings button').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true');
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
   $('route').className='capture-icon';
@@ -73,7 +118,7 @@ function renderFormatting(){
     const card=document.createElement('article');card.className='formatting-suggestion';
     const label=document.createElement('label');label.className='formatting-label';
     const input=document.createElement('input');input.type='checkbox';input.checked=f.accepted;
-    input.disabled=busy||$('allow-plain-text').checked;
+    input.disabled=locked()||$('allow-plain-text').checked;
     input.setAttribute('aria-label',f.description);
     input.onchange=()=>{if(input.disabled)return;f.accepted=input.checked;renderFormatting();};
     const description=document.createElement('span');description.textContent=f.description;
@@ -112,7 +157,7 @@ function revised(){return reviewRevised(reviewOriginal,parts,wordings);}
 function acceptedEdits(){return reviewEdits(parts,wordings);}
 function preview(){$('preview').textContent=revised();showInline();}
 function toggleCorrection(p){
-  if(busy||!activeCorrection(p))return;
+  if(locked()||!activeCorrection(p))return;
   p.accepted=!p.accepted;showChanges();
 }
 function showInline(){
@@ -124,7 +169,7 @@ function showInline(){
       span.title=(p.accepted?'Accepted':'Rejected')+' '+(p.category==='worth'?'wording from Worth checking':p.category)+' correction';container.append(span);return;
     }
     const button=document.createElement('button');button.type='button';button.className='inline-correction'+(p.accepted?'':' rejected');
-    button.disabled=busy||!!p.layoutProtected;button.dataset.layoutProtected=String(!!p.layoutProtected);button.dataset.category=p.category;
+    button.disabled=locked()||!!p.layoutProtected;button.dataset.layoutProtected=String(!!p.layoutProtected);button.dataset.category=p.category;
     button.title=p.layoutProtected?'Not applied: this suggestion would change line breaks.':p.accepted?'Accepted correction. Click to reject.':'Rejected correction. Click to accept.';
     button.setAttribute('aria-pressed',String(p.accepted));
     button.setAttribute('aria-label',`${p.before||'insert'} to ${p.after||'delete'}. ${button.title}`);
@@ -150,9 +195,9 @@ function showChanges(){
   changes.forEach((p,index)=>{
     const inactive=!activeCorrection(p),label=document.createElement('label');label.className='change'+(inactive?' inactive-change':'');
     const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=p.accepted;checkbox.setAttribute('aria-label',`Accept correction ${index+1}`);
-    checkbox.disabled=busy||inactive;checkbox.dataset.layoutProtected=String(!!p.layoutProtected);checkbox.dataset.inactive=String(inactive);
+    checkbox.disabled=locked()||inactive;checkbox.dataset.layoutProtected=String(!!p.layoutProtected);checkbox.dataset.inactive=String(inactive);
     checkbox.onchange=()=>{
-      if(busy||!activeCorrection(p))return;
+      if(locked()||!activeCorrection(p))return;
       if(p.category==='worth'&&checkbox.checked)reviewAcceptWording(p,wordings);else p.accepted=checkbox.checked;
       showChanges();
     };
@@ -171,8 +216,8 @@ function showFindings(){
     const card=document.createElement('article');card.className='finding';
     const top=document.createElement('div');top.className='finding-top';
     const kind=document.createElement('span');kind.className='kind';kind.textContent=f.kind.replaceAll('_',' ');
-    const dismiss=document.createElement('button');dismiss.className='link';dismiss.textContent='Dismiss';dismiss.disabled=busy;
-    dismiss.onclick=()=>{if(busy)return;f.dismissed=true;const w=wordings.find(w=>w.findingIndex===index);if(w){w.accepted=false;w.created=false;}showChanges();};
+    const dismiss=document.createElement('button');dismiss.className='link';dismiss.textContent='Dismiss';dismiss.disabled=locked();
+    dismiss.onclick=()=>{if(locked())return;f.dismissed=true;const w=wordings.find(w=>w.findingIndex===index);if(w){w.accepted=false;w.created=false;}showChanges();};
     top.append(kind,dismiss);card.append(top);
     (f.quotes||[]).forEach(q=>{const quote=document.createElement('blockquote');quote.textContent=q;card.append(quote);});
     const explanation=document.createElement('p');explanation.textContent=f.explanation;card.append(explanation);
@@ -181,9 +226,9 @@ function showFindings(){
       const w=wordings.find(w=>w.findingIndex===index);
       if(w){
         const use=document.createElement('button');use.type='button';use.className='use-wording';use.textContent=w.accepted?'Undo wording':'Use this wording';
-        use.dataset.findingIndex=String(index);use.dataset.layoutProtected=String(w.layoutProtected);use.disabled=busy||w.layoutProtected;
+        use.dataset.findingIndex=String(index);use.dataset.layoutProtected=String(w.layoutProtected);use.disabled=locked()||w.layoutProtected;
         use.title=w.layoutProtected?'This rewrite changes line breaks and cannot be applied.':w.accepted?'Restore the overlapping correction choices.':'Replace the uniquely matched quote with this wording.';
-        use.onclick=()=>{if(busy||w.layoutProtected)return;if(w.accepted)w.accepted=false;else reviewAcceptWording(w,wordings);activeTab='worth';showChanges();};
+        use.onclick=()=>{if(locked()||w.layoutProtected)return;if(w.accepted)w.accepted=false;else reviewAcceptWording(w,wordings);activeTab='worth';showChanges();};
         card.append(use);
         if(w.layoutProtected){
           const reason=document.createElement('p');reason.className='hint wording-reason';
@@ -197,7 +242,7 @@ function showFindings(){
   });
 }
 function bulkCorrections(accepted){
-  if(busy)return;
+  if(locked())return;
   if(activeTab==='formatting'){
     if($('allow-plain-text').checked)return;formattingSuggestions.forEach(f=>f.accepted=accepted);renderFormatting();
   }else if(activeTab==='worth'){
@@ -213,11 +258,12 @@ $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:
 $('allow-plain-text').onchange=update;
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
+document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
 $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('register-chrome').onclick=()=>post('registerChrome');$('extension-folder').onclick=()=>post('extensionFolder');$('refresh-chrome').onclick=()=>post('chromeStatus');
 $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
-  if(m.type==='capture'){activeTab='spelling';parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?'Connect ChatGPT in Settings to review this selection.':'');startCapturedReview();}
+  if(m.type==='capture'){activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?'Connect ChatGPT in Settings to review this selection.':'');startCapturedReview();}
   if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
   if(m.type==='historyCopied'){copiedId=m.id;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
@@ -227,10 +273,31 @@ window.chrome.webview.addEventListener('message',event=>{
     $('setup-details').open=!m.connected;$('extension-path').textContent=m.folder||'chrome-extension';$('extension-folder').disabled=!m.folder;
   }
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
-  if(m.type==='busy'){busy=m.busy;}
+  if(m.type==='busy'){busy=m.busy;if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running'||tabState[k]==='queued')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
+  if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;}
+  if(m.type==='tabProgress'){
+    if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
+    for(const k of m.done||[])if(!tabState[k]||tabState[k]==='queued'||tabState[k]==='running')tabState[k]=tabState[k]==='failed'?'failed':'ready';
+    tabState[m.running]='running';for(const k of m.pending||[])tabState[k]='queued';
+    showChanges();tabProgressNotice();
+  }
+  if(m.type==='tabResult'){
+    if(m.original!==reviewOriginal)return;
+    applyReviewMeta(m);
+    if(m.error){tabState[m.focus]='failed';tabErrors[m.focus]=m.error;}
+    else{
+      tabState[m.focus]='ready';
+      if(m.focus==='worth'){reviewFindings=(m.result.findings||[]).map(f=>({...f,dismissed:false}));wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);}
+      else{tabResults[m.focus]=m.result;parts=focusParts(reviewOriginal);}
+    }
+    if(autoTab)activeTab=reviewTabs.find(([k])=>tabState[k]==='ready'&&tabCount(k)>0)?.[0]||'spelling';
+    showChanges();
+    if(m.pending?.length)tabProgressNotice();else readyNotice();
+  }
   if(m.type==='result'){
+    partialReview=false;tabState={};
     activeTab='spelling';reviewOriginal=m.original;parts=reviewParts(m.original,m.result.correctedText,m.result.corrections);
     reviewFindings=(m.result.findings||[]).map(f=>({...f,dismissed:false}));
     wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);

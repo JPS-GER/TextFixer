@@ -81,8 +81,12 @@ public sealed class ChatGptReviewService : IReviewService
         return models;
     }
 
-    public async Task<ReviewResult> CheckAsync(string text, CancellationToken cancellationToken = default)
+    /// <param name="focus">Null for the full review in one request, otherwise one review tab (<see cref="ReviewFocus.All"/>).</param>
+    public Task<ReviewResult> CheckAsync(string text, CancellationToken cancellationToken = default) => CheckAsync(text, null, cancellationToken);
+
+    public async Task<ReviewResult> CheckAsync(string text, string? focus, CancellationToken cancellationToken)
     {
+        if (focus is not null && !ReviewFocus.All.Contains(focus)) throw new ArgumentOutOfRangeException(nameof(focus));
         ArgumentNullException.ThrowIfNull(text);
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -98,18 +102,23 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
-            return await RequestReviewAsync(token, model, text, cancellationToken).ConfigureAwait(false);
+            return await RequestReviewAsync(token, model, text, focus, cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
-        return ReviewResultParser.Parse(text, output);
+        var result = ReviewResultParser.Parse(text, output);
+        if (focus is null) return result;
+        // A focused answer contributes only its own tab: corrections of that category, or findings for Worth checking.
+        return focus == ReviewFocus.Worth
+            ? result with { CorrectedText = text, Corrections = [] }
+            : result with { Findings = [], Corrections = [.. result.Corrections.Select(c => c with { Category = focus })] };
     }
 
-    private async Task<string> RequestReviewAsync(string token, string model, string text, CancellationToken cancellationToken)
+    private async Task<string> RequestReviewAsync(string token, string model, string text, string? focus, CancellationToken cancellationToken)
     {
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured, focus), cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -118,7 +127,7 @@ public sealed class ChatGptReviewService : IReviewService
         {
             // text.format isn't documented for plan usage. Without it, the parser validates the JSON alone.
             _structuredOutputUnsupported = true;
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false, focus), cancellationToken).ConfigureAwait(false);
         }
     }
 

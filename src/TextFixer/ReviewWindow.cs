@@ -131,6 +131,33 @@ internal sealed class ReviewWindow : Form
     private bool ReadOnlyCapture => _chromeCapture is null && _capture?.Editable == false;
     private bool CanReplace => _chromeCapture is not null || (_capture is not null && !ReadOnlyCapture);
     private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    /// <summary>One request per review tab, left to right. Each answer is shown as soon as it arrives.</summary>
+    private async Task CheckByTabAsync(string original, CancellationToken cancellationToken)
+    {
+        var tabs = ReviewFocus.All;
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var focus = tabs[i];
+            Contracts.ReviewResult? result = null;
+            string? error = null;
+            Send(new { type = "tabProgress", original, running = focus, done = tabs.Take(i).ToArray(), pending = tabs.Skip(i + 1).ToArray() });
+            try { result = await _service.CheckAsync(original, focus, cancellationToken); }
+            catch (OperationCanceledException) { throw; }
+            catch (ChatGptServiceException ex) when (!ex.RequiresSignIn && ex.Code != ChatGptProtocol.UsageLimitError) { error = ex.Message; }
+            catch (HttpRequestException ex) { error = ex.Message; }
+            Send(new
+            {
+                type = "tabResult", original, focus, result, error,
+                pending = tabs.Skip(i + 1).ToArray(),
+                formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [],
+                canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null,
+                model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome",
+            });
+        }
+    }
+
+    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview });
+
     private void SendHistory()
     {
         if (_history is null || _settings is null) return;
@@ -268,7 +295,7 @@ internal sealed class ReviewWindow : Form
             var action = root.GetProperty("action").GetString();
             if (action == "ready")
             {
-                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); SendHistory(); await SendStatusAsync();
+                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); await SendStatusAsync();
                 if (_pendingNotice is not null) { Notify(_pendingNotice); _pendingNotice = null; }
                 return;
             }
@@ -277,6 +304,18 @@ internal sealed class ReviewWindow : Form
             if (action is "historyList" or "historyRestore" or "historyDelete" or "historyClear" or "historyEnabled")
             {
                 HandleHistory(action, root);
+                return;
+            }
+            if (action == "reviewMode" && _settings is not null)
+            {
+                var mode = root.GetProperty("mode").GetString();
+                if (mode is AppSettings.SingleReview or AppSettings.FocusedReview)
+                {
+                    _settings.ReviewMode = mode;
+                    try { _settings.Save(); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                }
+                SendReviewMode();
                 return;
             }
             if (action == "autostart")
@@ -315,6 +354,11 @@ internal sealed class ReviewWindow : Form
                         var original = ReadText(root);
                         if (_capture is not null && _capture.Text != original) _capture = null;
                         if (_chromeCapture is not null && _chromeCapture.Text != original) _chromeCapture = null;
+                        if (_settings?.ReviewMode == AppSettings.FocusedReview)
+                        {
+                            await CheckByTabAsync(original, _operation.Token);
+                            break;
+                        }
                         var result = await _service.CheckAsync(original, _operation.Token);
                         Send(new { type = "result", original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
