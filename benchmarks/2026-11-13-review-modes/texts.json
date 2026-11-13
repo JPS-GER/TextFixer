@@ -1,0 +1,91 @@
+[
+  {
+    "id": "de-email",
+    "text": "Hallo Frau Becker,\n\nvielen dank für ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei ihnen ankommen. Falls noch etwas fehlt geben Sie mir bitte bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+    "fixes": [
+      ["vielen dank", "vielen Dank", "spelling"],
+      ["für ihre", "für Ihre", "spelling"],
+      ["bei ihnen", "bei Ihnen", "spelling"],
+      ["fehlt geben", "fehlt, geben", "punctuation"],
+      ["bitte bescheid", "bitte Bescheid", "spelling"]
+    ]
+  },
+  {
+    "id": "de-dass-das",
+    "text": "Ich glaube das wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehlern.",
+    "fixes": [
+      ["glaube das wir", "glaube, dass wir", "grammar"],
+      ["einige Fehlern", "einige Fehler", "grammar"]
+    ]
+  },
+  {
+    "id": "en-report",
+    "text": "The quarterly results was better then expected. Revenue grew by 12 percent, and our new product line, which launched in March have already reached 40,000 customers. However, we recieved several complaints about delivery times, its clear that logistics needs more attention.",
+    "fixes": [
+      ["results was", "results were", "grammar"],
+      ["better then", "better than", "wording"],
+      ["in March have", "in March, has", "grammar"],
+      ["recieved", "received", "spelling"],
+      ["times, its clear", "times; it's clear", "punctuation"]
+    ]
+  },
+  {
+    "id": "en-email",
+    "text": "Hi Tom,\n\nThanks for you're message. I'll send you the files tomorow, I just need to double check a few numbers first. Lets meet on monday to go through everything together.\n\nBest regards,\nAnna",
+    "fixes": [
+      ["you're message", "your message", "wording"],
+      ["tomorow", "tomorrow", "spelling"],
+      ["tomorrow, I just", "tomorrow; I just", "punctuation"],
+      ["Lets meet", "Let's meet", "punctuation"],
+      ["on monday", "on Monday", "spelling"]
+    ]
+  },
+  {
+    "id": "de-technik",
+    "text": "Die neue Software läuft stabiler als die Alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag, benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das wiederspricht unserer Annahme, dass Caching Ressourcen spart.",
+    "fixes": [
+      ["die Alte", "die alte", "spelling"],
+      ["prüfen ob", "prüfen, ob", "punctuation"],
+      ["vom Dienstag, benötigt", "vom Dienstag benötigt", "punctuation"],
+      ["wiederspricht", "widerspricht", "spelling"]
+    ]
+  },
+  {
+    "id": "en-claims",
+    "text": "Our app is the fastest note-taking tool on the market and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base, because the market is growing.",
+    "fixes": [],
+    "expectFindings": true
+  },
+  {
+    "id": "de-lang",
+    "text": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, das viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten, sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+    "fixes": [
+      ["Ziel war es die", "Ziel war es, die", "punctuation"],
+      ["gezeigt, das viele", "gezeigt, dass viele", "grammar"],
+      ["Berichten, sollen", "Berichten sollen", "punctuation"]
+    ]
+  },
+  {
+    "id": "en-clean",
+    "text": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+    "fixes": []
+  },
+  {
+    "id": "de-chat",
+    "text": "Hey, hast du morgen zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl das wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+    "fixes": [
+      ["morgen zeit", "morgen Zeit", "spelling"],
+      ["Gefühl das wir", "Gefühl, dass wir", "grammar"]
+    ]
+  },
+  {
+    "id": "en-mixed",
+    "text": "Their are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second the support team has not been trained. Third, the pricing page still shows last years prices, which could confuse customers and lead too complaints.",
+    "fixes": [
+      ["Their are", "There are", "wording"],
+      ["Second the", "Second, the", "punctuation"],
+      ["last years prices", "last year's prices", "punctuation"],
+      ["lead too", "lead to", "wording"]
+    ]
+  }
+]

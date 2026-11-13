@@ -303,3 +303,15 @@ console.log('PASS: read-only Alt+Q capture offers copy only.');
  assert.ok(element('notice').textContent.includes('Not checked: Wording (Network error)'));
 }
 console.log('PASS: one request per tab shows progressive results with tab states.');
+{
+ // The same fix from several tabs is applied once ("das" -> "dass" must not become "dasss").
+ const original='Ich glaube das wir gewinnen.';
+ const meta={canReplace:true,readOnly:false,canPreserveFormatting:false,formattingSuggestions:[],model:'m',mode:'clipboard'};
+ const all=['spelling','grammar','punctuation','wording','worth'];
+ message({type:'capture',text:original,canReplace:true});message({type:'busy',busy:true,action:'check'});
+ const answers=[original.replace('das','dass'),original.replace('das','dass'),original.replace('glaube','glaube,'),original.replace('das','dass'),original];
+ answers.forEach((correctedText,i)=>{message({type:'tabProgress',original,running:all[i],done:all.slice(0,i),pending:all.slice(i+1)});message({type:'tabResult',original,focus:all[i],result:{correctedText,findings:[],corrections:[]},error:null,pending:all.slice(i+1),...meta});});
+ message({type:'busy',busy:false});
+ assert.equal(element('preview').textContent,'Ich glaube, dass wir gewinnen.','duplicate tab fixes are applied once');
+}
+console.log('PASS: duplicate fixes from several tabs are applied once.');

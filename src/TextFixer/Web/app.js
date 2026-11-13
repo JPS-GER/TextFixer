@@ -44,10 +44,12 @@ function focusParts(original){
   const kept=[];
   // Changes may touch at a boundary; two insertions at one position, or any shared character, conflict.
   const clash=(a,b)=>a.start===a.end&&b.start===b.end?a.start===b.start:a.start===a.end?b.start<a.start&&a.start<b.end:b.start===b.end?a.start<b.start&&b.start<a.end:a.start<b.end&&b.start<a.end;
+  // A change another tab already made (same text in the same range) is a duplicate, not a second edit.
+  const duplicate=p=>{let out='',pos=p.start;for(const k of kept.filter(k=>k.start>=p.start&&k.end<=p.end).sort((a,b)=>a.start-b.start||a.end-b.end)){out+=original.slice(pos,k.start)+k.after;pos=Math.max(pos,k.end);}return out+original.slice(pos,p.end)===p.after;};
   for(const focus of focusOrder){
     const r=tabResults[focus];if(!r||focus==='worth')continue;
     for(const p of reviewParts(original,r.correctedText,r.corrections)){
-      if(!p.changed)continue;
+      if(!p.changed||duplicate(p))continue;
       if(!kept.some(k=>clash(k,p))){kept.push({...p,category:focus});continue;}
       // Same word changed by two tabs (for example "frauen" -> "Frauen" and "frauen" -> "frauen,"): keep the character-level edit when it fits.
       const e=minimalTextEdit(p.start,p.before,p.after);

@@ -1,0 +1,952 @@
+[
+  {
+    "id": "de-email",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 8984,
+      "corrected": "Hallo Frau Becker,\n\nvielen Dank für Ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei Ihnen ankommen. Falls noch etwas fehlt, geben Sie mir bitte Bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+      "corrections": [
+        {
+          "before": "dank",
+          "after": "Dank",
+          "Category": "spelling"
+        },
+        {
+          "before": "ihre",
+          "after": "Ihre",
+          "Category": "spelling"
+        },
+        {
+          "before": "ihnen",
+          "after": "Ihnen",
+          "Category": "spelling"
+        },
+        {
+          "before": "fehlt",
+          "after": "fehlt,",
+          "Category": "punctuation"
+        },
+        {
+          "before": "bescheid",
+          "after": "Bescheid",
+          "Category": "spelling"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 7173,
+        "corrected": "Hallo Frau Becker,\n\nvielen Dank für Ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei Ihnen ankommen. Falls noch etwas fehlt geben Sie mir bitte Bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+        "corrections": [
+          {
+            "before": "dank",
+            "after": "Dank",
+            "Category": "spelling"
+          },
+          {
+            "before": "ihre",
+            "after": "Ihre",
+            "Category": "spelling"
+          },
+          {
+            "before": "ihnen",
+            "after": "Ihnen",
+            "Category": "spelling"
+          },
+          {
+            "before": "bescheid",
+            "after": "Bescheid",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 5092,
+        "corrected": "Hallo Frau Becker,\n\nvielen dank für ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei ihnen ankommen. Falls noch etwas fehlt geben Sie mir bitte bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 6499,
+        "corrected": "Hallo Frau Becker,\n\nvielen dank für ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei ihnen ankommen. Falls noch etwas fehlt, geben Sie mir bitte bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+        "corrections": [
+          {
+            "before": "fehlt",
+            "after": "fehlt,",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 4081,
+        "corrected": "Hallo Frau Becker,\n\nvielen dank für ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei ihnen ankommen. Falls noch etwas fehlt geben Sie mir bitte bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 3978,
+        "corrected": "Hallo Frau Becker,\n\nvielen dank für ihre schnelle Antwort. Ich habe die Unterlagen gestern abgeschickt, sie sollten morgen bei ihnen ankommen. Falls noch etwas fehlt geben Sie mir bitte bescheid, dann schicke ich es umgehend nach.\n\nMit freundlichen Grüßen\nJan Schulz",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "de-dass-das",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 5467,
+      "corrected": "Ich glaube, dass wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehler.",
+      "corrections": [
+        {
+          "before": "glaube das",
+          "after": "glaube, dass",
+          "Category": "grammar"
+        },
+        {
+          "before": "Fehlern",
+          "after": "Fehler",
+          "Category": "grammar"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 5533,
+        "corrected": "Ich glaube dass wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehlern.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 6947,
+        "corrected": "Ich glaube dass wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehler.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "grammar"
+          },
+          {
+            "before": "Fehlern",
+            "after": "Fehler",
+            "Category": "grammar"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 5568,
+        "corrected": "Ich glaube, das wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehlern.",
+        "corrections": [
+          {
+            "before": "glaube",
+            "after": "glaube,",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 5643,
+        "corrected": "Ich glaube dass wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehlern.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 4565,
+        "corrected": "Ich glaube das wir das Projekt bis Freitag abschließen können. Das Team hat gute Arbeit geleistet und die meisten Aufgaben sind schon erledigt. Wichtig ist nur, dass das Testen nicht zu kurz kommt, denn die letzte Version hatte einige Fehlern.",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "en-report",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 8511,
+      "corrected": "The quarterly results were better than expected. Revenue grew by 12 percent, and our new product line, which launched in March, has already reached 40,000 customers. However, we received several complaints about delivery times; it's clear that logistics needs more attention.",
+      "corrections": [
+        {
+          "before": "was",
+          "after": "were",
+          "Category": "grammar"
+        },
+        {
+          "before": "then",
+          "after": "than",
+          "Category": "wording"
+        },
+        {
+          "before": "March have",
+          "after": "March, has",
+          "Category": "grammar"
+        },
+        {
+          "before": "recieved",
+          "after": "received",
+          "Category": "spelling"
+        },
+        {
+          "before": "times, its",
+          "after": "times; it's",
+          "Category": "punctuation"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 5348,
+        "corrected": "The quarterly results was better then expected. Revenue grew by 12 percent, and our new product line, which launched in March have already reached 40,000 customers. However, we received several complaints about delivery times, its clear that logistics needs more attention.",
+        "corrections": [
+          {
+            "before": "recieved",
+            "after": "received",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 9022,
+        "corrected": "The quarterly results were better than expected. Revenue grew by 12 percent, and our new product line, which launched in March has already reached 40,000 customers. However, we recieved several complaints about delivery times, it's clear that logistics needs more attention.",
+        "corrections": [
+          {
+            "before": "was",
+            "after": "were",
+            "Category": "grammar"
+          },
+          {
+            "before": "then",
+            "after": "than",
+            "Category": "grammar"
+          },
+          {
+            "before": "have",
+            "after": "has",
+            "Category": "grammar"
+          },
+          {
+            "before": "its",
+            "after": "it's",
+            "Category": "grammar"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 10470,
+        "corrected": "The quarterly results was better then expected. Revenue grew by 12 percent, and our new product line, which launched in March, have already reached 40,000 customers. However, we recieved several complaints about delivery times; it's clear that logistics needs more attention.",
+        "corrections": [
+          {
+            "before": "March",
+            "after": "March,",
+            "Category": "punctuation"
+          },
+          {
+            "before": "times, its",
+            "after": "times; it's",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 5571,
+        "corrected": "The quarterly results was better than expected. Revenue grew by 12 percent, and our new product line, which launched in March have already reached 40,000 customers. However, we recieved several complaints about delivery times, its clear that logistics needs more attention.",
+        "corrections": [
+          {
+            "before": "then",
+            "after": "than",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 3326,
+        "corrected": "The quarterly results was better then expected. Revenue grew by 12 percent, and our new product line, which launched in March have already reached 40,000 customers. However, we recieved several complaints about delivery times, its clear that logistics needs more attention.",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "en-email",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 9919,
+      "corrected": "Hi Tom,\n\nThanks for your message. I'll send you the files tomorrow; I just need to double-check a few numbers first. Let's meet on Monday to go through everything together.\n\nBest regards,\nAnna",
+      "corrections": [
+        {
+          "before": "you're",
+          "after": "your",
+          "Category": "grammar"
+        },
+        {
+          "before": "tomorow,",
+          "after": "tomorrow;",
+          "Category": "spelling"
+        },
+        {
+          "before": "double check",
+          "after": "double-check",
+          "Category": "punctuation"
+        },
+        {
+          "before": "Lets",
+          "after": "Let's",
+          "Category": "punctuation"
+        },
+        {
+          "before": "monday",
+          "after": "Monday",
+          "Category": "spelling"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 5355,
+        "corrected": "Hi Tom,\n\nThanks for you're message. I'll send you the files tomorrow, I just need to double check a few numbers first. Lets meet on Monday to go through everything together.\n\nBest regards,\nAnna",
+        "corrections": [
+          {
+            "before": "tomorow",
+            "after": "tomorrow",
+            "Category": "spelling"
+          },
+          {
+            "before": "monday",
+            "after": "Monday",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 6179,
+        "corrected": "Hi Tom,\n\nThanks for your message. I'll send you the files tomorow, I just need to double check a few numbers first. Let's meet on monday to go through everything together.\n\nBest regards,\nAnna",
+        "corrections": [
+          {
+            "before": "you're",
+            "after": "your",
+            "Category": "grammar"
+          },
+          {
+            "before": "Lets",
+            "after": "Let's",
+            "Category": "grammar"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 9375,
+        "corrected": "Hi Tom,\n\nThanks for you're message. I'll send you the files tomorow; I just need to double check a few numbers first. Let's meet on monday to go through everything together.\n\nBest regards,\nAnna",
+        "corrections": [
+          {
+            "before": "tomorow,",
+            "after": "tomorow;",
+            "Category": "punctuation"
+          },
+          {
+            "before": "Lets",
+            "after": "Let's",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 5497,
+        "corrected": "Hi Tom,\n\nThanks for your message. I'll send you the files tomorow, I just need to double check a few numbers first. Lets meet on monday to go through everything together.\n\nBest regards,\nAnna",
+        "corrections": [
+          {
+            "before": "you're",
+            "after": "your",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 4144,
+        "corrected": "Hi Tom,\n\nThanks for you're message. I'll send you the files tomorow, I just need to double check a few numbers first. Lets meet on monday to go through everything together.\n\nBest regards,\nAnna",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "de-technik",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 13440,
+      "corrected": "Die neue Software läuft stabiler als die alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen, ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das widerspricht unserer Annahme, dass Caching Ressourcen spart.",
+      "corrections": [
+        {
+          "before": "Alte",
+          "after": "alte",
+          "Category": "spelling"
+        },
+        {
+          "before": "prüfen",
+          "after": "prüfen,",
+          "Category": "punctuation"
+        },
+        {
+          "before": "Dienstag,",
+          "after": "Dienstag",
+          "Category": "punctuation"
+        },
+        {
+          "before": "wiederspricht",
+          "after": "widerspricht",
+          "Category": "spelling"
+        }
+      ],
+      "findings": [
+        {
+          "Kind": "logic_gap",
+          "Explanation": "Bezieht sich die Annahme ausdrücklich auf den Arbeitsspeicher? Ein höherer Speicherverbrauch widerspricht einer allgemeinen Ressourcenersparnis nicht zwingend, da Caching beispielsweise Rechenzeit sparen kann; zudem ist hier noch offen, ob die Caching-Funktionen den Mehrverbrauch verursachen.",
+          "SuggestedRewrite": "Wir sollten klären, ob der höhere Speicherverbrauch durch das Caching verursacht wird und ob ihm Einsparungen bei anderen Ressourcen gegenüberstehen."
+        }
+      ]
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 6403,
+        "corrected": "Die neue Software läuft stabiler als die alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag, benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das widerspricht unserer Annahme, dass Caching Ressourcen spart.",
+        "corrections": [
+          {
+            "before": "Alte",
+            "after": "alte",
+            "Category": "spelling"
+          },
+          {
+            "before": "wiederspricht",
+            "after": "widerspricht",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 4666,
+        "corrected": "Die neue Software läuft stabiler als die Alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag, benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das wiederspricht unserer Annahme, dass Caching Ressourcen spart.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 6771,
+        "corrected": "Die neue Software läuft stabiler als die Alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen, ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das wiederspricht unserer Annahme, dass Caching Ressourcen spart.",
+        "corrections": [
+          {
+            "before": "prüfen",
+            "after": "prüfen,",
+            "Category": "punctuation"
+          },
+          {
+            "before": "Dienstag,",
+            "after": "Dienstag",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 8406,
+        "corrected": "Die neue Software läuft stabiler als die Alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag, benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das widerspricht unserer Annahme, dass Caching Ressourcen spart.",
+        "corrections": [
+          {
+            "before": "wiederspricht",
+            "after": "widerspricht",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 16230,
+        "corrected": "Die neue Software läuft stabiler als die Alte, allerdings ist der Speicherverbrauch deutlich gestiegen. Wir sollten prüfen ob das an den neuen Caching-Funktionen liegt. Laut den Messungen vom Dienstag, benötigt der Server jetzt doppelt so viel Arbeitsspeicher, obwohl die Last gleich geblieben ist. Das wiederspricht unserer Annahme, dass Caching Ressourcen spart.",
+        "corrections": [],
+        "findings": [
+          {
+            "Kind": "logic_gap",
+            "Explanation": "Bezieht sich die Annahme ausdrücklich auf eine Einsparung von Arbeitsspeicher? Ein höherer Arbeitsspeicherverbrauch widerspricht einer allgemeinen Ressourceneinsparung nicht zwingend, da Caching beispielsweise Rechenaufwand oder Datenbankzugriffe reduzieren kann.",
+            "SuggestedRewrite": "Wir sollten klären, ob der erhöhte Arbeitsspeicherverbrauch durch Einsparungen bei anderen Ressourcen ausgeglichen wird."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "en-claims",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 11020,
+      "corrected": "Our app is the fastest note-taking tool on the market and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base, because the market is growing.",
+      "corrections": [],
+      "findings": [
+        {
+          "Kind": "unsupported_claim",
+          "Explanation": "What comparative performance data supports the claim that the app is the fastest note-taking tool on the market?",
+          "SuggestedRewrite": null
+        },
+        {
+          "Kind": "unsupported_claim",
+          "Explanation": "What evidence supports the universal claim that every user loves the app?",
+          "SuggestedRewrite": null
+        },
+        {
+          "Kind": "logic_gap",
+          "Explanation": "A drop in crashes after offline mode was added does not by itself establish causation. Is there evidence ruling out other changes or differences in usage as explanations?",
+          "SuggestedRewrite": "which suggests that offline mode may have improved the app's stability"
+        },
+        {
+          "Kind": "logic_gap",
+          "Explanation": "Market growth alone does not establish that this app's user base will double next year. What projections or app-specific evidence support that forecast?",
+          "SuggestedRewrite": "Next year we aim to double our user base, supported in part by growth in the market."
+        }
+      ]
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 4202,
+        "corrected": "Our app is the fastest note-taking tool on the market and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base, because the market is growing.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 3283,
+        "corrected": "Our app is the fastest note-taking tool on the market and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base, because the market is growing.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 8047,
+        "corrected": "Our app is the fastest note-taking tool on the market, and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base because the market is growing.",
+        "corrections": [
+          {
+            "before": "market",
+            "after": "market,",
+            "Category": "punctuation"
+          },
+          {
+            "before": "base,",
+            "after": "base",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 4516,
+        "corrected": "Our app is the fastest note-taking tool on the market and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base, because the market is growing.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 11407,
+        "corrected": "Our app is the fastest note-taking tool on the market and every user loves it. Since we added offline mode, crashes have dropped by 80 percent, which proves that offline mode makes the app more stable. Next year we will double our user base, because the market is growing.",
+        "corrections": [],
+        "findings": [
+          {
+            "Kind": "unsupported_claim",
+            "Explanation": "What comparative performance tests support the claim that the app is the fastest note-taking tool on the market?",
+            "SuggestedRewrite": null
+          },
+          {
+            "Kind": "unsupported_claim",
+            "Explanation": "What evidence supports the universal claim that every user loves the app, including users who have not provided feedback?",
+            "SuggestedRewrite": null
+          },
+          {
+            "Kind": "logic_gap",
+            "Explanation": "A decline in crashes after offline mode was introduced does not by itself establish that offline mode caused the decline. Were other changes or differences in usage ruled out?",
+            "SuggestedRewrite": "Since we added offline mode, crashes have dropped by 80 percent, which suggests that offline mode may have improved the app’s stability."
+          },
+          {
+            "Kind": "logic_gap",
+            "Explanation": "Market growth alone does not establish that this app’s user base will double next year. What evidence connects the market’s growth to that specific forecast?",
+            "SuggestedRewrite": "The growing market may help us expand our user base next year."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "de-lang",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 9441,
+      "corrected": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es, die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, dass viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+      "corrections": [
+        {
+          "before": "es",
+          "after": "es,",
+          "Category": "punctuation"
+        },
+        {
+          "before": "das",
+          "after": "dass",
+          "Category": "spelling"
+        },
+        {
+          "before": "Berichten,",
+          "after": "Berichten",
+          "Category": "punctuation"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 7672,
+        "corrected": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, dass viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten, sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 10204,
+        "corrected": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, dass viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten, sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "grammar"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 9155,
+        "corrected": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es, die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, das viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+        "corrections": [
+          {
+            "before": "es",
+            "after": "es,",
+            "Category": "punctuation"
+          },
+          {
+            "before": "Berichten,",
+            "after": "Berichten",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 7997,
+        "corrected": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, dass viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten, sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 7621,
+        "corrected": "Im letzten Jahr haben wir unsere internen Prozesse grundlegend überarbeitet. Ziel war es die Durchlaufzeiten zu verkürzen und gleichzeitig die Qualität zu steigern. Dazu wurden zunächst alle Arbeitsschritte dokumentiert und analysiert.\n\nDabei hat sich gezeigt, das viele Abstimmungen doppelt stattfanden. Durch die Einführung eines zentralen Ticketsystems konnten wir diese Doppelarbeit weitgehend vermeiden. Die Mitarbeitenden waren anfangs skeptisch, inzwischen nutzen jedoch fast alle das System täglich.\n\nFür das kommende Jahr planen wir, die Automatisierung weiter auszubauen. Insbesondere wiederkehrende Aufgaben wie das Erstellen von Berichten, sollen künftig automatisch erledigt werden. Hierfür haben wir bereits ein Budget von 50.000 Euro eingeplant, das wir im ersten Quartal freigeben wollen.",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "en-clean",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 4804,
+      "corrected": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+      "corrections": [],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 4575,
+        "corrected": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 3391,
+        "corrected": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 3700,
+        "corrected": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 3535,
+        "corrected": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 3993,
+        "corrected": "The meeting has been moved to Thursday at 3 p.m. Please bring the updated budget sheet and your questions about the new travel policy. If you cannot attend, let me know by Wednesday so I can share the notes with you afterwards.",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "de-chat",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 8911,
+      "corrected": "Hey, hast du morgen Zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl, dass wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+      "corrections": [
+        {
+          "before": "zeit",
+          "after": "Zeit",
+          "Category": "spelling"
+        },
+        {
+          "before": "Gefühl das",
+          "after": "Gefühl, dass",
+          "Category": "grammar"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 4299,
+        "corrected": "Hey, hast du morgen Zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl dass wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+        "corrections": [
+          {
+            "before": "zeit",
+            "after": "Zeit",
+            "Category": "spelling"
+          },
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "spelling"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 7117,
+        "corrected": "Hey, hast du morgen zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl das wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 6924,
+        "corrected": "Hey, hast du morgen zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl, das wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+        "corrections": [
+          {
+            "before": "Gefühl",
+            "after": "Gefühl,",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 5553,
+        "corrected": "Hey, hast du morgen zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl dass wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+        "corrections": [
+          {
+            "before": "das",
+            "after": "dass",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 5060,
+        "corrected": "Hey, hast du morgen zeit? Ich wollte mit dir über die Präsentation reden, die ist ja schon nächste Woche. Ich hab das Gefühl das wir noch einiges an den Folien ändern müssen, vor allem die Grafiken sind noch nicht so gut lesbar.",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  },
+  {
+    "id": "en-mixed",
+    "model": "gpt-6.1-sol",
+    "single": {
+      "ms": 6684,
+      "corrected": "There are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second, the support team has not been trained. Third, the pricing page still shows last year's prices, which could confuse customers and lead to complaints.",
+      "corrections": [
+        {
+          "before": "Their",
+          "after": "There",
+          "Category": "wording"
+        },
+        {
+          "before": "Second",
+          "after": "Second,",
+          "Category": "punctuation"
+        },
+        {
+          "before": "years",
+          "after": "year's",
+          "Category": "punctuation"
+        },
+        {
+          "before": "too",
+          "after": "to",
+          "Category": "wording"
+        }
+      ],
+      "findings": []
+    },
+    "tabs": [
+      {
+        "focus": "spelling",
+        "ms": 8717,
+        "corrected": "Their are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second the support team has not been trained. Third, the pricing page still shows last years prices, which could confuse customers and lead too complaints.",
+        "corrections": [],
+        "findings": []
+      },
+      {
+        "focus": "grammar",
+        "ms": 6555,
+        "corrected": "There are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second the support team has not been trained. Third, the pricing page still shows last year's prices, which could confuse customers and lead to complaints.",
+        "corrections": [
+          {
+            "before": "Their",
+            "after": "There",
+            "Category": "grammar"
+          },
+          {
+            "before": "years",
+            "after": "year's",
+            "Category": "grammar"
+          },
+          {
+            "before": "too",
+            "after": "to",
+            "Category": "grammar"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "punctuation",
+        "ms": 4524,
+        "corrected": "Their are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second, the support team has not been trained. Third, the pricing page still shows last year's prices, which could confuse customers and lead too complaints.",
+        "corrections": [
+          {
+            "before": "Second",
+            "after": "Second,",
+            "Category": "punctuation"
+          },
+          {
+            "before": "years",
+            "after": "year's",
+            "Category": "punctuation"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "wording",
+        "ms": 4487,
+        "corrected": "There are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second the support team has not been trained. Third, the pricing page still shows last years prices, which could confuse customers and lead to complaints.",
+        "corrections": [
+          {
+            "before": "Their",
+            "after": "There",
+            "Category": "wording"
+          },
+          {
+            "before": "too",
+            "after": "to",
+            "Category": "wording"
+          }
+        ],
+        "findings": []
+      },
+      {
+        "focus": "worth",
+        "ms": 7582,
+        "corrected": "Their are three reasons why we should postpone the launch. First, the documentation is not finished yet. Second the support team has not been trained. Third, the pricing page still shows last years prices, which could confuse customers and lead too complaints.",
+        "corrections": [],
+        "findings": []
+      }
+    ]
+  }
+]
