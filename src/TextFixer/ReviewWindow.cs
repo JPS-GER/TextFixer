@@ -37,7 +37,9 @@ internal sealed class ReviewWindow : Form
         Disposed += (_, _) => _windowIcon.Dispose();
         MinimumSize = new Size(740, 600);
         StartPosition = FormStartPosition.Manual;
+        ShowInTaskbar = false; // tray icon only
         Controls.Add(_web);
+        Resize += (_, _) => { if (WindowState == FormWindowState.Minimized && Visible) Hide(); };
         Shown += async (_, _) => { if (!_ready && !_initializing) await InitializeAsync(); };
         FormClosing += (_, e) => { if (!_shutdown) { e.Cancel = true; Hide(); } };
     }
@@ -119,6 +121,7 @@ internal sealed class ReviewWindow : Form
     }
     private void Send(object value) { if (_ready && !_web.IsDisposed) _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions)); }
     private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = _chromeCapture is not null || _capture is not null, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    private void SendAutostart() => Send(new { type = "autostart", enabled = Autostart.IsEnabled });
     private void SendChromeStatus() => Send(new { type = "chromeStatus", connected = _chrome?.SessionIds.Count > 0, registered = ChromeSetup.IsRegistered(), folder = ChromeSetup.ExtensionFolder, extensionId = ChromeSetup.ExtensionId });
 
     private async Task InitializeAsync()
@@ -197,14 +200,20 @@ internal sealed class ReviewWindow : Form
             var action = root.GetProperty("action").GetString();
             if (action == "ready")
             {
-                _ready = true; SendCapture(); SendChromeStatus(); await SendStatusAsync();
+                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); await SendStatusAsync();
                 if (_pendingNotice is not null) { Notify(_pendingNotice); _pendingNotice = null; }
                 return;
             }
             if (action == "cancel") { _operation?.Cancel(); return; }
             if (action == "usage") { Process.Start(new ProcessStartInfo(ChatGptReviewService.ManageUsageUrl) { UseShellExecute = true }); return; }
+            if (action == "autostart")
+            {
+                try { Autostart.Set(root.GetProperty("enabled").GetBoolean()); }
+                finally { SendAutostart(); }
+                return;
+            }
             if (Busy) return;
-            if (action == "chromeStatus") { SendChromeStatus(); return; }
+            if (action == "chromeStatus") { SendChromeStatus(); SendAutostart(); return; }
             if (action == "registerChrome")
             {
                 ChromeSetup.Register(); SendChromeStatus();

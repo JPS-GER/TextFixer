@@ -105,6 +105,8 @@ dialog h3 { font-size:13px; color:var(--muted); margin:15px 0 10px; }
 dialog .chrome-setup { margin-bottom:0; }
 .connection { display:flex; align-items:center; justify-content:space-between; gap:15px; flex-wrap:wrap; background:var(--room-2); padding:17px 20px; border:1px solid var(--edge); border-radius:10px; margin-bottom:22px; }
 .connection p { font-size:12px; color:var(--muted); margin:4px 0 0; }
+.startup-option { display:flex; align-items:flex-start; gap:12px; cursor:pointer; }
+.startup-option input { margin-top:3px; }
 @media(max-width:800px) { header { padding:20px; flex-wrap:wrap; } main { padding:20px; } .connection,.toolbar { align-items:flex-start; flex-direction:column; } }
 
 .route { padding:7px 12px; width:fit-content; margin-bottom:14px; }

@@ -16,7 +16,7 @@ internal sealed class TrayApplication : ApplicationContext
     private bool _capturing;
     private bool _exiting;
 
-    public TrayApplication()
+    public TrayApplication(bool startHidden)
     {
         var menu = new ContextMenuStrip
         {
@@ -31,7 +31,7 @@ internal sealed class TrayApplication : ApplicationContext
         _tray.DoubleClick += (_, _) => _review.Open();
         _hotkey.Pressed += async (_, _) => await CaptureAsync();
         _review.FormClosed += (_, _) => ExitThread();
-        _review.Open();
+        if (!startHidden) _review.Open();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _review.ConfigureChrome(_chrome);
         _chrome.MessageReceived += (_, e) => Dispatch(() => _review.ReceiveChromeMessage(e.SessionId, e.Message));
@@ -41,7 +41,10 @@ internal sealed class TrayApplication : ApplicationContext
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { _review.Notify("Chrome connection unavailable. Another TextFixer instance may be using it. Clipboard capture remains available."); }
         if (!_hotkey.Register())
+        {
+            _review.Open();
             _review.Notify("Alt+Q is already in use. Close the conflicting app and restart TextFixer. You can still paste text into this window.");
+        }
     }
 
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) => Dispatch(() =>

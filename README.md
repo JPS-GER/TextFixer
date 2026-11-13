@@ -16,7 +16,7 @@ Locked retired files are retained and retried for cleanup on a later publish. Th
 
 The skill is available project-locally at `skills/hot-swap-update/SKILL.md`, referenced by `AGENTS.md`. Global installation into `C:\Users\JPS\.codex\skills` was denied by the filesystem sandbox. `install-codex-skill.ps1` is prepared for execution outside that restriction.
 
-The window opens on first launch. Closing it hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q is the default global shortcut; startup reports if another app has registered it.
+The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q is the default global shortcut; startup reports if another app has registered it.
 
 ## First test
 

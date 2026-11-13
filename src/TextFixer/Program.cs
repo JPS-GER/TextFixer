@@ -19,7 +19,7 @@ static class Program
             return 0;
         }
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplication());
+        Application.Run(new TrayApplication(startHidden: args.Contains(Autostart.Argument)));
         return 0;
     }    
 }
