@@ -181,8 +181,6 @@ body { padding-bottom:48px; }
 .review-tab .tab-state { display:inline-block; box-sizing:border-box; width:14px; height:14px; margin-left:4px; border-radius:50%; font:700 10px/12px "Segoe UI",Arial; text-align:center; }
 .review-tab.state-running:disabled { opacity:1; color:var(--text); border-color:var(--accent-edge); }
 .review-tab.state-running .tab-state { border:2px solid var(--accent-edge); border-top-color:var(--accent); animation:tab-spin .8s linear infinite; }
-.review-tab.state-queued:disabled { opacity:.7; }
-.review-tab.state-queued .tab-state { border:1.5px dashed var(--muted); }
 .review-tab.state-failed:disabled { opacity:1; color:var(--bad); }
 .review-tab.state-failed .tab-state { background:var(--bad-bg); color:var(--bad); border:1px solid var(--bad); }
 .review-tab.state-stopped .tab-state { color:var(--muted); }

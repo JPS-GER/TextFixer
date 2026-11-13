@@ -282,10 +282,14 @@ console.log('PASS: read-only Alt+Q capture offers copy only.');
  const all=['spelling','grammar','punctuation','wording','worth'];
  message({type:'capture',text:original,canReplace:true});
  message({type:'busy',busy:true,action:'check'});
- const step=(i,result,error=null)=>{message({type:'tabProgress',original,running:all[i],done:all.slice(0,i),pending:all.slice(i+1)});message({type:'tabResult',original,focus:all[i],result,error,pending:all.slice(i+1),...meta});};
- message({type:'tabProgress',original,running:'spelling',done:[],pending:all.slice(1)});
+ // All requests run at once; answers arrive in any order.
+ let open=[...all];
+ const step=(i,result,error=null)=>{open=open.filter(k=>k!==all[i]);message({type:'tabResult',original,focus:all[i],result,error,pending:open,...meta});};
+ message({type:'tabProgress',original,running:all});
  const states=()=>element('review-tabs').children.map(b=>b.className.replace('review-tab','').replace('selected','').trim());
- assert.deepEqual(states().slice(0,5),['state-running','state-queued','state-queued','state-queued','state-queued'],'first tab running, rest queued');
+ assert.deepEqual(states().slice(0,5),['state-running','state-running','state-running','state-running','state-running'],'all tabs run at once');
+ step(2,{correctedText:original.replace('frauen die','frauen, die'),findings:[],corrections:[]});
+ assert.ok(element('notice').textContent.includes('Checking Spelling, Grammar, Wording and Worth checking.'),'notice lists the tabs still running');
  step(0,{correctedText:original.replace('frauen','Frauen'),findings:[],corrections:[]});
  assert.equal(element('results').hidden,false,'first tab result is shown while the rest run');
  assert.equal(element('copy').disabled,true,'copy waits for the remaining tabs');
@@ -293,8 +297,7 @@ console.log('PASS: read-only Alt+Q capture offers copy only.');
  assert.equal(spelling.disabled,false,'finished tab can be reviewed while the rest run');
  spelling.onclick();
  step(1,{correctedText:original.replace('dass','das'),findings:[],corrections:[]});
- step(2,{correctedText:original.replace('frauen die','frauen, die'),findings:[],corrections:[]});
- assert.deepEqual(states().slice(0,5),['state-ready','state-ready','state-ready','state-queued','state-queued'],'answered tabs ready, later tabs queued until their request starts');
+ assert.deepEqual(states().slice(0,5),['state-ready','state-ready','state-ready','state-running','state-running'],'answered tabs ready, the others still running');
  step(3,null,'Network error');
  step(4,{correctedText:original,corrections:[],findings:[{kind:'ambiguity',explanation:'?',quotes:['Leute'],suggestedRewrite:null}]});
  message({type:'busy',busy:false});
@@ -310,7 +313,9 @@ console.log('PASS: one request per tab shows progressive results with tab states
  const all=['spelling','grammar','punctuation','wording','worth'];
  message({type:'capture',text:original,canReplace:true});message({type:'busy',busy:true,action:'check'});
  const answers=[original.replace('das','dass'),original.replace('das','dass'),original.replace('glaube','glaube,'),original.replace('das','dass'),original];
- answers.forEach((correctedText,i)=>{message({type:'tabProgress',original,running:all[i],done:all.slice(0,i),pending:all.slice(i+1)});message({type:'tabResult',original,focus:all[i],result:{correctedText,findings:[],corrections:[]},error:null,pending:all.slice(i+1),...meta});});
+ message({type:'tabProgress',original,running:all});
+ // Arrival order differs from tab order.
+ [3,2,0,4,1].forEach((i,n,order)=>message({type:'tabResult',original,focus:all[i],result:{correctedText:answers[i],findings:[],corrections:[]},error:null,pending:order.slice(n+1).map(j=>all[j]),...meta}));
  message({type:'busy',busy:false});
  assert.equal(element('preview').textContent,'Ich glaube, dass wir gewinnen.','duplicate tab fixes are applied once');
 }

@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const post=(action,extra={})=>window.chrome.webview.postMessage({action,...extra});
 let connected=false,busy=false,canReplace=false,readOnlyCapture=false,sourceText='',reviewOriginal='',parts=[],captureMode='clipboard',richClipboard=false;
 let pendingAutoCheck=false;
-// "One request per tab" review: tabState holds ready | running | queued | failed | stopped per requested tab.
+// "One request per tab" review: tabState holds ready | running | failed | stopped per requested tab.
 let reviewMode='single',partialReview=false,tabState={},tabResults={},tabErrors={},autoTab=true;
 const focusOrder=['spelling','grammar','punctuation','wording','worth'];
 function locked(){return busy&&!partialReview;}
@@ -37,7 +37,7 @@ function renderTabs(){
   $('worth-results').hidden=activeTab!=='worth';
   $('formatting-results').hidden=activeTab!=='formatting'||captureMode==='chrome'||!formattingSuggestions.length;
 }
-const tabStateTitle={running:'Checking now',queued:'Queued',failed:'Could not be checked',stopped:'Stopped'};
+const tabStateTitle={running:'Checking now',failed:'Could not be checked',stopped:'Stopped'};
 function focusParts(original){
   // Each tab answer fixes only its own category. Earlier (left) tabs win where two answers touch the same text.
   const previous=new Map(parts.filter(p=>p.changed).map(p=>[`${p.start}|${p.end}|${p.after}`,p.accepted]));
@@ -67,9 +67,10 @@ function focusParts(original){
   return merged;
 }
 function tabProgressNotice(){
-  const running=focusOrder.find(k=>tabState[k]==='running');
-  if(!running)return;
-  notice(`Checking ${reviewTabs.find(([k])=>k===running)[1]} (${focusOrder.indexOf(running)+1} of ${focusOrder.length}). Finished tabs are ready to review.`);
+  const names=focusOrder.filter(k=>tabState[k]==='running').map(k=>reviewTabs.find(([t])=>t===k)[1]);
+  if(!names.length)return;
+  const list=names.length>1?names.slice(0,-1).join(', ')+' and '+names.at(-1):names[0];
+  notice(`Checking ${list}. Finished tabs are ready to review.`);
 }
 function applyReviewMeta(m){captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;showFormatting(m.formattingSuggestions||[]);$('model').textContent=m.model||'';}
 function readyNotice(){
@@ -275,14 +276,13 @@ window.chrome.webview.addEventListener('message',event=>{
     $('setup-details').open=!m.connected;$('extension-path').textContent=m.folder||'chrome-extension';$('extension-folder').disabled=!m.folder;
   }
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
-  if(m.type==='busy'){busy=m.busy;if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running'||tabState[k]==='queued')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
+  if(m.type==='busy'){busy=m.busy;if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
   if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;}
   if(m.type==='tabProgress'){
     if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
-    for(const k of m.done||[])if(!tabState[k]||tabState[k]==='queued'||tabState[k]==='running')tabState[k]=tabState[k]==='failed'?'failed':'ready';
-    tabState[m.running]='running';for(const k of m.pending||[])tabState[k]='queued';
+    for(const k of m.running||[])tabState[k]='running';
     showChanges();tabProgressNotice();
   }
   if(m.type==='tabResult'){

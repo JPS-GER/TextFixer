@@ -19,3 +19,25 @@ Model: gpt-6.1-sol. 10 texts (German and English) with 30 planted mistakes. Requ
 Per-tab results are merged with the app logic (`focusParts` in `app.js`). The first run exposed a merge bug: the same fix from several tabs ("das" -> "dass") was applied twice ("dasss"); fixed, and the scores above use the fixed merge.
 
 Files: `texts.json` (texts and planted mistakes), `results.json` (raw answers and timings per request), `evaluate.cjs` (scoring: `node evaluate.cjs`, or `node evaluate.cjs <id>` for the merged per-tab text), `Program.cs` and `bench.csproj` (runner; uses the signed-in ChatGPT plan, 6 requests per text).
+
+## Parallel per-tab run
+
+Second run of the same texts with the five tab requests sent at the same time (`parallel/`). Times in seconds; each tab time is measured from the start of the run, so the slowest tab equals the total.
+
+| Text | Single | Parallel: total | first tab | Spelling | Grammar | Punctuation | Wording | Worth checking |
+|---|---|---|---|---|---|---|---|---|
+| de-email | 7.7 | 7.7 | 4.9 | 7.7 | 5.5 | 7.2 | 4.9 | 4.9 |
+| de-dass-das | 5.9 | 6.0 | 3.6 | 5.3 | 6.0 | 5.4 | 5.1 | 3.6 |
+| en-report | 7.7 | 13.7 | 3.9 | 5.0 | 13.7 | 7.4 | 4.8 | 3.9 |
+| en-email | 7.4 | 8.5 | 4.5 | 5.2 | 7.8 | 8.5 | 4.5 | 4.6 |
+| de-technik | 16.7 | 11.7 | 4.5 | 6.1 | 4.5 | 6.5 | 6.1 | 11.7 |
+| en-claims | 10.6 | 9.5 | 3.6 | 3.9 | 3.6 | 6.7 | 4.4 | 9.5 |
+| de-lang | 8.9 | 9.1 | 6.6 | 8.5 | 9.1 | 8.7 | 9.1 | 6.6 |
+| en-clean | 3.6 | 4.8 | 3.3 | 3.3 | 4.8 | 4.2 | 3.9 | 3.7 |
+| de-chat | 5.5 | 11.4 | 3.6 | 7.2 | 11.4 | 6.5 | 7.1 | 3.6 |
+| en-mixed | 6.4 | 12.4 | 4.2 | 12.4 | 6.2 | 4.2 | 6.5 | 4.5 |
+| **Average** | **8.0** | **9.5** | **4.3** | | | | | |
+
+All 50 requests succeeded; no rate limiting. Fixed: single 30/30, parallel 29/30 (en-email used "tomorrow. I just" instead of the expected semicolon, also a valid fix). Findings 4 / 4.
+
+Result: sequential per-tab checks (31.6 s average) are not worth the wait; in parallel the total is close to a single request and the first tab is ready after about 4 s. The app sends per-tab requests in parallel since this run.

@@ -131,28 +131,48 @@ internal sealed class ReviewWindow : Form
     private bool ReadOnlyCapture => _chromeCapture is null && _capture?.Editable == false;
     private bool CanReplace => _chromeCapture is not null || (_capture is not null && !ReadOnlyCapture);
     private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
-    /// <summary>One request per review tab, left to right. Each answer is shown as soon as it arrives.</summary>
+    /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives.</summary>
     private async Task CheckByTabAsync(string original, CancellationToken cancellationToken)
     {
         var tabs = ReviewFocus.All;
-        for (var i = 0; i < tabs.Count; i++)
+        // Continuations run on the UI thread, so the running list and Send need no locking.
+        var running = tabs.ToList();
+        using var run = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Send(new { type = "tabProgress", original, running = tabs.ToArray() });
+
+        async Task CheckTabAsync(string focus)
         {
-            var focus = tabs[i];
             Contracts.ReviewResult? result = null;
             string? error = null;
-            Send(new { type = "tabProgress", original, running = focus, done = tabs.Take(i).ToArray(), pending = tabs.Skip(i + 1).ToArray() });
-            try { result = await _service.CheckAsync(original, focus, cancellationToken); }
+            try { result = await _service.CheckAsync(original, focus, run.Token); }
             catch (OperationCanceledException) { throw; }
             catch (ChatGptServiceException ex) when (!ex.RequiresSignIn && ex.Code != ChatGptProtocol.UsageLimitError) { error = ex.Message; }
             catch (HttpRequestException ex) { error = ex.Message; }
+            catch
+            {
+                // Sign-in problems and an exhausted usage limit stop the other requests too.
+                run.Cancel();
+                throw;
+            }
+            running.Remove(focus);
             Send(new
             {
                 type = "tabResult", original, focus, result, error,
-                pending = tabs.Skip(i + 1).ToArray(),
+                pending = running.ToArray(),
                 formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [],
                 canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null,
                 model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome",
             });
+        }
+
+        var requests = tabs.Select(CheckTabAsync).ToArray();
+        try { await Task.WhenAll(requests); }
+        catch
+        {
+            // Report the error that stopped the run, not the cancellations it caused.
+            var stop = requests.Where(t => t.IsFaulted).Select(t => t.Exception!.InnerException!).FirstOrDefault(e => e is not OperationCanceledException);
+            if (stop is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(stop);
+            throw;
         }
     }
 
