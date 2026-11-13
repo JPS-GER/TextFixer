@@ -14,11 +14,14 @@ internal sealed class AppSettings
     public string ReviewMode { get; set; } = SingleReview;
     internal const string SingleReview = "single", FocusedReview = "focused";
 
-    /// <summary>Keep straight quotation marks and apostrophes instead of typographic ones.</summary>
-    public bool StraightQuotes { get; set; }
+    /// <summary>ChatGPT model slug chosen in Settings; null uses the first model the account lists.</summary>
+    public string? Model { get; set; }
 
-    /// <summary>Keep the plain hyphen instead of en or em dashes.</summary>
-    public bool PlainDashes { get; set; }
+    /// <summary>Model slug for Alt+E translations; null uses the review model.</summary>
+    public string? TranslationModel { get; set; }
+
+    /// <summary>Mode per <see cref="Punctuation.Rules"/> key: keep, plain or typographic.</summary>
+    public Dictionary<string, string> PunctuationStyle { get; } = Punctuation.Defaults();
 
     private AppSettings(string path) => _path = path;
 
@@ -34,20 +37,30 @@ internal sealed class AppSettings
                 settings.ClipboardHistory = history.GetBoolean();
             if (document.RootElement.TryGetProperty("reviewMode", out var mode) && mode.ValueKind == JsonValueKind.String && mode.GetString() is SingleReview or FocusedReview)
                 settings.ReviewMode = mode.GetString()!;
-            if (document.RootElement.TryGetProperty("straightQuotes", out var quotes) && quotes.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                settings.StraightQuotes = quotes.GetBoolean();
-            if (document.RootElement.TryGetProperty("plainDashes", out var dashes) && dashes.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                settings.PlainDashes = dashes.GetBoolean();
+            if (document.RootElement.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.String && model.GetString() is { Length: > 0 and <= 200 } slug)
+                settings.Model = slug;
+            if (document.RootElement.TryGetProperty("translationModel", out var translationModel) && translationModel.ValueKind == JsonValueKind.String && translationModel.GetString() is { Length: > 0 and <= 200 } translationSlug)
+                settings.TranslationModel = translationSlug;
+            if (document.RootElement.TryGetProperty("punctuationStyle", out var style) && style.ValueKind == JsonValueKind.Object)
+                settings.SetPunctuationStyle(style);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
         return settings;
+    }
+
+    /// <summary>Takes the known keys with a valid mode; anything else is ignored.</summary>
+    internal void SetPunctuationStyle(JsonElement style)
+    {
+        foreach (var rule in Punctuation.Rules)
+            if (style.TryGetProperty(rule.Key, out var mode) && mode.ValueKind == JsonValueKind.String && Punctuation.IsMode(mode.GetString()))
+                PunctuationStyle[rule.Key] = mode.GetString()!;
     }
 
     internal void Save()
     {
         var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, straightQuotes = StraightQuotes, plainDashes = PlainDashes }, Options));
+        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel }, Options));
         File.Move(temp, _path, overwrite: true);
     }
 }

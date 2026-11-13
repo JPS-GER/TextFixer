@@ -112,6 +112,23 @@ dialog .chrome-setup { margin-bottom:0; }
 .startup-option input { margin-top:3px; }
 #translation-view pre { max-height:480px; font-size:15px; }
 #translation-view details { margin-top:12px; }
+.model-choice { display:block; }
+.model-choice .hint { margin:0 0 8px; }
+.model-choice h4 { margin:4px 0 8px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.model-choice h4 ~ h4 { margin-top:16px; }
+.model-choice.empty h4 { display:none; }
+.model-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px 16px; }
+.model-option { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); cursor:pointer; }
+.model-option input { accent-color:var(--accent); margin:0; }
+.model-option small { color:var(--muted); }
+.punctuation-style { display:block; }
+.punctuation-style > .hint { margin:0 0 6px; }
+.style-option { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:16px; padding:10px 0; border-top:1px solid var(--edge); }
+.style-option p { margin:2px 0 0; }
+.style-choices { display:flex; gap:16px; flex-wrap:wrap; }
+.style-choices label { display:flex; align-items:center; gap:6px; white-space:nowrap; font-size:13px; color:var(--text); cursor:pointer; }
+.style-choices input { accent-color:var(--accent); margin:0; }
+.style-option code { font:14px Consolas,"Segoe UI",monospace; color:var(--text); padding:0 3px; }
 .revise-translation { display:flex; gap:10px; margin-top:12px; }
 .revise-translation input { flex:1; min-width:0; border:1px solid var(--edge); border-radius:7px; padding:9px 12px; background:var(--room-1); font:14px "Segoe UI",Arial; color:var(--text); caret-color:var(--accent); }
 .revise-translation input::placeholder { color:var(--muted); }

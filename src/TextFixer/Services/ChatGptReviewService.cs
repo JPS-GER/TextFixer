@@ -33,13 +33,13 @@ public sealed class ChatGptReviewService : IReviewService
     /// <summary>Model slug to use when the account lists it; otherwise the first listed model is used.</summary>
     public string? PreferredModel { get; set; }
 
-    /// <summary>Asks for straight quotation marks and apostrophes only.</summary>
-    public bool StraightQuotes { get; set; }
+    /// <summary>Model for translations and their revisions; null uses <see cref="PreferredModel"/>.</summary>
+    public string? PreferredTranslationModel { get; set; }
 
-    /// <summary>Asks for plain hyphens instead of en or em dashes.</summary>
-    public bool PlainDashes { get; set; }
+    /// <summary>Punctuation style sent as prompt rules (<see cref="Punctuation"/>).</summary>
+    public IReadOnlyDictionary<string, string> PunctuationStyle { get; set; } = Punctuation.Defaults();
 
-    private string Style => ReviewPrompt.StyleRules(StraightQuotes, PlainDashes);
+    private string Style => Punctuation.PromptRules(PunctuationStyle);
 
     /// <summary>Model slug used by the latest check.</summary>
     public string? ActiveModel { get; private set; }
@@ -134,7 +134,7 @@ public sealed class ChatGptReviewService : IReviewService
 
         var output = await WithAccessTokenAsync(async token =>
         {
-            var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
+            var model = await ResolveModelAsync(token, cancellationToken, translation: true).ConfigureAwait(false);
             return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, Style), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -156,7 +156,7 @@ public sealed class ChatGptReviewService : IReviewService
 
         var output = await WithAccessTokenAsync(async token =>
         {
-            var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
+            var model = await ResolveModelAsync(token, cancellationToken, translation: true).ConfigureAwait(false);
             return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, Style), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -190,13 +190,14 @@ public sealed class ChatGptReviewService : IReviewService
         }
     }
 
-    private async Task<string> ResolveModelAsync(string token, CancellationToken cancellationToken)
+    /// <param name="translation">Use <see cref="PreferredTranslationModel"/>, falling back to the review model.</param>
+    private async Task<string> ResolveModelAsync(string token, CancellationToken cancellationToken, bool translation = false)
     {
         await _modelGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             _models ??= await _responses.ListModelsAsync(token, cancellationToken).ConfigureAwait(false);
-            var preferred = PreferredModel;
+            var preferred = translation ? PreferredTranslationModel ?? PreferredModel : PreferredModel;
             var model = _models.FirstOrDefault(m => m.Slug == preferred) ?? _models[0];
             ActiveModel = model.Slug;
             return model.Slug;

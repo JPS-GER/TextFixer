@@ -86,7 +86,9 @@ internal sealed class ReviewWindow : Form
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
     {
         _history = history; _clipboardMonitor = monitor; _settings = settings;
-        _service.StraightQuotes = settings.StraightQuotes; _service.PlainDashes = settings.PlainDashes;
+        _service.PunctuationStyle = new Dictionary<string, string>(settings.PunctuationStyle);
+        _service.PreferredModel = settings.Model;
+        _service.PreferredTranslationModel = settings.TranslationModel;
         history.Changed += (_, _) => SendHistory();
     }
     internal void ChromeConnected() => SendChromeStatus();
@@ -178,7 +180,26 @@ internal sealed class ReviewWindow : Form
         }
     }
 
-    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, straightQuotes = _settings?.StraightQuotes ?? false, plainDashes = _settings?.PlainDashes ?? false });
+    private IReadOnlyList<ChatGptModel>? _modelList;
+
+    /// <summary>Models the signed-in account can use, with the saved choice (null: automatic, the first listed).</summary>
+    private async Task SendModelsAsync()
+    {
+        var selected = _settings?.Model;
+        var translationSelected = _settings?.TranslationModel;
+        if (!(await _service.GetStatusAsync()).Connected) { Send(new { type = "models", connected = false, models = Array.Empty<object>(), selected, translationSelected }); return; }
+        try
+        {
+            _modelList = await _service.ListModelsAsync();
+            Send(new { type = "models", connected = true, models = _modelList.Select(m => new { m.Slug, m.DisplayName }), selected, translationSelected });
+        }
+        catch (Exception ex) when (ex is ChatGptServiceException or HttpRequestException)
+        {
+            Send(new { type = "models", connected = true, models = Array.Empty<object>(), selected, translationSelected, error = ex.Message });
+        }
+    }
+
+    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, punctuationStyle = _settings?.PunctuationStyle ?? Punctuation.Defaults() });
 
     private void SendHistory()
     {
@@ -328,11 +349,23 @@ internal sealed class ReviewWindow : Form
                 HandleHistory(action, root);
                 return;
             }
+            if (action == "models") { await SendModelsAsync(); return; }
+            if (action == "model" && _settings is not null)
+            {
+                var slug = root.TryGetProperty("slug", out var slugElement) && slugElement.ValueKind == JsonValueKind.String ? slugElement.GetString() : null;
+                if (slug is not null && _modelList?.Any(m => m.Slug == slug) != true) return;
+                var translation = root.TryGetProperty("task", out var task) && task.GetString() == "translate";
+                if (translation) { _settings.TranslationModel = slug; _service.PreferredTranslationModel = slug; }
+                else { _settings.Model = slug; _service.PreferredModel = slug; }
+                try { _settings.Save(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                await SendModelsAsync();
+                return;
+            }
             if (action == "typography" && _settings is not null)
             {
-                _settings.StraightQuotes = root.TryGetProperty("straightQuotes", out var quotes) && quotes.ValueKind == JsonValueKind.True;
-                _settings.PlainDashes = root.TryGetProperty("plainDashes", out var dashes) && dashes.ValueKind == JsonValueKind.True;
-                _service.StraightQuotes = _settings.StraightQuotes; _service.PlainDashes = _settings.PlainDashes;
+                if (root.TryGetProperty("style", out var style) && style.ValueKind == JsonValueKind.Object) _settings.SetPunctuationStyle(style);
+                _service.PunctuationStyle = new Dictionary<string, string>(_settings.PunctuationStyle);
                 try { _settings.Save(); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
                 SendReviewMode();

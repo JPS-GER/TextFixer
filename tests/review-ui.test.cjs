@@ -349,7 +349,8 @@ console.log('PASS: duplicate fixes from several tabs are applied once.');
 console.log('PASS: Alt+E translates the capture.');
 {
  // Punctuation style: introduced typographic quotes and dashes become straight; the user's own stay.
- message({type:'reviewMode',mode:'single',straightQuotes:true,plainDashes:true});
+ const keepAll={quotes:'keep',dashes:'keep',ellipsis:'keep',spaces:'keep',multiply:'keep',arrows:'keep',primes:'keep'};
+ message({type:'reviewMode',mode:'single',punctuationStyle:keepAll});
  const original='Er sagte "hallo" - und ging. Sie las „Faust“.';
  message({type:'capture',text:original,canReplace:true});
  message({type:'result',original,result:{correctedText:'Er sagte „Hallo“ – und ging. Sie las „Faust“.',findings:[{kind:'ambiguity',explanation:'?',quotes:['und ging'],suggestedRewrite:'und ging – sofort'}],corrections:[]},canReplace:true,model:'m',mode:'clipboard'});
@@ -358,9 +359,28 @@ console.log('PASS: Alt+E translates the capture.');
  message({type:'busy',busy:false});
  message({type:'translation',original:'He said "yes".',translation:'Er sagte „ja“.',canReplace:true,readOnly:false,model:'m'});
  assert.equal(element('translation-text').textContent,'Er sagte "ja".');
- message({type:'reviewMode',mode:'single',straightQuotes:false,plainDashes:false});
+ {
+  // Make plain: the user's own typographic characters become Punctuation corrections; Allow typographic leaves answers alone.
+  message({type:'reviewMode',mode:'single',punctuationStyle:{...keepAll,quotes:'plain',spaces:'plain',ellipsis:'plain',arrows:'typographic'}});
+  const own='Sie las \u201EFaust\u201C\u2026 15\u00A0% A \u2192 B';
+  message({type:'capture',text:own,canReplace:true});
+  message({type:'result',original:own,result:{correctedText:own.replace('A \u2192 B','A \u2192 B \u2192 C'),findings:[],corrections:[]},canReplace:true,model:'m',mode:'clipboard'});
+  assert.equal(element('preview').textContent,'Sie las "Faust"... 15 % A \u2192 B \u2192 C','plain groups convert the user text; typographic arrows stay');
+  const punctuation=element('review-tabs').children.find(b=>b.dataset.category==='punctuation');
+  assert.ok(Number(punctuation.children[1].textContent)>=2,'style conversions are Punctuation corrections');
+  // One request per tab: style conversions come once, from the Punctuation tab.
+  const all=['spelling','grammar','punctuation','wording','worth'];
+  message({type:'reviewMode',mode:'focused',punctuationStyle:{...keepAll,quotes:'plain'}});
+  const text='Er sagte \u201Ehallo\u201C.';
+  message({type:'capture',text,canReplace:true});message({type:'busy',busy:true,action:'check'});
+  message({type:'tabProgress',original:text,running:all});
+  all.forEach((focus,i)=>message({type:'tabResult',original:text,focus,result:{correctedText:focus==='spelling'?text.replace('hallo','Hallo'):text,findings:[],corrections:[]},error:null,pending:all.slice(i+1),canReplace:true,readOnly:false,canPreserveFormatting:false,formattingSuggestions:[],model:'m',mode:'clipboard'}));
+  message({type:'busy',busy:false});
+  assert.equal(element('preview').textContent,'Er sagte "Hallo".');
+ }
+ message({type:'reviewMode',mode:'single',punctuationStyle:keepAll});
 }
-console.log('PASS: punctuation style keeps straight quotes and hyphens.');
+console.log('PASS: punctuation style keeps, converts or allows each group.');
 {
  // Translation change request: sends source, current translation and the wish; the answer replaces the translation.
  const original='Kannst du mir die Datei schicken?';
@@ -382,3 +402,29 @@ console.log('PASS: punctuation style keeps straight quotes and hyphens.');
  assert.equal(sent.length,before,'empty request is not sent');
 }
 console.log('PASS: translation change requests revise the translation.');
+{
+ // Settings > Model: Automatic plus each listed model; choosing one saves its slug.
+ const models=[{slug:'gpt-a',displayName:'GPT A'},{slug:'gpt-b',displayName:'GPT B'}];
+ message({type:'models',connected:true,models,selected:'gpt-b'});
+ const options=element('model-list').children;
+ assert.deepEqual(options.map(o=>o.children[1].textContent),['Automatic','GPT A','GPT B']);
+ assert.equal(options[0].children[2].textContent,'Uses GPT A');
+ assert.deepEqual(options.map(o=>o.children[0].checked),[false,false,true],'saved model is selected');
+ options[1].children[0].checked=true;options[1].children[0].onchange();
+ assert.deepEqual({...sent.at(-1)},{action:'model',slug:'gpt-a',task:'review'});
+ options[0].children[0].checked=true;options[0].children[0].onchange();
+ assert.deepEqual({...sent.at(-1)},{action:'model',slug:null,task:'review'},'Automatic clears the choice');
+ const translation=element('translation-model-list').children;
+ assert.deepEqual(translation.map(o=>o.children[1].textContent),['Same as review','GPT A','GPT B']);
+ assert.equal(translation[0].children[2].textContent,'Uses GPT B','follows the chosen review model');
+ assert.equal(translation[0].children[0].checked,true);
+ translation[1].children[0].checked=true;translation[1].children[0].onchange();
+ assert.deepEqual({...sent.at(-1)},{action:'model',slug:'gpt-a',task:'translate'});
+ message({type:'models',connected:true,models,selected:'gone'});
+ assert.equal(element('model-list').children[0].children[0].checked,true,'missing model falls back to Automatic');
+ assert.ok(element('model-status').textContent.includes('not available'));
+ message({type:'models',connected:false,models:[],selected:null});
+ assert.equal(element('model-list').children.length,0);
+ assert.equal(element('model-status').textContent,'Sign in to ChatGPT to choose a model.');
+}
+console.log('PASS: model choice lists models and saves the selection.');

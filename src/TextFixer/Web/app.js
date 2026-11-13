@@ -5,7 +5,8 @@ let pendingAutoCheck=false;
 // Alt+E captures translate instead of review.
 let captureTask='review',translationOriginal='',translationText='';
 // Settings > Punctuation style.
-let punctuationStyle={straightQuotes:false,plainDashes:false};
+let punctuationStyle={quotes:'keep',dashes:'keep',ellipsis:'keep',spaces:'keep',multiply:'keep',arrows:'keep',primes:'keep'};
+const styledParts=(original,corrected,corrections,styleAll=true)=>reviewStyleParts(reviewParts(original,styleAll?reviewStyleText(corrected,punctuationStyle):corrected,corrections,punctuationStyle.spaces==='plain'),punctuationStyle);
 const styledFindings=list=>(list||[]).map(f=>({...f,suggestedRewrite:reviewPlainStyle(f.suggestedRewrite,f.quotes?.[0]||'',punctuationStyle),dismissed:false}));
 // "One request per tab" review: tabState holds ready | running | failed | stopped per requested tab.
 let reviewMode='single',partialReview=false,tabState={},tabResults={},tabErrors={},autoTab=true;
@@ -53,9 +54,10 @@ function focusParts(original){
   const duplicate=p=>{let out='',pos=p.start;for(const k of kept.filter(k=>k.start>=p.start&&k.end<=p.end).sort((a,b)=>a.start-b.start||a.end-b.end)){out+=original.slice(pos,k.start)+k.after;pos=Math.max(pos,k.end);}return out+original.slice(pos,p.end)===p.after;};
   for(const focus of focusOrder){
     const r=tabResults[focus];if(!r||focus==='worth')continue;
-    for(const p of reviewStyleParts(reviewParts(original,r.correctedText,r.corrections),punctuationStyle)){
+    // Style corrections of the user's own text come from the Punctuation tab only, so they are not repeated per tab.
+    for(const p of styledParts(original,r.correctedText,r.corrections,focus==='punctuation')){
       if(!p.changed||duplicate(p))continue;
-      if(!kept.some(k=>clash(k,p))){kept.push({...p,category:focus});continue;}
+      if(!kept.some(k=>clash(k,p))){kept.push({...p,category:p.styleOnly?'punctuation':focus});continue;}
       // Same word changed by two tabs (for example "frauen" -> "Frauen" and "frauen" -> "frauen,"): keep the character-level edit when it fits.
       const e=minimalTextEdit(p.start,p.before,p.after);
       if(e&&!kept.some(k=>clash(k,e)))kept.push({...e,changed:true,accepted:true,category:focus,layoutProtected:/[\r\n]/.test(e.before+e.after)});
@@ -263,10 +265,10 @@ function bulkCorrections(accepted){
 $('source').addEventListener('input',()=>{pendingAutoCheck=false;sourceText=$('source').value;canReplace=false;readOnlyCapture=false;richClipboard=false;$('formatting').hidden=true;$('results').hidden=true;update();});
 $('signin').onclick=()=>post('signin');$('signout').onclick=()=>post('signout');$('usage').onclick=()=>post('usage');$('cancel').onclick=()=>post('cancel');
 $('open-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('help').close();
-$('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');};$('close-settings').onclick=()=>$('settings').close();
+$('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');post('models');};$('close-settings').onclick=()=>$('settings').close();
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
-$('straight-quotes').onchange=$('plain-dashes').onchange=()=>post('typography',{straightQuotes:$('straight-quotes').checked,plainDashes:$('plain-dashes').checked});
+document.querySelectorAll('input[data-style]').forEach(r=>r.onchange=()=>{if(r.checked)post('typography',{style:{[r.dataset.style]:r.value}});});
 $('revise-translation').onsubmit=e=>{e.preventDefault();const request=$('translation-request').value.trim();if(busy||!request||!translationText)return;notice('Revising the translation...');post('reviseTranslation',{text:translationOriginal,translation:translationText,request});};
 $('copy-translation').onclick=()=>post('copyTranslation',{text:translationText});$('apply-translation').onclick=()=>post('applyTranslation',{text:translationText,original:translationOriginal});
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
@@ -286,11 +288,13 @@ window.chrome.webview.addEventListener('message',event=>{
     $('chrome-status').textContent=m.connected?'Connected to Chrome. Use the extension context menu to capture text.':m.registered?'Desktop connection registered. Load or reload the extension, then use its right-click review action.':'Chrome connection is not registered for this executable. Complete setup below.';
     $('setup-details').open=!m.connected;$('extension-path').textContent=m.folder||'chrome-extension';$('extension-folder').disabled=!m.folder;
   }
+  if(m.type==='models')renderModels(m);
+  if(m.type==='connected'&&$('settings').open)post('models');
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
   if(m.type==='busy'){busy=m.busy;if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
-  if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;punctuationStyle={straightQuotes:!!m.straightQuotes,plainDashes:!!m.plainDashes};$('straight-quotes').checked=punctuationStyle.straightQuotes;$('plain-dashes').checked=punctuationStyle.plainDashes;}
+  if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;if(m.punctuationStyle)punctuationStyle={...punctuationStyle,...m.punctuationStyle};for(const r of document.querySelectorAll?.('input[data-style]')||[])r.checked=r.value===(punctuationStyle[r.dataset.style]||'keep');}
   if(m.type==='tabProgress'){
     if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
     for(const k of m.running||[])tabState[k]='running';
@@ -311,7 +315,7 @@ window.chrome.webview.addEventListener('message',event=>{
   }
   if(m.type==='result'){
     partialReview=false;tabState={};
-    activeTab='spelling';reviewOriginal=m.original;parts=reviewStyleParts(reviewParts(m.original,m.result.correctedText,m.result.corrections),punctuationStyle);
+    activeTab='spelling';reviewOriginal=m.original;parts=styledParts(m.original,m.result.correctedText,m.result.corrections);
     reviewFindings=styledFindings(m.result.findings);
     wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);
     captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;showFormatting(m.formattingSuggestions||[]);activeTab=reviewTabs.find(([key])=>tabCount(key)>0)?.[0]||'spelling';showChanges();$('model').textContent=m.model||'';$('results').hidden=false;
@@ -323,6 +327,35 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='error'){notice(`${m.message}${m.code?'\nCode: '+m.code:''}${m.param?' ('+m.param+')':''}`);$('usage').classList.toggle('primary',!!m.usageLimit);if(m.requiresSignIn){connected=false;$('signin').hidden=false;}}
   update();
 });
+// Settings > Model: Automatic uses the first model the account lists; translations can follow the review model.
+function renderModels(m){
+  const models=m.models||[];
+  const listed=slug=>models.some(x=>x.slug===slug)?slug:null;
+  const status=$('model-status');
+  for(const id of ['model-list','translation-model-list'])$(id).replaceChildren();
+  document.querySelector?.('.model-choice')?.classList.toggle('empty',!models.length);
+  if(!m.connected){status.textContent='Sign in to ChatGPT to choose a model.';status.hidden=false;return;}
+  if(m.error){status.textContent='Models could not be loaded: '+m.error;status.hidden=false;return;}
+  const missing=[m.selected,m.translationSelected].some(s=>s&&!listed(s));
+  status.textContent=missing?'A chosen model is not available for this account. The default is used instead.':'';status.hidden=!missing;
+  const render=(list,name,task,chosen,first)=>{
+    const option=(slug,title,note)=>{
+      const label=document.createElement('label');label.className='model-option';
+      const input=document.createElement('input');input.type='radio';input.name=name;input.value=slug??'';input.checked=slug===chosen;
+      input.onchange=()=>{if(input.checked)post('model',{slug,task});};
+      const text=document.createElement('span');text.textContent=title;label.append(input,text);
+      if(note){const hint=document.createElement('small');hint.textContent=note;label.append(hint);}
+      list.append(label);
+    };
+    option(null,first[0],first[1]);
+    for(const x of models)option(x.slug,x.displayName,'');
+  };
+  if(!models.length)return;
+  const review=listed(m.selected);
+  render($('model-list'),'model','review',review,['Automatic','Uses '+models[0].displayName]);
+  const reviewName=models.find(x=>x.slug===review)?.displayName||models[0].displayName;
+  render($('translation-model-list'),'translation-model','translate',listed(m.translationSelected),['Same as review','Uses '+reviewName]);
+}
 update();post('ready');
 
 // Clipboard history view

@@ -11,11 +11,12 @@ function reviewFallback(before,after){
   const a=words(before),b=words(after);
   return a.length<=1&&b.length<=1&&(a.length||b.length)?'spelling':'grammar';
 }
-function reviewParts(original,corrected,corrections=[]){
+// exactSpaces: a non-breaking space against a normal space counts as a change (spaces set to plain).
+function reviewParts(original,corrected,corrections=[],exactSpaces=false){
   let offset=0;
   return textFixerDiff(original,corrected).map(p=>{
     p.start=offset;p.end=offset+p.before.length;offset=p.end;
-    if(p.changed&&p.before.replace(/\u00a0/g,' ')===p.after.replace(/\u00a0/g,' ')){p.changed=false;p.after=p.before;}
+    if(p.changed&&!exactSpaces&&p.before.replace(/\u00a0/g,' ')===p.after.replace(/\u00a0/g,' ')){p.changed=false;p.after=p.before;}
     p.layoutProtected=p.changed&&/[\r\n]/.test(p.before+p.after);
     if(p.layoutProtected)p.accepted=false;
     let best=null,score=-1;
@@ -28,22 +29,40 @@ function reviewParts(original,corrected,corrections=[]){
     return p;
   });
 }
-// Punctuation style: typographic quotes and dashes the answer introduced become straight quotes and hyphens.
-// Characters already present in the reference text (the user's own choice) are kept.
-const reviewStyleQuotes={'\u201E':'"','\u201C':'"','\u201D':'"','\u00AB':'"','\u00BB':'"','\u201A':"'",'\u2018':"'",'\u2019':"'",'\u2039':"'",'\u203A':"'"};
-const reviewStyleDashes={'\u2013':'-','\u2014':'-','\u2012':'-','\u2010':'-','\u2011':'-','\u2212':'-'};
+// Punctuation style per group (Settings > Punctuation style, same keys as Punctuation.cs):
+// keep: characters an answer introduces become plain, the user's own stay; plain: every one becomes plain; typographic: unchanged.
+const reviewStyleMaps={
+  quotes:{'\u201E':'"','\u201C':'"','\u201D':'"','\u00AB':'"','\u00BB':'"','\u201A':"'",'\u2018':"'",'\u2019':"'",'\u2039':"'",'\u203A':"'"},
+  dashes:{'\u2013':'-','\u2014':'-','\u2012':'-','\u2010':'-','\u2011':'-','\u2212':'-'},
+  ellipsis:{'\u2026':'...'},
+  spaces:{'\u00A0':' ','\u202F':' ','\u2009':' ','\u2007':' ','\u2002':' ','\u2003':' ','\u2004':' ','\u2005':' ','\u2006':' ','\u200A':' ','\u205F':' ','\u3000':' '},
+  multiply:{'\u00D7':'x'},
+  arrows:{'\u2192':'->','\u2190':'<-','\u2194':'<->','\u21D2':'=>','\u21D0':'<=','\u21D4':'<=>'},
+  primes:{'\u2032':"'",'\u2033':'"'},
+};
+function reviewStyleMap(style,modes){const map={};for(const [key,chars] of Object.entries(reviewStyleMaps))if(modes.includes(style?.[key]))Object.assign(map,chars);return map;}
+// Text written by an answer (a correction, rewrite or translation). Characters found in reference count as the user's own.
 function reviewPlainStyle(text,reference,style){
-  if(typeof text!=='string'||!style||(!style.straightQuotes&&!style.plainDashes))return text;
-  return text.replace(/[\u201E\u201C\u201D\u00AB\u00BB\u201A\u2018\u2019\u2039\u203A\u2013\u2014\u2012\u2010\u2011\u2212]/g,c=>{
-    const plain=(style.straightQuotes&&reviewStyleQuotes[c])||(style.plainDashes&&reviewStyleDashes[c]);
-    return plain&&!reference.includes(c)?plain:c;
-  });
+  if(typeof text!=='string'||!style)return text;
+  const plain=reviewStyleMap(style,['plain']),keep=reviewStyleMap(style,['keep']);
+  let out='';
+  for(const c of text)out+=plain[c]??(keep[c]!==undefined&&!reference.includes(c)?keep[c]:c);
+  return out;
+}
+// Converts every "plain" group character, so unchanged user text gets style corrections too.
+function reviewStyleText(text,style){
+  const plain=reviewStyleMap(style,['plain']);
+  let out='';for(const c of text)out+=plain[c]??c;return out;
 }
 function reviewStyleParts(parts,style){
+  const all=reviewStyleMap(style,['keep','plain']);
+  const convert=s=>{let out='';for(const c of s)out+=all[c]??c;return out;};
   for(const p of parts){
     if(!p.changed)continue;
     p.after=reviewPlainStyle(p.after,p.before,style);
-    if(p.after===p.before){p.changed=false;p.layoutProtected=false;p.accepted=true;}
+    const same=style?.spaces==='plain'?p.after===p.before:p.after.replace(/\u00a0/g,' ')===p.before.replace(/\u00a0/g,' ');
+    if(same){p.changed=false;p.after=p.before;p.layoutProtected=false;p.accepted=true;continue;}
+    if(convert(p.before)===p.after){p.styleOnly=true;p.category='punctuation';}
   }
   return parts;
 }

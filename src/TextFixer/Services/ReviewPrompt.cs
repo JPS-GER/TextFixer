@@ -157,11 +157,6 @@ internal static class ReviewPrompt
         + "If the text is mainly German, translate it into English; otherwise translate it into German. "
         + "Keep the line breaks, formatting and tone. Answer with only the translation.";
 
-    /// <summary>Extra instructions for the user's punctuation style; empty when both options are off.</summary>
-    public static string StyleRules(bool straightQuotes, bool plainDashes) =>
-        (straightQuotes ? "\n\nUse only straight quotation marks (\") and straight apostrophes ('). Never write typographic quotation marks or apostrophes, and never change straight ones into typographic ones." : "")
-        + (plainDashes ? "\n\nUse only the plain hyphen (-) for dashes. Never write en dashes or em dashes, and never change a hyphen into one." : "");
-
     private const string TranslationRevisionInstructions =
         "You are a careful translator. The user message is a JSON object with three fields: source (the original text), translation (the current translation) and request (what the user wants changed). "
         + "Revise the translation so that it follows the request, for example a more formal tone or a different form of address, and stays faithful to the source. Keep the target language unless the request asks for another one. "
@@ -194,7 +189,7 @@ internal static class ReviewPrompt
 
     /// <param name="structured">Request JSON-schema structured output (text.format); otherwise ask for JSON in the instructions.</param>
     /// <param name="focus">Null for the full review, otherwise one of <see cref="ReviewFocus.All"/>.</param>
-    /// <param name="style">Punctuation style rules from <see cref="StyleRules"/>.</param>
+    /// <param name="style">Punctuation style rules from <see cref="Punctuation.PromptRules"/>.</param>
     public static JsonObject BuildRequest(string model, string text, bool structured, string? focus = null, string style = "")
     {
         var instructions = (focus is null ? Instructions : FocusedInstructions(focus)) + style;
