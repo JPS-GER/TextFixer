@@ -36,6 +36,9 @@ public sealed class ChatGptReviewService : IReviewService
     /// <summary>Model for translations and their revisions; null uses <see cref="PreferredModel"/>.</summary>
     public string? PreferredTranslationModel { get; set; }
 
+    /// <summary>Model for fact checks; null uses <see cref="PreferredModel"/>.</summary>
+    public string? PreferredFactCheckModel { get; set; }
+
     /// <summary>Punctuation style sent as prompt rules (<see cref="Punctuation"/>).</summary>
     public IReadOnlyDictionary<string, string> PunctuationStyle { get; set; } = Punctuation.Defaults();
 
@@ -134,7 +137,7 @@ public sealed class ChatGptReviewService : IReviewService
 
         var output = await WithAccessTokenAsync(async token =>
         {
-            var model = await ResolveModelAsync(token, cancellationToken, translation: true).ConfigureAwait(false);
+            var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
             return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, Style), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -156,7 +159,7 @@ public sealed class ChatGptReviewService : IReviewService
 
         var output = await WithAccessTokenAsync(async token =>
         {
-            var model = await ResolveModelAsync(token, cancellationToken, translation: true).ConfigureAwait(false);
+            var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
             return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, Style), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
@@ -170,6 +173,55 @@ public sealed class ChatGptReviewService : IReviewService
         var lead = source[..(source.Length - source.TrimStart().Length)];
         var trail = source[source.TrimEnd().Length..];
         return lead + translation + trail;
+    }
+
+    /// <summary>
+    /// Checks the factual claims in <paramref name="text"/> with web search. Throws search_unavailable when claims
+    /// were returned but no web search completed, so an answer from memory never counts as a fact check.
+    /// </summary>
+    public async Task<FactCheckResult> FactCheckAsync(string text, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (string.IsNullOrWhiteSpace(text)) return new FactCheckResult([], ActiveModel ?? "", 0, 0);
+        if (text.Length > MaxTextLength)
+        {
+            throw new ChatGptServiceException(
+                "text_too_long", $"The selected text is too long to check (maximum {MaxTextLength:N0} characters).");
+        }
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var (response, model) = await WithAccessTokenAsync(async token =>
+        {
+            var model = await ResolveModelAsync(token, cancellationToken, ModelTask.FactCheck).ConfigureAwait(false);
+            return (await RequestFactCheckAsync(token, model, text, cancellationToken).ConfigureAwait(false), model);
+        }, cancellationToken).ConfigureAwait(false);
+
+        var claims = FactCheckParser.Parse(text, response);
+        var searches = response.SearchCalls.Count(s => s == "completed");
+        if (claims.Length > 0 && searches == 0)
+        {
+            throw new ChatGptServiceException(
+                "search_unavailable", "Web search did not run, so the claims could not be checked. Try again, or choose another fact-check model in Settings.");
+        }
+
+        return new FactCheckResult(claims, model, watch.ElapsedMilliseconds, searches);
+    }
+
+    private async Task<ResponseResult> RequestFactCheckAsync(string token, string model, string text, CancellationToken cancellationToken)
+    {
+        var structured = !_structuredOutputUnsupported;
+        try
+        {
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ChatGptServiceException ex) when (
+            structured
+            && ex.Code == ChatGptProtocol.UnsupportedCapabilityError
+            && (ex.ApiParam is null || ex.ApiParam.StartsWith("text", StringComparison.Ordinal)))
+        {
+            _structuredOutputUnsupported = true;
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<string> RequestReviewAsync(string token, string model, string text, string? focus, CancellationToken cancellationToken)
@@ -190,14 +242,21 @@ public sealed class ChatGptReviewService : IReviewService
         }
     }
 
-    /// <param name="translation">Use <see cref="PreferredTranslationModel"/>, falling back to the review model.</param>
-    private async Task<string> ResolveModelAsync(string token, CancellationToken cancellationToken, bool translation = false)
+    private enum ModelTask { Review, Translate, FactCheck }
+
+    /// <param name="task">Translate and FactCheck use their own preferred model, falling back to the review model.</param>
+    private async Task<string> ResolveModelAsync(string token, CancellationToken cancellationToken, ModelTask task = ModelTask.Review)
     {
         await _modelGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             _models ??= await _responses.ListModelsAsync(token, cancellationToken).ConfigureAwait(false);
-            var preferred = translation ? PreferredTranslationModel ?? PreferredModel : PreferredModel;
+            var preferred = task switch
+            {
+                ModelTask.Translate => PreferredTranslationModel ?? PreferredModel,
+                ModelTask.FactCheck => PreferredFactCheckModel ?? PreferredModel,
+                _ => PreferredModel,
+            };
             var model = _models.FirstOrDefault(m => m.Slug == preferred) ?? _models[0];
             ActiveModel = model.Slug;
             return model.Slug;

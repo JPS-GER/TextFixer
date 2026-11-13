@@ -8,6 +8,12 @@ namespace TextFixer.Services;
 /// <summary>A model the signed-in account can use (GET /v1/models, entries with visibility "list").</summary>
 public sealed record ChatGptModel(string Slug, string DisplayName);
 
+/// <summary>A url_citation annotation. Start/End are UTF-16 offsets into <see cref="ResponseResult.Text"/>, the model output.</summary>
+public sealed record ResponseCitation(int Start, int End, string Url, string? Title);
+
+/// <summary>Output text with its citations and the final status of each web search call.</summary>
+public sealed record ResponseResult(string Text, ResponseCitation[] Citations, string[] SearchCalls);
+
 /// <summary>
 /// Responses API over plain HTTP with SSE parsing. Plan usage requires store:false and stream:true,
 /// and a request counts as successful only after response.completed (models-and-inference).
@@ -58,10 +64,14 @@ internal sealed class ChatGptResponsesClient
     }
 
     /// <summary>Sends a Responses request and returns the concatenated output text.</summary>
-    public async Task<string> StreamTextAsync(string accessToken, JsonObject body, CancellationToken cancellationToken)
+    public async Task<string> StreamTextAsync(string accessToken, JsonObject body, CancellationToken cancellationToken) =>
+        (await StreamResponseAsync(accessToken, body, ChatGptProtocol.InferenceTimeout, cancellationToken).ConfigureAwait(false)).Text;
+
+    /// <summary>Sends a Responses request and returns the output text, citations and web search status.</summary>
+    public async Task<ResponseResult> StreamResponseAsync(string accessToken, JsonObject body, TimeSpan limit, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(ChatGptProtocol.InferenceTimeout);
+        timeout.CancelAfter(limit);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, ChatGptProtocol.ApiBase + "/responses")
         {
@@ -100,12 +110,87 @@ internal sealed class ChatGptResponsesClient
         }
     }
 
-    private static async Task<string> ReadEventStreamAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    /// <summary>
+    /// Collected stream state. Output text is kept per content part; citations keep offsets relative to their part and
+    /// are rebased only in <see cref="Result"/>, once every part's position is known. Annotations may arrive before the
+    /// first delta of their part.
+    /// </summary>
+    private sealed class StreamState
+    {
+        private readonly SortedDictionary<(int Item, int Content), StringBuilder> _parts = new();
+        private readonly Dictionary<(int Item, int Content, int Index), (int Start, int End, string Url, string? Title)> _citations = [];
+        private int _length;
+
+        public Dictionary<string, string> SearchCalls { get; } = [];
+        public int Length => _length;
+
+        public void Append(int item, int content, string text)
+        {
+            if (_length + (long)text.Length > MaxOutputChars)
+            {
+                throw new ChatGptServiceException("response_too_large", "ChatGPT sent a response that is too large.");
+            }
+
+            if (!_parts.TryGetValue((item, content), out var part)) _parts[(item, content)] = part = new StringBuilder();
+            part.Append(text);
+            _length += text.Length;
+        }
+
+        /// <summary>The completed response is authoritative: its output_text parts replace the streamed text.</summary>
+        public void ReplaceText(IReadOnlyList<(int Item, int Content, string Text)> parts)
+        {
+            _parts.Clear();
+            _length = 0;
+            foreach (var (item, content, text) in parts) Append(item, content, text);
+        }
+
+        public ResponseResult Result()
+        {
+            var output = new StringBuilder(_length);
+            var starts = new Dictionary<(int, int), (int Start, int Length)>();
+            foreach (var (key, part) in _parts)
+            {
+                starts[key] = (output.Length, part.Length);
+                output.Append(part);
+            }
+
+            var citations = new List<ResponseCitation>();
+            foreach (var (key, c) in _citations.OrderBy(c => c.Key.Item).ThenBy(c => c.Key.Content).ThenBy(c => c.Key.Index))
+            {
+                // A citation outside its part's text cannot be placed and is dropped.
+                if (!starts.TryGetValue((key.Item, key.Content), out var part) || c.End > part.Length) continue;
+                citations.Add(new ResponseCitation(part.Start + c.Start, part.Start + c.End, c.Url, c.Title));
+            }
+
+            return new(output.ToString(), [.. citations], [.. SearchCalls.Values]);
+        }
+
+        /// <summary>Final annotations replace streamed ones with the same index.</summary>
+        public void AddCitation(int item, int content, int index, JsonElement annotation)
+        {
+            if (JsonRead.String(annotation, "type") != "url_citation" || JsonRead.String(annotation, "url") is not { } url) return;
+            var start = Int(annotation, "start_index");
+            var end = Int(annotation, "end_index");
+            if (item < 0 || content < 0 || start < 0 || end <= start) return;
+            _citations[(item, content, index)] = (start, end, url, JsonRead.String(annotation, "title"));
+        }
+
+        public void AddSearchCall(JsonElement item, int index)
+        {
+            if (JsonRead.String(item, "type") != "web_search_call") return;
+            SearchCalls[JsonRead.String(item, "id") ?? "#" + index] = JsonRead.String(item, "status") ?? "unknown";
+        }
+    }
+
+    private static int Int(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : -1;
+
+    internal static async Task<ResponseResult> ReadEventStreamAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var reader = new StreamReader(stream, Encoding.UTF8);
         var data = new StringBuilder();
-        var output = new StringBuilder();
+        var output = new StreamState();
 
         while (true)
         {
@@ -123,7 +208,7 @@ internal sealed class ChatGptResponsesClient
                     data.Clear();
                     if (completed)
                     {
-                        return output.ToString();
+                        return output.Result();
                     }
                 }
 
@@ -151,14 +236,14 @@ internal sealed class ChatGptResponsesClient
 
         if (data.Length > 0 && HandleEvent(data.ToString(), output))
         {
-            return output.ToString();
+            return output.Result();
         }
 
         throw new ChatGptServiceException("stream_interrupted", "ChatGPT stopped before the answer was complete. Try again.");
     }
 
     /// <returns>True when response.completed arrived.</returns>
-    private static bool HandleEvent(string data, StringBuilder output)
+    private static bool HandleEvent(string data, StreamState state)
     {
         if (data == "[DONE]")
         {
@@ -182,20 +267,32 @@ internal sealed class ChatGptResponsesClient
                 var delta = JsonRead.String(evt, "delta");
                 if (delta is not null)
                 {
-                    if (output.Length + delta.Length > MaxOutputChars)
-                    {
-                        throw new ChatGptServiceException("response_too_large", "ChatGPT sent a response that is too large.");
-                    }
+                    state.Append(Int(evt, "output_index"), Int(evt, "content_index"), delta);
+                }
 
-                    output.Append(delta);
+                return false;
+
+            case "response.output_text.annotation.added":
+                if (evt.TryGetProperty("annotation", out var annotation))
+                {
+                    state.AddCitation(Int(evt, "output_index"), Int(evt, "content_index"), Int(evt, "annotation_index"), annotation);
+                }
+
+                return false;
+
+            case "response.output_item.done":
+                if (evt.TryGetProperty("item", out var doneItem))
+                {
+                    state.AddSearchCall(doneItem, Int(evt, "output_index"));
                 }
 
                 return false;
 
             case "response.completed":
-                if (output.Length == 0 && evt.TryGetProperty("response", out var completed))
+                if (evt.TryGetProperty("response", out var completed))
                 {
-                    AppendOutputText(completed, output);
+                    // Final output text (authoritative when present), citations and search calls.
+                    ReadCompletedResponse(completed, state);
                 }
 
                 return true;
@@ -214,16 +311,23 @@ internal sealed class ChatGptResponsesClient
         }
     }
 
-    /// <summary>Fallback when no deltas arrived: collect output_text parts from the final response object.</summary>
-    private static void AppendOutputText(JsonElement response, StringBuilder output)
+    /// <summary>
+    /// Reads the final response object: search call status, citations, and the output_text parts, which replace the
+    /// streamed text when the final object carries any.
+    /// </summary>
+    private static void ReadCompletedResponse(JsonElement response, StreamState state)
     {
         if (!response.TryGetProperty("output", out var items) || items.ValueKind != JsonValueKind.Array)
         {
             return;
         }
 
+        var texts = new List<(int, int, string)>();
+        var itemIndex = -1;
         foreach (var item in items.EnumerateArray())
         {
+            itemIndex++;
+            state.AddSearchCall(item, itemIndex);
             if (JsonRead.String(item, "type") != "message"
                 || !item.TryGetProperty("content", out var parts)
                 || parts.ValueKind != JsonValueKind.Array)
@@ -231,13 +335,30 @@ internal sealed class ChatGptResponsesClient
                 continue;
             }
 
+            var partIndex = -1;
             foreach (var part in parts.EnumerateArray())
             {
-                if (JsonRead.String(part, "type") == "output_text" && JsonRead.String(part, "text") is { } text)
+                partIndex++;
+                if (JsonRead.String(part, "type") != "output_text") continue;
+                if (JsonRead.String(part, "text") is { Length: > 0 } text)
                 {
-                    output.Append(text);
+                    texts.Add((itemIndex, partIndex, text));
+                }
+
+                if (part.TryGetProperty("annotations", out var annotations) && annotations.ValueKind == JsonValueKind.Array)
+                {
+                    var annotationIndex = -1;
+                    foreach (var annotation in annotations.EnumerateArray())
+                    {
+                        state.AddCitation(itemIndex, partIndex, ++annotationIndex, annotation);
+                    }
                 }
             }
+        }
+
+        if (texts.Count > 0)
+        {
+            state.ReplaceText(texts);
         }
     }
 

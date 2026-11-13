@@ -20,6 +20,9 @@ internal sealed class AppSettings
     /// <summary>Model slug for Alt+E translations; null uses the review model.</summary>
     public string? TranslationModel { get; set; }
 
+    /// <summary>Model slug for Alt+W fact checks; null uses the review model.</summary>
+    public string? FactCheckModel { get; set; }
+
     /// <summary>Mode per <see cref="Punctuation.Rules"/> key: keep, plain or typographic.</summary>
     public Dictionary<string, string> PunctuationStyle { get; } = Punctuation.Defaults();
 
@@ -41,6 +44,8 @@ internal sealed class AppSettings
                 settings.Model = slug;
             if (document.RootElement.TryGetProperty("translationModel", out var translationModel) && translationModel.ValueKind == JsonValueKind.String && translationModel.GetString() is { Length: > 0 and <= 200 } translationSlug)
                 settings.TranslationModel = translationSlug;
+            if (document.RootElement.TryGetProperty("factCheckModel", out var factCheckModel) && factCheckModel.ValueKind == JsonValueKind.String && factCheckModel.GetString() is { Length: > 0 and <= 200 } factCheckSlug)
+                settings.FactCheckModel = factCheckSlug;
             if (document.RootElement.TryGetProperty("punctuationStyle", out var style) && style.ValueKind == JsonValueKind.Object)
                 settings.SetPunctuationStyle(style);
         }
@@ -60,7 +65,7 @@ internal sealed class AppSettings
     {
         var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel }, Options));
+        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel }, Options));
         File.Move(temp, _path, overwrite: true);
     }
 }

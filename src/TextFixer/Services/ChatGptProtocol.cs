@@ -44,6 +44,9 @@ internal static class ChatGptProtocol
     public static readonly TimeSpan SignInTimeout = TimeSpan.FromMinutes(10);
     public static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(30);
     public static readonly TimeSpan InferenceTimeout = TimeSpan.FromSeconds(180);
+
+    /// <summary>Fact checks search the web for every claim and take longer.</summary>
+    public static readonly TimeSpan FactCheckTimeout = TimeSpan.FromSeconds(300);
     public static readonly TimeSpan CallbackRequestTimeout = TimeSpan.FromSeconds(10);
     public static readonly TimeSpan RefreshMargin = TimeSpan.FromSeconds(60);
     public static readonly TimeSpan ClockSkew = TimeSpan.FromSeconds(30);

@@ -81,7 +81,8 @@ internal sealed class ReviewWindow : Form
         if (!WindowFocus.BringOwnWindowForward(Handle)) Diagnostic("Foreground activation was refused by Windows.");
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
-    internal void SetCapture(CapturedText capture, bool translate = false) { _chromeCapture = null; _capture = capture; _translate = translate; SendCapture(); }
+    /// <param name="task">review (Alt+Q), translate (Alt+E) or factcheck (Alt+W): the task the window starts with.</param>
+    internal void SetCapture(CapturedText capture, string task = "review") { _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
     {
@@ -89,6 +90,7 @@ internal sealed class ReviewWindow : Form
         _service.PunctuationStyle = new Dictionary<string, string>(settings.PunctuationStyle);
         _service.PreferredModel = settings.Model;
         _service.PreferredTranslationModel = settings.TranslationModel;
+        _service.PreferredFactCheckModel = settings.FactCheckModel;
         history.Changed += (_, _) => SendHistory();
     }
     internal void ChromeConnected() => SendChromeStatus();
@@ -104,7 +106,7 @@ internal sealed class ReviewWindow : Form
                 var text = message.GetProperty("text").GetString();
                 if (!Guid.TryParse(captureId, out _) || string.IsNullOrWhiteSpace(text) || text.Length > 30000) return;
                 _chromeCapture = new ChromeCapture(sessionId, captureId!, text, message.TryGetProperty("hasFormatting", out var formatting) && formatting.ValueKind == JsonValueKind.True);
-                _capture = null; SendCapture(); Open();
+                _capture = null; _task = "review"; _captureId++; _factSources.Clear(); SendCapture(); Open();
             }
             else if (kind == "applyResult" && _applyingChromeCapture is { } applying
                 && sessionId == applying.SessionId && message.GetProperty("captureId").GetString() == applying.CaptureId)
@@ -133,8 +135,12 @@ internal sealed class ReviewWindow : Form
     private void Send(object value) { if (_ready && !_web.IsDisposed) _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions)); }
     private bool ReadOnlyCapture => _chromeCapture is null && _capture?.Editable == false;
     private bool CanReplace => _chromeCapture is not null || (_capture is not null && !ReadOnlyCapture);
-    private bool _translate;
-    private void SendCapture() => Send(new { type = "capture", task = _translate && _chromeCapture is null ? "translate" : "review", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    private string _task = "review";
+    /// <summary>Increments with every capture. Task requests echo it so the window drops answers for an older capture.</summary>
+    private int _captureId, _replyCaptureId;
+    /// <summary>Source URLs of the last fact check for the current capture; openSource opens only these.</summary>
+    private readonly HashSet<string> _factSources = new(StringComparer.Ordinal);
+    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
     /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives.</summary>
     private async Task CheckByTabAsync(string original, CancellationToken cancellationToken)
     {
@@ -142,7 +148,7 @@ internal sealed class ReviewWindow : Form
         // Continuations run on the UI thread, so the running list and Send need no locking.
         var running = tabs.ToList();
         using var run = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        Send(new { type = "tabProgress", original, running = tabs.ToArray() });
+        Send(new { type = "tabProgress", captureId = _replyCaptureId, original, running = tabs.ToArray() });
 
         async Task CheckTabAsync(string focus)
         {
@@ -161,7 +167,7 @@ internal sealed class ReviewWindow : Form
             running.Remove(focus);
             Send(new
             {
-                type = "tabResult", original, focus, result, error,
+                type = "tabResult", captureId = _replyCaptureId, original, focus, result, error,
                 pending = running.ToArray(),
                 formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [],
                 canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null,
@@ -187,15 +193,16 @@ internal sealed class ReviewWindow : Form
     {
         var selected = _settings?.Model;
         var translationSelected = _settings?.TranslationModel;
-        if (!(await _service.GetStatusAsync()).Connected) { Send(new { type = "models", connected = false, models = Array.Empty<object>(), selected, translationSelected }); return; }
+        var factCheckSelected = _settings?.FactCheckModel;
+        if (!(await _service.GetStatusAsync()).Connected) { Send(new { type = "models", connected = false, models = Array.Empty<object>(), selected, translationSelected, factCheckSelected }); return; }
         try
         {
             _modelList = await _service.ListModelsAsync();
-            Send(new { type = "models", connected = true, models = _modelList.Select(m => new { m.Slug, m.DisplayName }), selected, translationSelected });
+            Send(new { type = "models", connected = true, models = _modelList.Select(m => new { m.Slug, m.DisplayName }), selected, translationSelected, factCheckSelected });
         }
         catch (Exception ex) when (ex is ChatGptServiceException or HttpRequestException)
         {
-            Send(new { type = "models", connected = true, models = Array.Empty<object>(), selected, translationSelected, error = ex.Message });
+            Send(new { type = "models", connected = true, models = Array.Empty<object>(), selected, translationSelected, factCheckSelected, error = ex.Message });
         }
     }
 
@@ -354,9 +361,12 @@ internal sealed class ReviewWindow : Form
             {
                 var slug = root.TryGetProperty("slug", out var slugElement) && slugElement.ValueKind == JsonValueKind.String ? slugElement.GetString() : null;
                 if (slug is not null && _modelList?.Any(m => m.Slug == slug) != true) return;
-                var translation = root.TryGetProperty("task", out var task) && task.GetString() == "translate";
-                if (translation) { _settings.TranslationModel = slug; _service.PreferredTranslationModel = slug; }
-                else { _settings.Model = slug; _service.PreferredModel = slug; }
+                switch (root.TryGetProperty("task", out var task) ? task.GetString() : null)
+                {
+                    case "translate": _settings.TranslationModel = slug; _service.PreferredTranslationModel = slug; break;
+                    case "factcheck": _settings.FactCheckModel = slug; _service.PreferredFactCheckModel = slug; break;
+                    default: _settings.Model = slug; _service.PreferredModel = slug; break;
+                }
                 try { _settings.Save(); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
                 await SendModelsAsync();
@@ -402,7 +412,16 @@ internal sealed class ReviewWindow : Form
                 var folder = ChromeSetup.ExtensionFolder ?? throw new InvalidOperationException("The chrome-extension folder was not found alongside this build.");
                 Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation")) return;
+            if (action == "openSource")
+            {
+                // Only exact https URLs cited by the current fact check; the WebView itself never navigates.
+                var url = root.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String ? urlElement.GetString() : null;
+                if (url is null || !_factSources.Contains(url) || FactCheckParser.ValidUrl(url) is null) return;
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                return;
+            }
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck")) return;
+            _replyCaptureId = root.TryGetProperty("captureId", out var requestCapture) && requestCapture.ValueKind == JsonValueKind.Number && requestCapture.TryGetInt32(out var id) ? id : _captureId;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
             try
@@ -425,13 +444,13 @@ internal sealed class ReviewWindow : Form
                             break;
                         }
                         var result = await _service.CheckAsync(original, _operation.Token);
-                        Send(new { type = "result", original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        Send(new { type = "result", captureId = _replyCaptureId, original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "translate":
                         var source = ReadText(root);
                         if (_capture is not null && _capture.Text != source) _capture = null;
                         var translation = await _service.TranslateAsync(source, _operation.Token);
-                        Send(new { type = "translation", original = source, translation, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        Send(new { type = "translation", captureId = _replyCaptureId, original = source, translation, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "reviseTranslation":
                         var revisedFrom = ReadText(root);
@@ -439,7 +458,19 @@ internal sealed class ReviewWindow : Form
                         var wish = root.TryGetProperty("request", out var wishElement) ? wishElement.GetString() ?? "" : "";
                         if (string.IsNullOrWhiteSpace(current)) throw new InvalidOperationException("Translate the text first.");
                         var revisedTranslation = await _service.ReviseTranslationAsync(revisedFrom, current, wish, _operation.Token);
-                        Send(new { type = "translation", original = revisedFrom, translation = revisedTranslation, revised = true, canReplace = _capture is not null && _capture.Text == revisedFrom && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        Send(new { type = "translation", captureId = _replyCaptureId, original = revisedFrom, translation = revisedTranslation, revised = true, canReplace = _capture is not null && _capture.Text == revisedFrom && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        break;
+                    case "factCheck":
+                        var checkedText = ReadText(root);
+                        if (_capture is not null && _capture.Text != checkedText) _capture = null;
+                        if (_chromeCapture is not null && _chromeCapture.Text != checkedText) _chromeCapture = null;
+                        var facts = await _service.FactCheckAsync(checkedText, _operation.Token);
+                        if (_replyCaptureId == _captureId)
+                        {
+                            _factSources.Clear();
+                            foreach (var cited in facts.Claims.SelectMany(c => c.Sources)) _factSources.Add(cited.Url);
+                        }
+                        Send(new { type = "factCheck", captureId = _replyCaptureId, original = checkedText, result = facts, canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "copyTranslation":
                         TextTransfer.CopyRevision(ReadText(root));

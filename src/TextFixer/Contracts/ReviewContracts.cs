@@ -7,6 +7,16 @@ public sealed record ReviewCorrection(int Start, int End, string After, string C
 public sealed record ReviewResult(string CorrectedText, ReviewFinding[] Findings, ReviewCorrection[] Corrections);
 public sealed record ConnectionStatus(bool Connected, string Message);
 
+/// <summary>A cited web source. Url is an exact absolute https URL as cited by the search.</summary>
+public sealed record FactSource(string Url, string Title, string Domain);
+/// <summary>
+/// A checkable claim. Quote occurs in the checked text. Verdict: supported, wrong, disputed or unverifiable.
+/// Correction replaces Quote and exists only for wrong claims. NoSource: the model gave a verdict without a citation, so it became unverifiable.
+/// </summary>
+public sealed record FactClaim(string Quote, string Verdict, string Explanation, string? Correction, FactSource[] Sources, bool NoSource);
+/// <summary>Empty Claims means no checkable claims. Searches counts completed web searches.</summary>
+public sealed record FactCheckResult(FactClaim[] Claims, string Model, long ElapsedMs, int Searches);
+
 public interface IReviewService
 {
     Task<ConnectionStatus> GetStatusAsync(CancellationToken cancellationToken = default);

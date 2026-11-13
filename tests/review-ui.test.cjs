@@ -389,7 +389,7 @@ console.log('PASS: punctuation style keeps, converts or allows each group.');
  message({type:'translation',original,translation:'Can you send me the file?',canReplace:true,readOnly:false,model:'m'});
  element('translation-request').value='  more formal ';
  element('revise-translation').onsubmit({preventDefault(){}});
- assert.deepEqual({...sent.at(-1)},{action:'reviseTranslation',text:original,translation:'Can you send me the file?',request:'more formal'});
+ assert.deepEqual({...sent.at(-1)},{action:'reviseTranslation',text:original,translation:'Can you send me the file?',request:'more formal',captureId:0});
  message({type:'busy',busy:true,action:'reviseTranslation'});
  assert.equal(element('revise-translation-button').disabled,true,'revise waits while busy');
  message({type:'busy',busy:false});
@@ -428,3 +428,92 @@ console.log('PASS: translation change requests revise the translation.');
  assert.equal(element('model-status').textContent,'Sign in to ChatGPT to choose a model.');
 }
 console.log('PASS: model choice lists models and saves the selection.');
+{
+ // Fact check (Alt+W): verdicts, sources, exact-range corrections, capture generations, task cache, apply invalidation.
+ message({type:'status',status:{connected:true,message:'ok'}});
+ const original='Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Rom und Rom.';
+ const meta={canReplace:true,readOnly:false,canPreserveFormatting:true,mode:'clipboard'};
+ message({type:'busy',busy:false});
+ sent.length=0;
+ message({type:'capture',captureId:7,task:'factcheck',text:original,canReplace:true,readOnly:false,canPreserveFormatting:true});
+ assert.deepEqual({...sent.at(-1)},{action:'factCheck',text:original,captureId:7},'Alt+W capture starts a fact check');
+ const claim=(quote,verdict,extra={})=>({quote,verdict,explanation:'Erklärung.',correction:null,sources:[{url:'https://a.example/x',title:'A',domain:'a.example'}],noSource:false,...extra});
+ const result={claims:[claim('Der Eiffelturm steht in Rom','wrong',{correction:'Der Eiffelturm steht in Paris'}),claim('Er wurde 1889 fertig','supported'),claim('Rom','wrong',{correction:'Paris'}),claim('Er wurde 1889 fertig','unverifiable',{sources:[],noSource:true})],model:'m1',elapsedMs:12000,searches:2};
+ message({type:'factCheck',captureId:6,original,result,...meta});
+ assert.equal(element('factcheck-view').hidden,true,'an answer for an older capture is dropped');
+ message({type:'factCheck',captureId:7,original,result,...meta});
+ assert.equal(element('factcheck-view').hidden,false);
+ assert.equal(element('fact-summary').textContent,"4 claims: 1 supported by the sources found, 2 wrong, 1 can't verify.");
+ assert.equal(element('fact-meta').textContent,'Researched in 12 s with m1');
+ const cards=element('fact-claims').children;
+ assert.equal(cards[1].children[0].textContent,'Supported by the sources found');
+ const fix=cards[0].children.find(c=>c.className==='fact-fix');
+ assert.equal(fix.children[0].checked,false,'corrections start unchecked');
+ assert.equal(element('fact-apply').disabled,true,'nothing to paste before a correction is chosen');
+ fix.children[0].checked=true;fix.children[0].onchange();
+ assert.equal(element('fact-preview').textContent,'Der Eiffelturm steht in Paris. Er wurde 1889 fertig. Rom und Rom.');
+ assert.ok(!cards[2].children.some(c=>c.className==='fact-fix'),'a correction for a repeated quote is not applicable');
+ assert.ok(cards[3].children.some(c=>c.className==='hint'&&c.textContent.includes('No source was cited')));
+ assert.equal(element('fact-apply').textContent,'Paste with formatting','corrections keep formatting');
+ element('fact-apply').onclick();
+ const applied=sent.at(-1);
+ assert.equal(applied.action,'apply');
+ assert.deepEqual(JSON.parse(JSON.stringify(applied.edits)),[{start:24,end:27,before:'Rom',after:'Paris'}],'only the exact range changes');
+ assert.equal(applied.allowPlainText,false);
+ cards[1].children.find(c=>c.className==='fact-sources').children[0].children[0].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'openSource',url:'https://a.example/x'});
+ // Task row: switching runs the other task once and reuses cached results.
+ sandbox.runTask('translate');
+ assert.deepEqual({...sent.at(-1)},{action:'translate',text:original,captureId:7});
+ message({type:'translation',captureId:7,original,translation:'The Eiffel Tower is in Rome.',canReplace:true,readOnly:false,model:'m'});
+ const count=sent.length;
+ sandbox.runTask('factcheck');
+ assert.equal(sent.length,count,'the cached fact check is shown without a new request');
+ assert.equal(element('factcheck-view').hidden,false);assert.equal(element('translation-view').hidden,true);
+ assert.equal(element('fact-preview').textContent,'Der Eiffelturm steht in Paris. Er wurde 1889 fertig. Rom und Rom.','accepted corrections are kept');
+ // After a paste no task can replace the selection again.
+ message({type:'applied',clipboardRestored:true,formatted:true});
+ assert.equal(element('fact-apply').disabled,true);
+ sandbox.runTask('translate');
+ assert.equal(element('apply-translation').disabled,true);
+ // A new capture clears every cached task.
+ message({type:'capture',captureId:8,task:'review',text:'Neu.',canReplace:true});
+ assert.deepEqual({...sent.at(-1)},{action:'check',text:'Neu.',captureId:8});
+ message({type:'result',captureId:8,original:'Neu.',result:{correctedText:'Neu.',findings:[],corrections:[]},canReplace:true,model:'m',mode:'clipboard'});
+ sandbox.runTask('factcheck');
+ assert.deepEqual({...sent.at(-1)},{action:'factCheck',text:'Neu.',captureId:8});
+ message({type:'busy',busy:false});
+ // Settings: third model list.
+ message({type:'models',connected:true,models:[{slug:'a',displayName:'A'},{slug:'b',displayName:'B'}],selected:null,translationSelected:null,factCheckSelected:'b'});
+ const facts=element('fact-model-list').children;
+ assert.deepEqual(facts.map(o=>o.children[1].textContent),['Same as review','A','B']);
+ assert.equal(facts[2].children[0].checked,true);
+ facts[1].children[0].checked=true;facts[1].children[0].onchange();
+ assert.deepEqual({...sent.at(-1)},{action:'model',slug:'a',task:'factcheck'});
+}
+console.log('PASS: fact check verdicts, exact corrections, capture generations, task cache and model choice.');
+{
+ // Read-only fact check: Copy only.
+ message({type:'busy',busy:false});
+ message({type:'capture',captureId:20,task:'factcheck',text:'Rom ist in Italien.',canReplace:false,readOnly:true,canPreserveFormatting:false});
+ message({type:'factCheck',captureId:20,original:'Rom ist in Italien.',result:{claims:[],model:'m',elapsedMs:3000,searches:0},canReplace:false,readOnly:true,canPreserveFormatting:false,mode:'clipboard'});
+ assert.equal(element('fact-apply').hidden,true,'read-only offers no paste');
+ assert.equal(element('fact-readonly').hidden,false);
+}
+console.log('PASS: read-only fact check offers copy only.');
+{
+ // Overlapping fact corrections: accepting one releases the other.
+ message({type:'busy',busy:false});
+ const text='Berlin hat 4 Millionen Einwohner.';
+ message({type:'capture',captureId:30,task:'factcheck',text,canReplace:true,readOnly:false,canPreserveFormatting:true});
+ const src=[{url:'https://s.example/',title:'S',domain:'s.example'}];
+ message({type:'factCheck',captureId:30,original:text,result:{claims:[
+  {quote:'Berlin hat 4 Millionen',verdict:'wrong',explanation:'.',correction:'Berlin hat 3,8 Millionen',sources:src,noSource:false},
+  {quote:'4 Millionen Einwohner',verdict:'wrong',explanation:'.',correction:'knapp 4 Millionen Einwohner',sources:src,noSource:false}],model:'m',elapsedMs:1,searches:1},canReplace:true,readOnly:false,canPreserveFormatting:true,mode:'clipboard'});
+ const box=i=>element('fact-claims').children[i].children.find(c=>c.className==='fact-fix').children[0];
+ box(0).checked=true;box(0).onchange();
+ box(1).checked=true;box(1).onchange();
+ assert.equal(box(0).checked,false,'the overlapping first correction is released');
+ assert.equal(element('fact-preview').textContent,'Berlin hat knapp 4 Millionen Einwohner.');
+}
+console.log('PASS: overlapping fact corrections cannot both be accepted.');

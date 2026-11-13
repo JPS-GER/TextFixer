@@ -4,6 +4,12 @@ let connected=false,busy=false,canReplace=false,readOnlyCapture=false,sourceText
 let pendingAutoCheck=false;
 // Alt+E captures translate instead of review.
 let captureTask='review',translationOriginal='',translationText='';
+// Task row: activeTask is the visible task; taskReady[task] holds the captureId its result belongs to.
+// captureId increases with every capture; answers for an older capture are dropped.
+let captureId=0,activeTask='review',taskReady={};
+// Fact check (Alt+W): claims with their correction wordings (exact quote replacements, applied like review edits).
+let factOriginal='',factClaims=[],factWordings=[],factMeta=null;
+const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify"};
 // Settings > Punctuation style.
 let punctuationStyle={quotes:'keep',dashes:'keep',ellipsis:'keep',spaces:'keep',multiply:'keep',arrows:'keep',primes:'keep'};
 const styledParts=(original,corrected,corrections,styleAll=true)=>reviewStyleParts(reviewParts(original,styleAll?reviewStyleText(corrected,punctuationStyle):corrected,corrections,punctuationStyle.spaces==='plain'),punctuationStyle);
@@ -88,8 +94,68 @@ function readyNotice(){
 function startCapturedReview(){
   if(!pendingAutoCheck||!connected||busy||!sourceText.trim())return;
   pendingAutoCheck=false;
-  if(captureTask==='translate'){notice('Translating your text...');post('translate',{text:sourceText});return;}
-  notice('Checking your text...');post('check',{text:sourceText});
+  runTask(activeTask);
+}
+// Shows the active task's result when it belongs to the current capture.
+function showTaskView(){
+  $('results').hidden=activeTask!=='review'||taskReady.review!==captureId;
+  $('translation-view').hidden=activeTask!=='translate'||taskReady.translate!==captureId;
+  $('factcheck-view').hidden=activeTask!=='factcheck'||taskReady.factcheck!==captureId;
+}
+// Runs a task on the captured text, or shows its cached result for this capture.
+function runTask(task){
+  if(busy||!sourceText.trim())return;
+  activeTask=task;showTaskView();
+  if(taskReady[task]===captureId){update();return;}
+  if(!connected){notice('Connect ChatGPT in Settings first.');update();return;}
+  if(task==='translate'){notice('Translating your text...');post('translate',{text:sourceText,captureId});}
+  else if(task==='factcheck'){notice('Researching the claims on the web. This can take a minute...');post('factCheck',{text:sourceText,captureId});}
+  else{notice('Checking your text...');post('check',{text:sourceText,captureId});}
+  update();
+}
+function factRevised(){return reviewRevised(factOriginal,[],factWordings);}
+function factEdits(){return reviewEdits([],factWordings);}
+function renderFacts(){
+  const claims=factClaims,count=v=>claims.filter(c=>c.verdict===v).length;
+  $('fact-count').textContent=claims.length;
+  $('fact-meta').textContent=factMeta?`Researched in ${Math.max(1,Math.round(factMeta.ms/1000))} s with ${factMeta.model}`:'';
+  const parts=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"]].filter(([v])=>count(v)).map(([v,t])=>`${count(v)} ${t}`);
+  $('fact-summary').textContent=claims.length?`${claims.length} ${claims.length===1?'claim':'claims'}: ${parts.join(', ')}.`:'No checkable factual claims found in this text.';
+  const list=$('fact-claims');list.replaceChildren();
+  for(const c of claims){
+    const card=document.createElement('article');card.className='fact-card verdict-'+c.verdict;
+    const badge=document.createElement('span');badge.className='verdict';badge.textContent=verdictLabel[c.verdict];
+    const quote=document.createElement('blockquote');quote.textContent=c.quote;
+    card.append(badge,quote);
+    if(c.explanation){const p=document.createElement('p');p.textContent=c.explanation;card.append(p);}
+    if(c.noSource){const p=document.createElement('p');p.className='hint';p.textContent='No source was cited for this verdict, so the claim is marked as not verifiable.';card.append(p);}
+    if(c.sources.length){
+      const sources=document.createElement('ul');sources.className='fact-sources';
+      for(const s of c.sources){
+        const item=document.createElement('li');const link=document.createElement('button');link.type='button';link.className='link source-link';
+        link.textContent=s.title;link.title=s.url;link.onclick=()=>post('openSource',{url:s.url});
+        const domain=document.createElement('span');domain.className='hint';domain.textContent=s.domain;
+        item.append(link,domain);sources.append(item);
+      }
+      card.append(sources);
+    }
+    if(c.correction){
+      if(c.wording){
+        const label=document.createElement('label');label.className='fact-fix';
+        const box=document.createElement('input');box.type='checkbox';box.checked=c.wording.accepted;box.disabled=busy||c.wording.layoutProtected;
+        box.onchange=()=>{if(box.checked)reviewAcceptWording(c.wording,factWordings);else c.wording.accepted=false;renderFacts();update();};
+        const text=document.createElement('span');text.textContent='Use correction: ';
+        const fix=document.createElement('ins');fix.textContent=c.wording.after;
+        label.append(box,text,fix);card.append(label);
+        if(c.wording.layoutProtected){const p=document.createElement('p');p.className='hint';p.textContent='This correction changes line breaks and cannot be applied.';card.append(p);}
+      }else{
+        const p=document.createElement('p');p.className='hint';p.textContent='Correction: '+c.correction+' (the quote appears more than once in the text, so it is not applied automatically).';card.append(p);
+      }
+    }
+    list.append(card);
+  }
+  $('fact-revision').hidden=!factWordings.length;
+  $('fact-preview').textContent=factRevised();
 }
 function notice(message){$('notice').textContent=message||'Ready';$('notice').hidden=false;}
 function update(){
@@ -109,12 +175,20 @@ function update(){
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
   $('route').className='capture-icon';
-  const captureLabel=captureMode==='chrome'?'Captured from Chrome':captureTask==='translate'?'Captured with Alt+E':'Captured with Alt+Q';
+  const captureLabel=captureMode==='chrome'?'Captured from Chrome':captureTask==='translate'?'Captured with Alt+E':captureTask==='factcheck'?'Captured with Alt+W':'Captured with Alt+Q';
+  $('task-row').hidden=!sourceText.trim();
+  for(const b of $('task-row').querySelectorAll?.('button')||[]){b.classList.toggle('active',b.dataset.task===activeTask);b.disabled=busy;}
+  const factFormatted=captureMode!=='chrome'&&richClipboard&&!$('fact-plain').checked;
+  const factAccepted=factWordings.some(w=>w.accepted);
+  $('fact-copy').disabled=busy;$('fact-copy').textContent=factFormatted?'Copy with formatting':'Copy plain text';$('fact-copy').classList.toggle('primary',readOnlyCapture);
+  $('fact-apply').hidden=readOnlyCapture;$('fact-apply').disabled=busy||!canReplace||!factAccepted||(captureMode!=='chrome'&&!factFormatted&&!$('fact-plain').checked);
+  $('fact-apply').textContent=captureMode==='chrome'?'Apply in Chrome':factFormatted?'Paste with formatting':'Paste plain text';
+  $('fact-plain').disabled=busy;$('fact-plain-option').hidden=captureMode==='chrome'||!canReplace;$('fact-readonly').hidden=!readOnlyCapture;
   $('route').title=captureLabel;$('route').setAttribute('aria-label',captureLabel);
   $('clipboard-icon').hidden=captureMode==='chrome';$('chrome-icon').hidden=captureMode!=='chrome';
   $('route').hidden=!canReplace&&!readOnlyCapture;
   $('route-title').textContent=captureMode==='chrome'?'Captured from Chrome':'Captured with Alt+Q';
-  $('formatting').hidden=richClipboard||captureMode==='chrome'||!canReplace||captureTask==='translate';
+  $('formatting').hidden=richClipboard||captureMode==='chrome'||!canReplace||activeTask!=='review';
   $('formatting').textContent=richClipboard?'':'This selection includes formatting. Plain-text replacement may remove formatting.';
 }
 let formattingSuggestions=[];
@@ -269,7 +343,11 @@ $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');p
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
 document.querySelectorAll('input[data-style]').forEach(r=>r.onchange=()=>{if(r.checked)post('typography',{style:{[r.dataset.style]:r.value}});});
-$('revise-translation').onsubmit=e=>{e.preventDefault();const request=$('translation-request').value.trim();if(busy||!request||!translationText)return;notice('Revising the translation...');post('reviseTranslation',{text:translationOriginal,translation:translationText,request});};
+$('revise-translation').onsubmit=e=>{e.preventDefault();const request=$('translation-request').value.trim();if(busy||!request||!translationText)return;notice('Revising the translation...');post('reviseTranslation',{text:translationOriginal,translation:translationText,request,captureId});};
+$('task-row').querySelectorAll?.('button').forEach(b=>b.onclick=()=>runTask(b.dataset.task));
+$('fact-copy').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
+$('fact-apply').onclick=()=>post('apply',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
+$('fact-plain').onchange=update;
 $('copy-translation').onclick=()=>post('copyTranslation',{text:translationText});$('apply-translation').onclick=()=>post('applyTranslation',{text:translationText,original:translationOriginal});
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
@@ -278,8 +356,18 @@ $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('regis
 $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
-  if(m.type==='capture'){captureTask=m.task==='translate'?'translate':'review';$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':'Connect ChatGPT in Settings to review this selection.'):'');startCapturedReview();}
-  if(m.type==='translation'){translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
+  if(['result','tabProgress','tabResult','translation','factCheck'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
+  if(m.type==='capture'){captureTask=['translate','factcheck'].includes(m.task)?m.task:'review';activeTask=captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};factClaims=[];factWordings=[];factMeta=null;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':'Connect ChatGPT in Settings to review this selection.'):'');startCapturedReview();}
+  if(m.type==='factCheck'){
+    taskReady.factcheck=captureId;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
+    factMeta={ms:m.result.elapsedMs,model:m.result.model};
+    factClaims=(m.result.claims||[]).map((c,i)=>{const correction=c.correction?reviewPlainStyle(c.correction,c.quote,punctuationStyle):null;const wording=correction?reviewWording(m.original,{quotes:[c.quote],suggestedRewrite:correction},i):null;if(wording)wording.category='fact';return {...c,explanation:reviewPlainStyle(c.explanation,m.original,punctuationStyle),correction,wording};});
+    factWordings=factClaims.map(c=>c.wording).filter(Boolean);
+    renderFacts();showTaskView();
+    const wrong=factClaims.filter(c=>c.verdict==='wrong').length;
+    notice(!factClaims.length?'Fact check finished. No checkable factual claims found.':wrong?`Fact check finished. ${wrong} wrong ${wrong===1?'claim':'claims'} found. Review the sources before using a correction.`:'Fact check finished. Review the verdicts and their sources.');
+  }
+  if(m.type==='translation'){taskReady.translate=captureId;translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
   if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
   if(m.type==='historyCopied'){copiedId=m.id;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
@@ -295,7 +383,7 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
   if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;if(m.punctuationStyle)punctuationStyle={...punctuationStyle,...m.punctuationStyle};for(const r of document.querySelectorAll?.('input[data-style]')||[])r.checked=r.value===(punctuationStyle[r.dataset.style]||'keep');}
-  if(m.type==='tabProgress'){
+  if(m.type==='tabProgress'){taskReady.review=captureId;
     if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
     for(const k of m.running||[])tabState[k]='running';
     showChanges();tabProgressNotice();
@@ -314,7 +402,7 @@ window.chrome.webview.addEventListener('message',event=>{
     if(m.pending?.length)tabProgressNotice();else readyNotice();
   }
   if(m.type==='result'){
-    partialReview=false;tabState={};
+    taskReady.review=captureId;partialReview=false;tabState={};
     activeTab='spelling';reviewOriginal=m.original;parts=styledParts(m.original,m.result.correctedText,m.result.corrections);
     reviewFindings=styledFindings(m.result.findings);
     wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);
@@ -332,11 +420,11 @@ function renderModels(m){
   const models=m.models||[];
   const listed=slug=>models.some(x=>x.slug===slug)?slug:null;
   const status=$('model-status');
-  for(const id of ['model-list','translation-model-list'])$(id).replaceChildren();
+  for(const id of ['model-list','translation-model-list','fact-model-list'])$(id).replaceChildren();
   document.querySelector?.('.model-choice')?.classList.toggle('empty',!models.length);
   if(!m.connected){status.textContent='Sign in to ChatGPT to choose a model.';status.hidden=false;return;}
   if(m.error){status.textContent='Models could not be loaded: '+m.error;status.hidden=false;return;}
-  const missing=[m.selected,m.translationSelected].some(s=>s&&!listed(s));
+  const missing=[m.selected,m.translationSelected,m.factCheckSelected].some(s=>s&&!listed(s));
   status.textContent=missing?'A chosen model is not available for this account. The default is used instead.':'';status.hidden=!missing;
   const render=(list,name,task,chosen,first)=>{
     const option=(slug,title,note)=>{
@@ -355,6 +443,7 @@ function renderModels(m){
   render($('model-list'),'model','review',review,['Automatic','Uses '+models[0].displayName]);
   const reviewName=models.find(x=>x.slug===review)?.displayName||models[0].displayName;
   render($('translation-model-list'),'translation-model','translate',listed(m.translationSelected),['Same as review','Uses '+reviewName]);
+  render($('fact-model-list'),'fact-model','factcheck',listed(m.factCheckSelected),['Same as review','Uses '+reviewName]);
 }
 update();post('ready');
 

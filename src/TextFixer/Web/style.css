@@ -112,6 +112,26 @@ dialog .chrome-setup { margin-bottom:0; }
 .startup-option input { margin-top:3px; }
 #translation-view pre { max-height:480px; font-size:15px; }
 #translation-view details { margin-top:12px; }
+.task-row { display:inline-flex; gap:0; margin:0 0 18px; border:1px solid var(--edge); border-radius:8px; overflow:hidden; }
+.task-row button { border:0; border-radius:0; background:transparent; padding:8px 16px; }
+.task-row button + button { border-left:1px solid var(--edge); }
+.task-row button.active { background:var(--accent); color:var(--on-accent); }
+.fact-summary { margin:0 0 14px; color:var(--text); }
+.fact-card { border:1px solid var(--edge); border-left-width:4px; border-radius:9px; padding:14px 18px; margin:0 0 12px; background:var(--room-1); }
+.fact-card blockquote { margin:8px 0; padding:4px 12px; border-left:3px solid var(--edge-strong); white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text); }
+.fact-card p { margin:6px 0; overflow-wrap:anywhere; }
+.fact-card .verdict { display:inline-block; font:700 12px "Segoe UI",Arial; padding:3px 9px; border-radius:999px; }
+.verdict-supported { border-left-color:var(--good); } .verdict-supported .verdict { background:rgba(80,200,140,.16); color:var(--good); }
+.verdict-wrong { border-left-color:var(--bad); } .verdict-wrong .verdict { background:rgba(240,110,110,.16); color:var(--bad); }
+.verdict-disputed { border-left-color:var(--accent); } .verdict-disputed .verdict { background:rgba(245,204,87,.14); color:var(--accent); }
+.verdict-unverifiable { border-left-color:var(--muted); } .verdict-unverifiable .verdict { background:rgba(255,255,255,.08); color:var(--muted); }
+.fact-sources { list-style:none; margin:8px 0 0; padding:0; display:grid; gap:2px; }
+.fact-sources li { display:flex; align-items:center; gap:8px; min-width:0; }
+.fact-sources .hint { margin:0; white-space:nowrap; }
+button.source-link { padding:2px 4px; margin-left:-4px; font-size:13px; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; }
+.fact-fix { display:flex; align-items:baseline; gap:8px; margin-top:10px; cursor:pointer; }
+.fact-fix ins { text-decoration:none; color:var(--good); background:rgba(80,200,140,.1); padding:1px 4px; border-radius:4px; }
+#fact-revision { margin-top:18px; }
 .model-choice { display:block; }
 .model-choice .hint { margin:0 0 8px; }
 .model-choice h4 { margin:4px 0 8px; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
