@@ -3,7 +3,8 @@ using System.Runtime.InteropServices;
 
 namespace TextFixer.Native;
 
-internal sealed record CapturedText(nint Window, string Text, bool HasFormatting, HtmlClipboard? Html = null);
+/// <param name="Editable">True: the focused element accepts typing. False: read-only (offer copy only). Null: unknown.</param>
+internal sealed record CapturedText(nint Window, string Text, bool HasFormatting, HtmlClipboard? Html = null, bool? Editable = null);
 
 internal static class TextTransfer
 {
@@ -125,12 +126,13 @@ internal static class TextTransfer
         data.SetText(html, TextDataFormat.Html); Clipboard.SetDataObject(data, true);
     }
 
-    internal static async Task<CapturedText> CaptureAsync(nint target)
+    internal static async Task<CapturedText> CaptureAsync(nint target, bool detectEditability = true)
     {
         await WaitForModifiersAsync();
         if (target == 0 || GetForegroundWindow() != target)
             throw new InvalidOperationException("The active window changed. Select your text and press Alt+Q again.");
         VerifyTargetAccess(target);
+        bool? editable = detectEditability ? await Task.Run(() => Editability.Detect(target, TimeSpan.FromMilliseconds(400))) : null;
         var previous = Snapshot();
         uint ownedSequence = 0;
         try
@@ -141,7 +143,7 @@ internal static class TextTransfer
             var timer = Stopwatch.StartNew();
             while (GetClipboardSequenceNumber() == ownedSequence)
             {
-                if (timer.ElapsedMilliseconds > 1500) throw new InvalidOperationException("No text was copied. Select text in an editable field and try Alt+Q again.");
+                if (timer.ElapsedMilliseconds > 1500) throw new InvalidOperationException("No text was copied. Select text and try Alt+Q again.");
                 await Task.Delay(20);
             }
             // Copy may empty the clipboard and publish several formats in separate updates.
@@ -166,7 +168,7 @@ internal static class TextTransfer
             ownedSequence = GetClipboardSequenceNumber();
             if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("The selection contains no text.");
             if (text.Length > 30000) throw new InvalidOperationException("Select at most 30,000 characters for one check.");
-            return new CapturedText(target, text, hasFormatting, html);
+            return new CapturedText(target, text, hasFormatting, html, editable);
         }
         finally
         {
@@ -183,7 +185,7 @@ internal static class TextTransfer
         if (IsIconic(capture.Window)) ShowWindow(capture.Window, 9);
         if (!SetForegroundWindow(capture.Window)) throw new InvalidOperationException("Could not return to the original window. Use Copy revised text instead.");
         await Task.Delay(150);
-        var current = await CaptureAsync(capture.Window);
+        var current = await CaptureAsync(capture.Window, detectEditability: false);
         if (!string.Equals(current.Text, capture.Text, StringComparison.Ordinal))
             throw new InvalidOperationException("The selection changed. Nothing was replaced. Use Copy revised text instead.");
         if (html is not null && (current.Html is null || current.Html.Fragment != capture.Html?.Fragment))

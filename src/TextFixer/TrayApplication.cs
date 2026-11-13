@@ -83,9 +83,21 @@ internal sealed class TrayApplication : ApplicationContext
             _review.SetCapture(text);
             _review.Open();
         }
-        catch (Exception ex) { _review.Open(); _review.Notify(ex.Message); }
+        catch (Exception ex)
+        {
+            ReviewWindow.Diagnostic($"Alt+Q capture failed in {ProcessName(target)}: {ex.Message}");
+            _review.Open(); _review.Notify(ex.Message);
+        }
         finally { _capturing = false; _clipboard.Paused = false; }
     }
+
+    private static string ProcessName(nint window)
+    {
+        try { GetWindowThreadProcessId(window, out var id); using var process = System.Diagnostics.Process.GetProcessById((int)id); return process.ProcessName; }
+        catch { return "unknown app"; }
+    }
+
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
 
     protected override void ExitThreadCore()
     {

@@ -261,3 +261,17 @@ for(const formatted of [true,false]){
 }
 assert.ok(!fs.readFileSync('src/TextFixer/ReviewWindow.cs','utf8').includes("target's clipboard read could not be confirmed"),'normal paste status is not overwritten by the old warning');
 console.log('PASS: neutral Alt+Q paste status and retained-clipboard information.');
+{
+ const text='Ein Absatz mit Fehlrn.';
+ message({type:'capture',text,canReplace:false,readOnly:true,hasFormatting:true,canPreserveFormatting:true});
+ message({type:'result',original:text,result:{correctedText:'Ein Absatz mit Fehlern.',findings:[],corrections:[]},canReplace:false,readOnly:true,canPreserveFormatting:true});
+ assert.equal(element('apply').hidden,true,'read-only capture hides the paste button');
+ assert.equal(element('readonly-hint').hidden,false,'read-only capture explains copy-only');
+ assert.equal(element('route').hidden,false,'read-only capture still shows the Alt+Q route');
+ assert.equal(element('copy').disabled,false,'copy stays available');
+ assert.equal(element('copy').textContent,'Copy with formatting','formatted read-only capture copies with formatting');
+ message({type:'capture',text,canReplace:true,readOnly:false});
+ assert.equal(element('apply').hidden,false,'editable capture shows the paste button again');
+ assert.equal(element('readonly-hint').hidden,true);
+}
+console.log('PASS: read-only Alt+Q capture offers copy only.');

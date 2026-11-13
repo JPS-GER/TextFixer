@@ -128,7 +128,9 @@ internal sealed class ReviewWindow : Form
         else _pendingNotice = message;
     }
     private void Send(object value) { if (_ready && !_web.IsDisposed) _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions)); }
-    private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = _chromeCapture is not null || _capture is not null, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    private bool ReadOnlyCapture => _chromeCapture is null && _capture?.Editable == false;
+    private bool CanReplace => _chromeCapture is not null || (_capture is not null && !ReadOnlyCapture);
+    private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
     private void SendHistory()
     {
         if (_history is null || _settings is null) return;
@@ -243,7 +245,7 @@ internal sealed class ReviewWindow : Form
         Controls.Add(label); label.BringToFront();
     }
 
-    private static void Diagnostic(string message)
+    internal static void Diagnostic(string message)
     {
         try
         {
@@ -314,7 +316,7 @@ internal sealed class ReviewWindow : Form
                         if (_capture is not null && _capture.Text != original) _capture = null;
                         if (_chromeCapture is not null && _chromeCapture.Text != original) _chromeCapture = null;
                         var result = await _service.CheckAsync(original, _operation.Token);
-                        Send(new { type = "result", original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = _capture is not null || _chromeCapture is not null, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        Send(new { type = "result", original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "copy":
                         var copyText = ReadText(root);
@@ -330,6 +332,7 @@ internal sealed class ReviewWindow : Form
                             break;
                         }
                         if (_capture is null) throw new InvalidOperationException("Capture a selection with Alt+Q first, or use Copy revised text.");
+                        if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the revision and paste it where you need it.");
                         var explicitPlainText = root.TryGetProperty("allowPlainText", out var allowPlainText) && allowPlainText.ValueKind == JsonValueKind.True;
                         if (_capture.Html is null && !explicitPlainText)
                             throw new InvalidOperationException("This is clipboard mode. Use Chrome's right-click review action for direct editing, or explicitly enable plain-text replacement.");

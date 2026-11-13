@@ -41,6 +41,8 @@ The canonical current build is `artifacts/TextFixer/TextFixer.exe`. Earlier test
 
 AI connection and Chrome setup are in the Settings dialog, opened from the header. They do not occupy the daily review screen. Click "Register Chrome connection" there to register the currently running executable for your Windows user, then load the extension as described below. No registration is performed by merely starting the app.
 
+Alt+Q captures any selection the active app can copy. At capture, Windows UI Automation reports whether the focused element accepts typing. Selected text in a read-only document (for example a web page paragraph) gets "Copy" only; editable fields and content-editable editors keep "Paste". When the answer is unclear, both actions stay available. A failed capture writes the app name and reason (never text) to `%LOCALAPPDATA%\TextFixer\diagnostics.log`.
+
 A status-bar icon identifies a Chrome or Alt+Q capture, with its source in the tooltip. Alt+Q remains a clipboard workflow; direct editing is available after an extension capture. When the clipboard includes valid HTML, Alt+Q retains that original fragment, patches only accepted text corrections into its text tokens, and offers "Paste with formatting" or "Copy with formatting". Original paragraph elements, empty elements, inline formatting, attributes and styles remain intact. CF_HTML offsets are recalculated in UTF-8 bytes. Cross-format edits or HTML/plain-text mismatches are rejected without an automatic plain-text fallback. Plain-text replacement requires the explicit checkbox and is enforced in C#.
 
 The companion extension is plain JavaScript, without a build step. Setup is once per Windows user:
