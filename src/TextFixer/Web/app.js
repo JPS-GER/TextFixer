@@ -127,10 +127,19 @@ function showInline(){
     button.title=p.layoutProtected?'Not applied: this suggestion would change line breaks.':p.accepted?'Accepted correction. Click to reject.':'Rejected correction. Click to accept.';
     button.setAttribute('aria-pressed',String(p.accepted));
     button.setAttribute('aria-label',`${p.before||'insert'} to ${p.after||'delete'}. ${button.title}`);
-    if(p.before){const old=document.createElement('del');old.textContent=p.before;button.append(old);}
+    if(p.before)button.append(removedText(p.before,!p.after&&p.accepted));
     if(p.after){const next=document.createElement('ins');next.textContent=p.after;button.append(next);}
     button.onclick=()=>toggleCorrection(p);container.append(button);
   });
+}
+// A struck-through comma reads like a dash; short punctuation or space removals render as a labelled box instead.
+function removedText(text,label){
+  const old=document.createElement('del');old.textContent=text;
+  if(text.length<=4&&!/[\p{L}\p{N}\r\n]/u.test(text)){
+    const space=!text.trim();old.className='punct';
+    old.dataset.label=label?(space?'remove space':'remove'):(space?'space':'');
+  }
+  return old;
 }
 function showChanges(){
   const container=$('changes');container.replaceChildren();
@@ -147,7 +156,7 @@ function showChanges(){
       showChanges();
     };
     const content=document.createElement('span');content.className='change-content';
-    const old=document.createElement('del');old.textContent=p.before||'(insertion)';
+    const old=p.before?removedText(p.before,false):document.createElement('del');if(!p.before)old.textContent='(insertion)';
     const next=document.createElement('ins');next.textContent=p.after||'(deletion)';
     content.append(old,next);label.append(checkbox,content);container.append(label);
   });
@@ -201,11 +210,16 @@ $('open-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('
 $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');};$('close-settings').onclick=()=>$('settings').close();
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
+$('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
+$('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
 $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('register-chrome').onclick=()=>post('registerChrome');$('extension-folder').onclick=()=>post('extensionFolder');$('refresh-chrome').onclick=()=>post('chromeStatus');
 $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(m.type==='capture'){activeTab='spelling';parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?'Connect ChatGPT in Settings to review this selection.':'');startCapturedReview();}
+  if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
+  if(m.type==='historyCopied'){copiedId=m.id;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
+  if(m.type==='capture'&&m.text)showHistory(false);
   if(m.type==='autostart')$('autostart').checked=!!m.enabled;
   if(m.type==='chromeStatus'){
     $('chrome-status').textContent=m.connected?'Connected to Chrome. Use the extension context menu to capture text.':m.registered?'Desktop connection registered. Load or reload the extension, then use its right-click review action.':'Chrome connection is not registered for this executable. Complete setup below.';
@@ -229,3 +243,30 @@ window.chrome.webview.addEventListener('message',event=>{
   update();
 });
 update();post('ready');
+
+// Clipboard history view
+let historyEntries=[],historyEnabled=true,copiedId=null,copiedTimer=0,historyClock=0;
+let historyShown=false;
+function historyVisible(){return historyShown;}
+function showHistory(on){historyShown=on;$('main').classList.toggle('show-history',on);$('open-history').classList.toggle('active',on);if(on){post('historyList');renderHistory();historyClock=historyClock||setInterval(()=>{if(historyVisible())renderHistory();},30000);}}
+function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return'Just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const d=Math.round(h/24);return d+(d===1?' day ago':' days ago');}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
+function renderHistory(){
+  const list=$('history-list');list.replaceChildren();
+  $('history-count').textContent=historyEnabled?historyEntries.length:'';
+  $('history-clear').hidden=!historyEnabled||!historyEntries.length;
+  const empty=!historyEnabled?'Clipboard history is off. Turn it on in Settings.':historyEntries.length?'':'Copied text appears here.';
+  $('history-empty').textContent=empty;$('history-empty').hidden=!empty;
+  if(!historyEnabled)return;
+  for(const entry of historyEntries){
+    const card=el('article','history-entry'+(entry.id===copiedId?' copied':''));
+    const body=el('div','history-text',entry.preview);body.title='Copy to clipboard';body.onclick=()=>post('historyRestore',{id:entry.id});
+    const top=el('div','history-top');top.append(el('span','hint',ago(entry.copiedAt)));
+    if(entry.hasFormatting)top.append(el('span','kind','Formatted'));
+    const meta=el('div','history-meta');
+    const actions=el('div','actions');
+    const copy=el('button','link',entry.id===copiedId?'Copied':'Copy');copy.onclick=()=>post('historyRestore',{id:entry.id});
+    const remove=el('button','link','Remove');remove.onclick=()=>post('historyDelete',{id:entry.id});
+    actions.append(copy,remove);meta.append(actions);card.append(top,body,meta);list.append(card);
+  }
+}

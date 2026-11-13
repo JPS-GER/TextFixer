@@ -18,6 +18,9 @@ internal sealed class ReviewWindow : Form
     private sealed record ChromeCapture(string SessionId, string CaptureId, string Text, bool HasFormatting);
     private ChromeCapture? _chromeCapture;
     private ChromeBridgeServer? _chrome;
+    private ClipboardHistory? _history;
+    private ClipboardMonitor? _clipboardMonitor;
+    private AppSettings? _settings;
     private TaskCompletionSource<JsonElement>? _chromeApply;
     private ChromeCapture? _applyingChromeCapture;
     private bool _ready, _shutdown;
@@ -80,6 +83,11 @@ internal sealed class ReviewWindow : Form
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
     internal void SetCapture(CapturedText capture) { _chromeCapture = null; _capture = capture; SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
+    internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
+    {
+        _history = history; _clipboardMonitor = monitor; _settings = settings;
+        history.Changed += (_, _) => SendHistory();
+    }
     internal void ChromeConnected() => SendChromeStatus();
     internal void ReceiveChromeMessage(string sessionId, JsonElement message)
     {
@@ -121,6 +129,64 @@ internal sealed class ReviewWindow : Form
     }
     private void Send(object value) { if (_ready && !_web.IsDisposed) _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions)); }
     private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = _chromeCapture is not null || _capture is not null, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    private void SendHistory()
+    {
+        if (_history is null || _settings is null) return;
+        Send(new
+        {
+            type = "history",
+            enabled = _settings.ClipboardHistory,
+            entries = _history.Entries.Select(e => new
+            {
+                e.Id,
+                copiedAt = new DateTimeOffset(DateTime.SpecifyKind(e.CopiedAt, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
+                preview = Preview(e.Text),
+                hasFormatting = e.HasFormatting,
+            }),
+        });
+    }
+
+    private static string Preview(string text)
+    {
+        const int length = 300;
+        if (text.Length <= length) return text;
+        var end = char.IsHighSurrogate(text[length - 1]) ? length - 1 : length;
+        return text[..end];
+    }
+
+    private void HandleHistory(string action, JsonElement root)
+    {
+        if (_history is null || _clipboardMonitor is null || _settings is null) return;
+        switch (action)
+        {
+            case "historyRestore":
+                var id = root.GetProperty("id").GetString() ?? "";
+                if (_history.Find(id) is not { } entry) { SendHistory(); return; }
+                var data = new DataObject();
+                data.SetText(entry.Text, TextDataFormat.UnicodeText);
+                if (entry.Html is not null) data.SetText(entry.Html, TextDataFormat.Html);
+                if (entry.Rtf is not null) data.SetData(DataFormats.Rtf, entry.Rtf);
+                try { Clipboard.SetDataObject(data, true); }
+                catch (ExternalException) { Notify("The clipboard is busy. Try again in a moment."); return; }
+                _clipboardMonitor.IgnoreCurrent();
+                _history.MoveToTop(id, DateTime.UtcNow);
+                Send(new { type = "historyCopied", id });
+                return;
+            case "historyDelete": _history.Delete(root.GetProperty("id").GetString() ?? ""); return;
+            case "historyClear": _history.Clear(); return;
+            case "historyEnabled":
+                var enabled = root.GetProperty("enabled").GetBoolean();
+                _settings.ClipboardHistory = enabled;
+                try { _settings.Save(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                _clipboardMonitor.Enabled = enabled;
+                if (!enabled) _history.Clear();
+                SendHistory();
+                return;
+            default: SendHistory(); return;
+        }
+    }
+
     private void SendAutostart() => Send(new { type = "autostart", enabled = Autostart.IsEnabled });
     private void SendChromeStatus() => Send(new { type = "chromeStatus", connected = _chrome?.SessionIds.Count > 0, registered = ChromeSetup.IsRegistered(), folder = ChromeSetup.ExtensionFolder, extensionId = ChromeSetup.ExtensionId });
 
@@ -200,12 +266,17 @@ internal sealed class ReviewWindow : Form
             var action = root.GetProperty("action").GetString();
             if (action == "ready")
             {
-                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); await SendStatusAsync();
+                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); SendHistory(); await SendStatusAsync();
                 if (_pendingNotice is not null) { Notify(_pendingNotice); _pendingNotice = null; }
                 return;
             }
             if (action == "cancel") { _operation?.Cancel(); return; }
             if (action == "usage") { Process.Start(new ProcessStartInfo(ChatGptReviewService.ManageUsageUrl) { UseShellExecute = true }); return; }
+            if (action is "historyList" or "historyRestore" or "historyDelete" or "historyClear" or "historyEnabled")
+            {
+                HandleHistory(action, root);
+                return;
+            }
             if (action == "autostart")
             {
                 try { Autostart.Set(root.GetProperty("enabled").GetBoolean()); }

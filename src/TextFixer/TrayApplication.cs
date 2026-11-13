@@ -13,6 +13,9 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly HotkeyWindow _hotkey = new();
     private readonly ReviewWindow _review = new(new ChatGptReviewService());
     private readonly ChromeBridgeServer _chrome = new();
+    private readonly AppSettings _settings = AppSettings.Load();
+    private readonly ClipboardHistory _history = new();
+    private readonly ClipboardMonitor _clipboard = new();
     private bool _capturing;
     private bool _exiting;
 
@@ -34,6 +37,9 @@ internal sealed class TrayApplication : ApplicationContext
         if (!startHidden) _review.Open();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _review.ConfigureChrome(_chrome);
+        _review.ConfigureHistory(_history, _clipboard, _settings);
+        _clipboard.Copied += (_, c) => _history.Add(c.Text, c.Html, c.Rtf, DateTime.UtcNow);
+        _clipboard.Enabled = _settings.ClipboardHistory;
         _chrome.MessageReceived += (_, e) => Dispatch(() => _review.ReceiveChromeMessage(e.SessionId, e.Message));
         _chrome.SessionConnected += (_, _) => Dispatch(_review.ChromeConnected);
         _chrome.SessionDisconnected += (_, e) => Dispatch(() => _review.ChromeDisconnected(e.SessionId));
@@ -70,6 +76,7 @@ internal sealed class TrayApplication : ApplicationContext
         var target = TextTransfer.GetForegroundWindow();
         if (target == _review.Handle) { _review.Open(); return; }
         _capturing = true;
+        _clipboard.Paused = true;
         try
         {
             var text = await TextTransfer.CaptureAsync(target);
@@ -77,7 +84,7 @@ internal sealed class TrayApplication : ApplicationContext
             _review.Open();
         }
         catch (Exception ex) { _review.Open(); _review.Notify(ex.Message); }
-        finally { _capturing = false; }
+        finally { _capturing = false; _clipboard.Paused = false; }
     }
 
     protected override void ExitThreadCore()
@@ -90,6 +97,8 @@ internal sealed class TrayApplication : ApplicationContext
         _trayIcon.Dispose();
         _hotkey.Dispose();
         _chrome.Dispose();
+        _clipboard.Dispose();
+        _history.Dispose();
         _review.Shutdown();
         base.ExitThreadCore();
     }

@@ -18,6 +18,10 @@ The skill is available project-locally at `skills/hot-swap-update/SKILL.md`, ref
 
 The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q is the default global shortcut; startup reports if another app has registered it.
 
+## Clipboard history
+
+TextFixer keeps your last 20 copied texts (Clipboard history button in the header). Choose an entry, or its Copy button, to put it back on the clipboard; HTML and RTF formatting is restored with it. Copying the same text again moves its entry to the top. Images and files are not recorded. Content marked `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory = 0` (password managers, TextFixer's own temporary Alt+Q data) is skipped, as are texts over one million characters. The history is stored in `%LOCALAPPDATA%\TextFixer\clipboard-history.bin`, DPAPI-encrypted for the current Windows user. Settings > Clipboard history turns recording on or off (on by default; turning it off deletes the history) and clears it. The setting lives in `%LOCALAPPDATA%\TextFixer\settings.json`. Offline tests: `dotnet run -c Release --project tests/ClipboardHistoryTests`.
+
 ## First test
 
 1. Click "Continue with ChatGPT" and finish authorization in the system browser. The app waits for the callback; Stop ends the wait.

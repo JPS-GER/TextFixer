@@ -7,20 +7,21 @@ namespace TextFixer.Services;
 internal static class Dpapi
 {
     private const int CryptProtectUiForbidden = 0x1;
-    private static readonly byte[] Entropy = "TextFixer.ChatGptCredentials.v1"u8.ToArray();
+    private static readonly byte[] CredentialEntropy = "TextFixer.ChatGptCredentials.v1"u8.ToArray();
 
-    public static byte[] Protect(byte[] plaintext) => Transform(plaintext, protect: true);
+    /// <param name="entropy">Purpose-specific entropy; defaults to the ChatGPT credential entropy.</param>
+    public static byte[] Protect(byte[] plaintext, byte[]? entropy = null) => Transform(plaintext, entropy ?? CredentialEntropy, protect: true);
 
-    public static byte[] Unprotect(byte[] ciphertext) => Transform(ciphertext, protect: false);
+    public static byte[] Unprotect(byte[] ciphertext, byte[]? entropy = null) => Transform(ciphertext, entropy ?? CredentialEntropy, protect: false);
 
-    private static byte[] Transform(byte[] input, bool protect)
+    private static byte[] Transform(byte[] input, byte[] entropy, bool protect)
     {
         var inputHandle = GCHandle.Alloc(input, GCHandleType.Pinned);
-        var entropyHandle = GCHandle.Alloc(Entropy, GCHandleType.Pinned);
+        var entropyHandle = GCHandle.Alloc(entropy, GCHandleType.Pinned);
         try
         {
             var inputBlob = new DataBlob { cbData = input.Length, pbData = inputHandle.AddrOfPinnedObject() };
-            var entropyBlob = new DataBlob { cbData = Entropy.Length, pbData = entropyHandle.AddrOfPinnedObject() };
+            var entropyBlob = new DataBlob { cbData = entropy.Length, pbData = entropyHandle.AddrOfPinnedObject() };
             DataBlob output;
             var ok = protect
                 ? CryptProtectData(ref inputBlob, null, ref entropyBlob, IntPtr.Zero, IntPtr.Zero, CryptProtectUiForbidden, out output)
