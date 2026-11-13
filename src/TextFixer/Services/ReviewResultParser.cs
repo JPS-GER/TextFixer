@@ -12,6 +12,7 @@ internal static class ReviewResultParser
 {
     private const int MaxFindings = 30;
     private const int MaxQuotesPerFinding = 4;
+    private const int MaxCorrections = 500;
 
     public static ReviewResult Parse(string original, string modelOutput)
     {
@@ -49,7 +50,66 @@ internal static class ReviewResultParser
             }
         }
 
-        return new ReviewResult(MatchEdges(original, corrected), findings.ToArray());
+        var correctedText = MatchEdges(original, corrected);
+        return new ReviewResult(correctedText, findings.ToArray(), ParseCorrections(original, correctedText, root));
+    }
+
+    /// <summary>
+    /// Resolves the model's labelled changes to original offsets. Entries that can't be located, don't
+    /// appear in the corrected text, or overlap an earlier entry are dropped: the UI categorizes those
+    /// changes locally, so an incomplete list is safe and a wrong position is not.
+    /// </summary>
+    private static ReviewCorrection[] ParseCorrections(string original, string corrected, JsonElement root)
+    {
+        if (!root.TryGetProperty("corrections", out var items) || items.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var normalizedCorrected = QuoteLocator.Normalize(corrected).Text;
+        var result = new List<ReviewCorrection>();
+        var cursor = 0;
+        foreach (var item in items.EnumerateArray())
+        {
+            if (result.Count >= MaxCorrections)
+            {
+                break;
+            }
+
+            var category = JsonRead.String(item, "category")?.Trim().ToLowerInvariant();
+            var before = JsonRead.String(item, "before");
+            var after = JsonRead.String(item, "after");
+            if (category is null || !ReviewCorrectionCategories.All.Contains(category)
+                || string.IsNullOrEmpty(before) || after is null || before == after)
+            {
+                continue;
+            }
+
+            var normalizedAfter = QuoteLocator.Normalize(after).Text.Trim();
+            if (normalizedAfter.Length > 0 && !normalizedCorrected.Contains(normalizedAfter, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // Entries arrive in text order; search forward first, then accept an out-of-order entry only
+            // when its wording occurs exactly once in the whole text.
+            var range = QuoteLocator.Locate(original, before, cursor);
+            if (range is null && QuoteLocator.Locate(original, before, 0) is { } anywhere
+                && QuoteLocator.Locate(original, before, anywhere.Start + 1) is null)
+            {
+                range = anywhere;
+            }
+
+            if (range is not { } found || result.Any(c => found.Start < c.End && c.Start < found.End))
+            {
+                continue;
+            }
+
+            result.Add(new ReviewCorrection(found.Start, found.End, after, category));
+            cursor = Math.Max(cursor, found.End);
+        }
+
+        return result.OrderBy(c => c.Start).ToArray();
     }
 
     private static ReviewFinding? ParseFinding(string original, JsonElement item)
@@ -171,8 +231,48 @@ internal static class QuoteLocator
         return original[start..(end + 1)];
     }
 
+    /// <summary>
+    /// Finds a verbatim fragment at or after <paramref name="from"/>: exact match first, then the same
+    /// whitespace- and quote-tolerant match as <see cref="Find"/>. Returns original offsets [Start, End).
+    /// </summary>
+    public static (int Start, int End)? Locate(string original, string fragment, int from)
+    {
+        if (fragment.Length == 0 || from > original.Length)
+        {
+            return null;
+        }
+
+        var exact = original.IndexOf(fragment, from, StringComparison.Ordinal);
+        if (exact >= 0)
+        {
+            return (exact, exact + fragment.Length);
+        }
+
+        var (normalizedOriginal, map) = Normalize(original);
+        var normalizedFragment = Normalize(fragment).Text.Trim();
+        if (normalizedFragment.Length == 0)
+        {
+            return null;
+        }
+
+        var normalizedFrom = map.FindIndex(i => i >= from);
+        if (normalizedFrom < 0)
+        {
+            return null;
+        }
+
+        var index = normalizedOriginal.IndexOf(normalizedFragment, normalizedFrom, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return null;
+        }
+
+        var start = map[index];
+        return (start, map[index + normalizedFragment.Length - 1] + 1);
+    }
+
     /// <returns>Normalized text and, for each normalized char, the index of its source char.</returns>
-    private static (string Text, List<int> Map) Normalize(string value)
+    internal static (string Text, List<int> Map) Normalize(string value)
     {
         var builder = new StringBuilder(value.Length);
         var map = new List<int>(value.Length);

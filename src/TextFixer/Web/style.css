@@ -147,3 +147,12 @@ body { padding-bottom:48px; }
 .format-underline,.format-link { text-decoration-line:underline; text-underline-offset:3px; text-decoration-skip-ink:none; }
 .format-strikethrough { text-decoration-line:line-through; }
 .format-space { display:inline; white-space:pre; }
+
+.review-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--edge); padding-bottom:10px; }
+.review-tab { display:flex; align-items:center; gap:4px; padding:8px 10px; background:transparent; font-size:12px; }
+.review-tab.selected { border-color:var(--accent); background:rgba(245,204,87,.08); color:var(--accent); }
+.review-tab:disabled { color:var(--dim); opacity:.55; }
+.review-tab .number { margin-left:2px; }
+.inactive-correction { opacity:.48; cursor:default; }
+.inactive-change { opacity:.48; }
+.finding .use-wording { margin:8px 12px 8px 0; }

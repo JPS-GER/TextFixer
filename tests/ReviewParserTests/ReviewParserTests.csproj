@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline tests for the review prompt schema and result parser. Links the sources; not part of the app build. Run: dotnet run -c Release -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker>
+    <TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\TextFixer\Contracts\ReviewContracts.cs" Link="Contracts\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ReviewResultParser.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ReviewPrompt.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ChatGptHttp.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ChatGptServiceException.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ChatGptProtocol.cs" Link="Services\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

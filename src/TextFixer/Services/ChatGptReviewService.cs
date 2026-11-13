@@ -86,7 +86,7 @@ public sealed class ChatGptReviewService : IReviewService
         ArgumentNullException.ThrowIfNull(text);
         if (string.IsNullOrWhiteSpace(text))
         {
-            return new ReviewResult(text, []);
+            return new ReviewResult(text, [], []);
         }
 
         if (text.Length > MaxTextLength)

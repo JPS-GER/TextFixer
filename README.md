@@ -20,11 +20,11 @@ The window opens on first launch. Closing it hides it to the tray; double-click 
 
 ## First test
 
-1. Click "Continue with ChatGPT" and finish authorization in the system browser. The app waits for the callback; Cancel stops waiting.
+1. Click "Continue with ChatGPT" and finish authorization in the system browser. The app waits for the callback; Stop ends the wait.
 2. In a disposable Chrome text field, type a paragraph, select it, and press Alt+Q. Release both keys.
-3. Check the captured text, then click "Check text". Capture alone does not send text to the service.
-4. Accept or reject individual grammar changes. Reasoning findings are separate and are not inserted automatically.
-5. Choose "Copy revised text" or "Replace selection". Replacement returns focus, copies the selection again, and aborts if it no longer matches. Check the editor result. Ctrl+Z in the editor should undo a normal paste.
+3. The captured selection is sent for review automatically after capture when ChatGPT is connected.
+4. Review suggestions in the Spelling, Grammar, Punctuation, Wording, Worth checking and Formatting tabs. Accept or reject individual changes. Reasoning rewrites require an explicit "Use this wording" action.
+5. Choose "Copy with formatting" / "Paste with formatting", or the explicit plain-text option. Replacement returns focus, copies the selection again, and aborts if it no longer matches. Check the editor result. Ctrl+Z in the editor should undo a normal paste.
 6. Also test changed selections, a closed target window, multiple Chrome tabs, multiline text, and clipboard restoration before using it on important text.
 
 Only the selected or pasted text is sent, up to 30,000 characters. Text inside password fields is generally not copyable; do not use this app for secrets. The app never submits or sends posts or emails.
@@ -37,7 +37,7 @@ The canonical current build is `artifacts/TextFixer/TextFixer.exe`. Earlier test
 
 AI connection and Chrome setup are in the Settings dialog, opened from the header. They do not occupy the daily review screen. Click "Register Chrome connection" there to register the currently running executable for your Windows user, then load the extension as described below. No registration is performed by merely starting the app.
 
-Every review shows either "DIRECT CHROME EDITING" or "CLIPBOARD MODE". Alt+Q remains a clipboard workflow; direct editing is available after an extension capture. When the clipboard includes valid HTML, Alt+Q retains that original fragment, patches only accepted text corrections into its text tokens, and offers "Paste with formatting" or "Copy with formatting". Original paragraph elements, empty elements, inline formatting, attributes and styles remain intact. CF_HTML offsets are recalculated in UTF-8 bytes. Cross-format edits or HTML/plain-text mismatches are rejected without an automatic plain-text fallback. Plain-text replacement requires the explicit checkbox and is enforced in C#.
+A status-bar icon identifies a Chrome or Alt+Q capture, with its source in the tooltip. Alt+Q remains a clipboard workflow; direct editing is available after an extension capture. When the clipboard includes valid HTML, Alt+Q retains that original fragment, patches only accepted text corrections into its text tokens, and offers "Paste with formatting" or "Copy with formatting". Original paragraph elements, empty elements, inline formatting, attributes and styles remain intact. CF_HTML offsets are recalculated in UTF-8 bytes. Cross-format edits or HTML/plain-text mismatches are rejected without an automatic plain-text fallback. Plain-text replacement requires the explicit checkbox and is enforced in C#.
 
 The companion extension is plain JavaScript, without a build step. Setup is once per Windows user:
 
@@ -70,7 +70,7 @@ HTML clipboard capture now preserves the original fragment and changes only safe
 
 Delayed rendering supplies only the format Windows requested; disposal materializes any remaining formats. The HTML SourceURL header is retained so relative links retain their original base. `tests/ClipboardIntegrationTests` exercises real WinForms/raw CF_HTML Unicode round trips in a private, non-visible window station, never the user's interactive clipboard. It skips before any clipboard access if isolation is unavailable. That isolation was denied in the current test environment, so this live integration check remains unverified here.
 
-Restored entries also request history/cloud exclusion. Clipboard-manager automatic expiry may be disrupted by any save/restore operation. Elevated applications are rejected. Identical text in another field of the same window cannot be distinguished by the text comparison. Use Copy revised text when uncertain.
+Restored entries also request history/cloud exclusion. Clipboard-manager automatic expiry may be disrupted by any save/restore operation. Elevated applications are rejected. Identical text in another field of the same window cannot be distinguished by the text comparison. Use a Copy action when uncertain.
 
 ## WebView2 diagnostics
 
@@ -90,10 +90,30 @@ Optional development generator: `dotnet run --project tools/BrandAssets -c Relea
 
 `node tests/diff.test.cjs` runs offline reconstruction/accept-reject tests for the local word diff. Node is used only for development tests, never by the app or its build. The service layer was independently checked offline for parsing, quoted evidence, DPAPI, callback handling, and invalid token rejection. Real sign-in, refresh, inference, and Chrome round-trip editing still need an interactive account test.
 
+## Review tabs and finding rewrites
+
+The review opens on the first non-empty tab in the fixed order below. If every tab is empty, Spelling remains selected. Tabs appear in this order: Spelling, Grammar, Punctuation, Wording, Worth checking, Formatting. Each has a count; empty tabs remain visible and greyed. The full text remains visible in "Corrections in context". Only the selected tab's corrections are highlighted and clickable. Other corrections are faded and inert, showing their accepted or rejected text. Switching tabs preserves choices, and the revised text includes accepted corrections from every tab. "Accept all" and "Reject all" affect the selected tab only.
+
+Service-supplied correction categories are matched to locally computed diff parts using original UTF-16 ranges. Missing labels fall back to punctuation for punctuation/quote/whitespace-only changes, spelling for a single changed word, and grammar otherwise. If one diff unit overlaps several classified ranges, the largest overlap wins, with source order breaking ties. Category labels never supply the edit positions: the local diff and minimal Unicode-safe patches remain authoritative.
+
+Worth checking contains all finding kinds, each labelled (ambiguity, term misuse, contradiction, unsupported claim or logic gap). A finding offers "Use this wording" only when its first quote is non-empty and occurs exactly once, including overlapping occurrences. Choosing it creates an accepted replacement in the normal edit pipeline. Overlapping spelling/grammar corrections are superseded without losing their choices. "Undo wording" or rejecting the replacement restores those choices. Overlapping finding rewrites are mutually exclusive. Worth checking bulk actions affect only rewrites the user has activated, not every unchosen finding. Dismissing a finding also undoes its active rewrite. Rewrites that change line breaks are disabled, with the reason displayed beside the button. Existing HTML mapping and direct-editor safety checks apply; a rewrite that crosses formatting can be refused with the usual mapping error.
+
+Validation commands (Node is development-only):
+
+- `node tests/review-model.test.cjs`: UTF-16 category matching, reconstruction, superseding and wording undo.
+- `node tests/review-ui.test.cjs`: tab counts, active/inert controls, scoped choices, preview and messaging contracts.
+- `node tests/diff.test.cjs` and `node tests/edit-trim.test.cjs`: local diff and minimal-edit reconstruction.
+- `dotnet run --project tests/ReviewParserTests -c Release -p:NuGetAudit=false`: categorized response parsing and offset resolution (S66-owned).
+- `dotnet run --project tests/HtmlClipboardTests -c Release -p:NuGetAudit=false`: safe rich-text patching and formatting operations.
+- `dotnet run --project tests/EditorEditTests -c Release -p:NuGetAudit=false`: edit-batch validation.
+- `dotnet run --project tests/BridgeTests -c Release -p:NuGetAudit=false`: framing and native bridge checks (S66-owned).
+
+Acquire `.build.lock` before .NET builds and test runs. The publisher acquires it internally. Visual browser checks are coordinated by S66.
+
 ## Ownership
 
-- S46: project files, application shell, native clipboard/hotkey integration, WebView2 UI, contracts, build and integration.
-- S45: `src/TextFixer/Services/` only, implementing ChatGPT authentication and inference against `Contracts/IReviewService` (declared in ReviewContracts.cs).
+- S67 (formerly S46): project files, application shell, native clipboard/hotkey integration, WebView2 UI, extension, build, integration and docs.
+- S66 (formerly S45): coordination, `src/TextFixer/Services/`, `src/TextFixer/Bridge/`, parser/bridge tests and Git commit/push. The shared correction contract update in `Contracts/ReviewContracts.cs` is agreed with S67.
 - Shared build output lock: `.build.lock`. Acquire with exclusive file creation before builds; remove after completion or failure. Do not build while another session holds it.
 
 Credentials must remain in the C# process and be protected with Windows DPAPI. Never expose tokens to WebView2 or logs.

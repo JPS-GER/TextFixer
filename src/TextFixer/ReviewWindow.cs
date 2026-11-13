@@ -262,7 +262,7 @@ internal sealed class ReviewWindow : Form
                         try { consumed = await TextTransfer.ApplyAsync(capture, revision, pasteHtml); _capture = null; }
                         catch { Open(); throw; }
                         Send(new { type = "applied", clipboardRestored = consumed, formatted = pasteHtml is not null });
-                        if (!consumed) { Open(); Notify("Paste was sent, but the target's clipboard read could not be confirmed. The revision stays on the clipboard. Check the editor before pasting again."); }
+                        if (!consumed) Open();
                         break;
                 }
             }

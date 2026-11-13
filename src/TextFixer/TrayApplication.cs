@@ -20,9 +20,9 @@ internal sealed class TrayApplication : ApplicationContext
     {
         var menu = new ContextMenuStrip
         {
-            ForeColor = Color.FromArgb(0xe8, 0xee, 0xf1),
-            BackColor = Color.FromArgb(0x0d, 0x2c, 0x3b),
-            Renderer = new ToolStripProfessionalRenderer(new PetrolMenuColors())
+            ForeColor = PetrolMenuColors.Text,
+            BackColor = PetrolMenuColors.Background,
+            Renderer = new PetrolMenuRenderer()
         };
         menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
         menu.Items.Add(new ToolStripSeparator());

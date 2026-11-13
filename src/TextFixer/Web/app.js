@@ -2,6 +2,34 @@ const $=id=>document.getElementById(id);
 const post=(action,extra={})=>window.chrome.webview.postMessage({action,...extra});
 let connected=false,busy=false,canReplace=false,sourceText='',reviewOriginal='',parts=[],captureMode='clipboard',richClipboard=false;
 let pendingAutoCheck=false;
+let activeTab='spelling',reviewFindings=[],wordings=[];
+const reviewTabs=[['spelling','Spelling'],['grammar','Grammar'],['punctuation','Punctuation'],['wording','Wording'],['worth','Worth checking'],['formatting','Formatting']];
+function activeCorrection(p){return p.category===activeTab&&!p.layoutProtected&&(p.category==='worth'||!reviewSuperseded(p,wordings));}
+function tabCount(key){
+  if(key==='worth')return reviewFindings.filter(f=>!f.dismissed).length;
+  if(key==='formatting')return captureMode==='chrome'?0:formattingSuggestions.length;
+  return parts.filter(p=>p.changed&&p.category===key).length;
+}
+function renderTabs(){
+  const container=$('review-tabs');container.replaceChildren();
+  reviewTabs.forEach(([key,title])=>{
+    const button=document.createElement('button');button.type='button';button.id='tab-'+key;button.className='review-tab'+(activeTab===key?' selected':'');
+    button.dataset.category=key;button.setAttribute('role','tab');button.setAttribute('aria-selected',String(activeTab===key));
+    button.disabled=tabCount(key)===0;button.tabIndex=activeTab===key||(!tabCount(activeTab)&&reviewTabs.find(([k])=>tabCount(k)>0)?.[0]===key)?0:-1;
+    const name=document.createElement('span');name.textContent=title;
+    const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);button.append(name,count);
+    button.onclick=()=>{if(button.disabled)return;activeTab=key;showChanges();$('tab-'+key)?.focus();};
+    button.onkeydown=e=>{
+      if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();
+      const available=reviewTabs.filter(([k])=>tabCount(k)>0).map(([k])=>k),i=available.indexOf(key);
+      const next=e.key==='Home'?available[0]:e.key==='End'?available.at(-1):available[(i+(e.key==='ArrowRight'?1:-1)+available.length)%available.length];
+      if(next){activeTab=next;showChanges();$('tab-'+next)?.focus();}
+    };
+    container.append(button);
+  });
+  $('worth-results').hidden=activeTab!=='worth';
+  $('formatting-results').hidden=activeTab!=='formatting'||captureMode==='chrome'||!formattingSuggestions.length;
+}
 function startCapturedReview(){
   if(!pendingAutoCheck||!connected||busy||!sourceText.trim())return;
   pendingAutoCheck=false;
@@ -16,8 +44,10 @@ function update(){
   const formattedPaste=captureMode!=='chrome'&&richClipboard&&!$('allow-plain-text').checked;
   $('copy').disabled=busy;$('apply').disabled=busy||!canReplace||(captureMode!=='chrome'&&!formattedPaste&&!$('allow-plain-text').checked);
   $('allow-plain-text').disabled=busy;$('plain-text-option').hidden=captureMode==='chrome'||!canReplace;
-  $('accept-all').disabled=busy;$('reject-all').disabled=busy;
-  document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=busy||control.dataset.layoutProtected==='true');
+  const bulkCount=activeTab==='worth'?wordings.filter(w=>w.created&&!w.layoutProtected).length:tabCount(activeTab);
+  $('accept-all').disabled=busy||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);$('reject-all').disabled=busy||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);
+  document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=busy||control.dataset.layoutProtected==='true'||control.dataset.inactive==='true');
+  document.querySelectorAll('#findings button').forEach(control=>control.disabled=busy||control.dataset.layoutProtected==='true');
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
   $('route').className='capture-icon';
@@ -33,7 +63,7 @@ let formattingSuggestions=[];
 function selectedFormatting(){return formattingSuggestions.filter(f=>f.accepted).map(f=>f.id);}
 function showFormatting(items){
   formattingSuggestions=items.map(f=>({...f,accepted:false}));
-  $('formatting-results').hidden=!items.length||captureMode==='chrome';
+  $('formatting-results').hidden=activeTab!=='formatting'||!items.length||captureMode==='chrome';
   renderFormatting();
 }
 function renderFormatting(){
@@ -77,63 +107,93 @@ function renderFormatting(){
     container.append(card);
   });
 }
-function revised(){return parts.map(p=>p.changed&&!p.accepted?p.before:p.after).join('');}
-function acceptedEdits(){
-  let offset=0;const edits=[];
-  for(const p of parts){if(p.changed&&p.accepted&&!p.layoutProtected){const edit=minimalTextEdit(offset,p.before,p.after);if(edit)edits.push(edit);}offset+=p.before.length;}
-  return edits;
-}
+function revised(){return reviewRevised(reviewOriginal,parts,wordings);}
+function acceptedEdits(){return reviewEdits(parts,wordings);}
 function preview(){$('preview').textContent=revised();showInline();}
+function toggleCorrection(p){
+  if(busy||!activeCorrection(p))return;
+  p.accepted=!p.accepted;showChanges();
+}
 function showInline(){
   const container=$('inline-text');container.replaceChildren();
-  let index=0;
-  parts.forEach(p=>{
-    if(!p.changed){const span=document.createElement('span');span.textContent=p.before;container.append(span);return;}
-    const correctionIndex=index++;
-    const button=document.createElement('button');button.type='button';button.className='inline-correction'+(p.accepted?'':' rejected');button.disabled=busy;
-    button.disabled=busy||!!p.layoutProtected;
-    button.dataset.layoutProtected=String(!!p.layoutProtected);
+  reviewSegments(reviewOriginal,parts,wordings).forEach(p=>{
+    if(!p.changed){const span=document.createElement('span');span.textContent=p.before;if(p.superseded)span.className='inactive-correction';container.append(span);return;}
+    if(p.category!==activeTab){
+      const span=document.createElement('span');span.className='inactive-correction';span.textContent=p.accepted?p.after:p.before;
+      span.title=(p.accepted?'Accepted':'Rejected')+' '+(p.category==='worth'?'wording from Worth checking':p.category)+' correction';container.append(span);return;
+    }
+    const button=document.createElement('button');button.type='button';button.className='inline-correction'+(p.accepted?'':' rejected');
+    button.disabled=busy||!!p.layoutProtected;button.dataset.layoutProtected=String(!!p.layoutProtected);button.dataset.category=p.category;
     button.title=p.layoutProtected?'Not applied: this suggestion would change line breaks.':p.accepted?'Accepted correction. Click to reject.':'Rejected correction. Click to accept.';
     button.setAttribute('aria-pressed',String(p.accepted));
-    button.setAttribute('aria-label',`Correction ${correctionIndex+1}: ${p.before||'insert'} to ${p.after||'delete'}. ${button.title}`);
+    button.setAttribute('aria-label',`${p.before||'insert'} to ${p.after||'delete'}. ${button.title}`);
     if(p.before){const old=document.createElement('del');old.textContent=p.before;button.append(old);}
     if(p.after){const next=document.createElement('ins');next.textContent=p.after;button.append(next);}
-    button.onclick=()=>{
-      if(busy||p.layoutProtected)return;
-      p.accepted=!p.accepted;showChanges();
-      $('inline-text').querySelectorAll('button')[correctionIndex]?.focus();
-    };
-    container.append(button);
+    button.onclick=()=>toggleCorrection(p);container.append(button);
   });
 }
 function showChanges(){
   const container=$('changes');container.replaceChildren();
-  const changes=parts.filter(p=>p.changed);$('correction-count').textContent=changes.length;
-  if(!changes.length){const p=document.createElement('p');p.className='empty';p.textContent='No spelling or grammar changes suggested.';container.append(p);}
+  const changes=[...parts.filter(p=>p.changed&&p.category===activeTab),...wordings.filter(w=>w.created&&activeTab==='worth')];
+  $('correction-count').textContent=changes.length;
+  if(!changes.length){const p=document.createElement('p');p.className='empty';p.textContent='No text corrections in this category.';container.append(p);}
   changes.forEach((p,index)=>{
-    const label=document.createElement('label');label.className='change';
+    const inactive=!activeCorrection(p),label=document.createElement('label');label.className='change'+(inactive?' inactive-change':'');
     const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=p.accepted;checkbox.setAttribute('aria-label',`Accept correction ${index+1}`);
-    checkbox.disabled=busy||!!p.layoutProtected;checkbox.dataset.layoutProtected=String(!!p.layoutProtected);checkbox.onchange=()=>{if(busy||p.layoutProtected)return;p.accepted=checkbox.checked;preview();};
+    checkbox.disabled=busy||inactive;checkbox.dataset.layoutProtected=String(!!p.layoutProtected);checkbox.dataset.inactive=String(inactive);
+    checkbox.onchange=()=>{
+      if(busy||!activeCorrection(p))return;
+      if(p.category==='worth'&&checkbox.checked)reviewAcceptWording(p,wordings);else p.accepted=checkbox.checked;
+      showChanges();
+    };
     const content=document.createElement('span');content.className='change-content';
     const old=document.createElement('del');old.textContent=p.before||'(insertion)';
     const next=document.createElement('ins');next.textContent=p.after||'(deletion)';
     content.append(old,next);label.append(checkbox,content);container.append(label);
-  });preview();
+  });
+  preview();renderTabs();showFindings();update();
 }
-function showFindings(findings){
-  const container=$('findings');container.replaceChildren();$('finding-count').textContent=findings.length;
-  if(!findings.length){const p=document.createElement('p');p.className='empty';p.textContent='No specific reasoning or terminology concerns found.';container.append(p);}
-  findings.forEach(f=>{
+function showFindings(){
+  const container=$('findings');container.replaceChildren();$('finding-count').textContent=tabCount('worth');
+  if(!tabCount('worth')){const p=document.createElement('p');p.className='empty';p.textContent='No specific reasoning or terminology concerns found.';container.append(p);}
+  reviewFindings.forEach((f,index)=>{
+    if(f.dismissed)return;
     const card=document.createElement('article');card.className='finding';
     const top=document.createElement('div');top.className='finding-top';
     const kind=document.createElement('span');kind.className='kind';kind.textContent=f.kind.replaceAll('_',' ');
-    const dismiss=document.createElement('button');dismiss.className='link';dismiss.textContent='Dismiss';dismiss.onclick=()=>{card.remove();$('finding-count').textContent=container.children.length;};
+    const dismiss=document.createElement('button');dismiss.className='link';dismiss.textContent='Dismiss';dismiss.disabled=busy;
+    dismiss.onclick=()=>{if(busy)return;f.dismissed=true;const w=wordings.find(w=>w.findingIndex===index);if(w){w.accepted=false;w.created=false;}showChanges();};
     top.append(kind,dismiss);card.append(top);
     (f.quotes||[]).forEach(q=>{const quote=document.createElement('blockquote');quote.textContent=q;card.append(quote);});
     const explanation=document.createElement('p');explanation.textContent=f.explanation;card.append(explanation);
-    if(f.suggestedRewrite){const rewrite=document.createElement('p');rewrite.textContent=`Possible wording: ${f.suggestedRewrite}`;card.append(rewrite);const note=document.createElement('small');note.textContent='Not applied automatically.';card.append(note);}
+    if(f.suggestedRewrite){
+      const rewrite=document.createElement('p');rewrite.textContent=`Possible wording: ${f.suggestedRewrite}`;card.append(rewrite);
+      const w=wordings.find(w=>w.findingIndex===index);
+      if(w){
+        const use=document.createElement('button');use.type='button';use.className='use-wording';use.textContent=w.accepted?'Undo wording':'Use this wording';
+        use.dataset.findingIndex=String(index);use.dataset.layoutProtected=String(w.layoutProtected);use.disabled=busy||w.layoutProtected;
+        use.title=w.layoutProtected?'This rewrite changes line breaks and cannot be applied.':w.accepted?'Restore the overlapping correction choices.':'Replace the uniquely matched quote with this wording.';
+        use.onclick=()=>{if(busy||w.layoutProtected)return;if(w.accepted)w.accepted=false;else reviewAcceptWording(w,wordings);activeTab='worth';showChanges();};
+        card.append(use);
+        if(w.layoutProtected){
+          const reason=document.createElement('p');reason.className='hint wording-reason';
+          reason.id='wording-reason-'+index;reason.textContent='This rewrite changes line breaks and cannot be applied.';
+          use.setAttribute('aria-describedby',reason.id);card.append(reason);
+        }
+      }
+      const note=document.createElement('small');note.textContent=w?.accepted?'Included in revised text.':'Not applied automatically.';card.append(note);
+    }
     container.append(card);
   });
+}
+function bulkCorrections(accepted){
+  if(busy)return;
+  if(activeTab==='formatting'){
+    if($('allow-plain-text').checked)return;formattingSuggestions.forEach(f=>f.accepted=accepted);renderFormatting();
+  }else if(activeTab==='worth'){
+    wordings.filter(w=>w.created&&!reviewFindings[w.findingIndex].dismissed).forEach(w=>{if(accepted)reviewAcceptWording(w,wordings);else w.accepted=false;});
+  }else parts.filter(p=>p.changed&&activeCorrection(p)).forEach(p=>p.accepted=accepted);
+  showChanges();
 }
 $('source').addEventListener('input',()=>{pendingAutoCheck=false;sourceText=$('source').value;canReplace=false;richClipboard=false;$('formatting').hidden=true;$('results').hidden=true;update();});
 $('signin').onclick=()=>post('signin');$('signout').onclick=()=>post('signout');$('usage').onclick=()=>post('usage');$('cancel').onclick=()=>post('cancel');
@@ -142,10 +202,10 @@ $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');}
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
 $('register-chrome').onclick=()=>post('registerChrome');$('extension-folder').onclick=()=>post('extensionFolder');$('refresh-chrome').onclick=()=>post('chromeStatus');
-$('accept-all').onclick=()=>{parts.forEach(p=>p.accepted=!p.layoutProtected);showChanges();};$('reject-all').onclick=()=>{parts.forEach(p=>p.accepted=false);showChanges();};
+$('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
-  if(m.type==='capture'){$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?'Connect ChatGPT in Settings to review this selection.':'');startCapturedReview();}
+  if(m.type==='capture'){activeTab='spelling';parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?'Connect ChatGPT in Settings to review this selection.':'');startCapturedReview();}
   if(m.type==='chromeStatus'){
     $('chrome-status').textContent=m.connected?'Connected to Chrome. Use the extension context menu to capture text.':m.registered?'Desktop connection registered. Load or reload the extension, then use its right-click review action.':'Chrome connection is not registered for this executable. Complete setup below.';
     $('setup-details').open=!m.connected;$('extension-path').textContent=m.folder||'chrome-extension';$('extension-folder').disabled=!m.folder;
@@ -155,14 +215,13 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
   if(m.type==='result'){
-    reviewOriginal=m.original;parts=textFixerDiff(m.original,m.result.correctedText);
-    // A browser's nonbreaking-space representation alone is not a writing correction.
-    parts.forEach(p=>{if(p.changed&&p.before.replace(/\u00a0/g,' ')===p.after.replace(/\u00a0/g,' ')){p.changed=false;p.after=p.before;}});
-    parts.forEach(p=>{p.layoutProtected=p.changed&&/[\r\n]/.test(p.before+p.after);if(p.layoutProtected)p.accepted=false;});
-    captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;showFormatting(m.formattingSuggestions||[]);showChanges();showFindings(m.result.findings);$('model').textContent=m.model||'';$('results').hidden=false;
+    activeTab='spelling';reviewOriginal=m.original;parts=reviewParts(m.original,m.result.correctedText,m.result.corrections);
+    reviewFindings=(m.result.findings||[]).map(f=>({...f,dismissed:false}));
+    wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);
+    captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;showFormatting(m.formattingSuggestions||[]);activeTab=reviewTabs.find(([key])=>tabCount(key)>0)?.[0]||'spelling';showChanges();$('model').textContent=m.model||'';$('results').hidden=false;
     notice(parts.some(p=>p.layoutProtected)?'Review ready. Suggestions that would change line breaks were excluded to preserve your paragraph layout.':'Review ready. Accept or reject corrections, then copy or replace your text.');
   }
-  if(m.type==='applied'){canReplace=false;notice(m.formatted?'Formatted paste sent to the original editor, including the original paragraph markup. Check the result there.':'Plain-text paste sent to the original editor. Check the result there; use Ctrl+Z there to undo.');}
+  if(m.type==='applied'){canReplace=false;notice('Paste sent. Alt+Q cannot verify the result in the editor. Please check it there.'+(m.clipboardRestored===false?' The revised text remains on the clipboard.':''));}
   if(m.type==='chromeApplied'){canReplace=false;notice(m.message);}
   if(m.type==='targetLost'){canReplace=false;}
   if(m.type==='error'){notice(`${m.message}${m.code?'\nCode: '+m.code:''}${m.param?' ('+m.param+')':''}`);$('usage').classList.toggle('primary',!!m.usageLimit);if(m.requiresSignIn){connected=false;$('signin').hidden=false;}}
