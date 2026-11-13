@@ -86,6 +86,7 @@ internal sealed class ReviewWindow : Form
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
     {
         _history = history; _clipboardMonitor = monitor; _settings = settings;
+        _service.StraightQuotes = settings.StraightQuotes; _service.PlainDashes = settings.PlainDashes;
         history.Changed += (_, _) => SendHistory();
     }
     internal void ChromeConnected() => SendChromeStatus();
@@ -177,7 +178,7 @@ internal sealed class ReviewWindow : Form
         }
     }
 
-    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview });
+    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, straightQuotes = _settings?.StraightQuotes ?? false, plainDashes = _settings?.PlainDashes ?? false });
 
     private void SendHistory()
     {
@@ -327,6 +328,16 @@ internal sealed class ReviewWindow : Form
                 HandleHistory(action, root);
                 return;
             }
+            if (action == "typography" && _settings is not null)
+            {
+                _settings.StraightQuotes = root.TryGetProperty("straightQuotes", out var quotes) && quotes.ValueKind == JsonValueKind.True;
+                _settings.PlainDashes = root.TryGetProperty("plainDashes", out var dashes) && dashes.ValueKind == JsonValueKind.True;
+                _service.StraightQuotes = _settings.StraightQuotes; _service.PlainDashes = _settings.PlainDashes;
+                try { _settings.Save(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                SendReviewMode();
+                return;
+            }
             if (action == "reviewMode" && _settings is not null)
             {
                 var mode = root.GetProperty("mode").GetString();
@@ -358,7 +369,7 @@ internal sealed class ReviewWindow : Form
                 var folder = ChromeSetup.ExtensionFolder ?? throw new InvalidOperationException("The chrome-extension folder was not found alongside this build.");
                 Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "copyTranslation" or "applyTranslation")) return;
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation")) return;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
             try
@@ -388,6 +399,14 @@ internal sealed class ReviewWindow : Form
                         if (_capture is not null && _capture.Text != source) _capture = null;
                         var translation = await _service.TranslateAsync(source, _operation.Token);
                         Send(new { type = "translation", original = source, translation, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        break;
+                    case "reviseTranslation":
+                        var revisedFrom = ReadText(root);
+                        var current = root.TryGetProperty("translation", out var currentElement) ? currentElement.GetString() ?? "" : "";
+                        var wish = root.TryGetProperty("request", out var wishElement) ? wishElement.GetString() ?? "" : "";
+                        if (string.IsNullOrWhiteSpace(current)) throw new InvalidOperationException("Translate the text first.");
+                        var revisedTranslation = await _service.ReviseTranslationAsync(revisedFrom, current, wish, _operation.Token);
+                        Send(new { type = "translation", original = revisedFrom, translation = revisedTranslation, revised = true, canReplace = _capture is not null && _capture.Text == revisedFrom && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "copyTranslation":
                         TextTransfer.CopyRevision(ReadText(root));

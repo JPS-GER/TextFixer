@@ -28,6 +28,25 @@ function reviewParts(original,corrected,corrections=[]){
     return p;
   });
 }
+// Punctuation style: typographic quotes and dashes the answer introduced become straight quotes and hyphens.
+// Characters already present in the reference text (the user's own choice) are kept.
+const reviewStyleQuotes={'\u201E':'"','\u201C':'"','\u201D':'"','\u00AB':'"','\u00BB':'"','\u201A':"'",'\u2018':"'",'\u2019':"'",'\u2039':"'",'\u203A':"'"};
+const reviewStyleDashes={'\u2013':'-','\u2014':'-','\u2012':'-','\u2010':'-','\u2011':'-','\u2212':'-'};
+function reviewPlainStyle(text,reference,style){
+  if(typeof text!=='string'||!style||(!style.straightQuotes&&!style.plainDashes))return text;
+  return text.replace(/[\u201E\u201C\u201D\u00AB\u00BB\u201A\u2018\u2019\u2039\u203A\u2013\u2014\u2012\u2010\u2011\u2212]/g,c=>{
+    const plain=(style.straightQuotes&&reviewStyleQuotes[c])||(style.plainDashes&&reviewStyleDashes[c]);
+    return plain&&!reference.includes(c)?plain:c;
+  });
+}
+function reviewStyleParts(parts,style){
+  for(const p of parts){
+    if(!p.changed)continue;
+    p.after=reviewPlainStyle(p.after,p.before,style);
+    if(p.after===p.before){p.changed=false;p.layoutProtected=false;p.accepted=true;}
+  }
+  return parts;
+}
 function reviewWording(original,finding,index){
   const quote=finding.quotes?.[0],after=finding.suggestedRewrite;
   if(typeof quote!=='string'||!quote||typeof after!=='string'||!after||after===quote)return null;

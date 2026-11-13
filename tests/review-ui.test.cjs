@@ -347,3 +347,38 @@ console.log('PASS: duplicate fixes from several tabs are applied once.');
  assert.equal(sent.at(-1).action,'check');
 }
 console.log('PASS: Alt+E translates the capture.');
+{
+ // Punctuation style: introduced typographic quotes and dashes become straight; the user's own stay.
+ message({type:'reviewMode',mode:'single',straightQuotes:true,plainDashes:true});
+ const original='Er sagte "hallo" - und ging. Sie las „Faust“.';
+ message({type:'capture',text:original,canReplace:true});
+ message({type:'result',original,result:{correctedText:'Er sagte „Hallo“ – und ging. Sie las „Faust“.',findings:[{kind:'ambiguity',explanation:'?',quotes:['und ging'],suggestedRewrite:'und ging – sofort'}],corrections:[]},canReplace:true,model:'m',mode:'clipboard'});
+ assert.equal(element('preview').textContent,'Er sagte "Hallo" - und ging. Sie las „Faust“.','typographic quotes and dash are not introduced; existing ones stay');
+ assert.equal(element('inline-text').children.filter(c=>c.tag==='button').length,1,'only the real fix remains a correction');
+ message({type:'busy',busy:false});
+ message({type:'translation',original:'He said "yes".',translation:'Er sagte „ja“.',canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('translation-text').textContent,'Er sagte "ja".');
+ message({type:'reviewMode',mode:'single',straightQuotes:false,plainDashes:false});
+}
+console.log('PASS: punctuation style keeps straight quotes and hyphens.');
+{
+ // Translation change request: sends source, current translation and the wish; the answer replaces the translation.
+ const original='Kannst du mir die Datei schicken?';
+ message({type:'capture',task:'translate',text:original,canReplace:true,readOnly:false});
+ message({type:'busy',busy:false});
+ message({type:'translation',original,translation:'Can you send me the file?',canReplace:true,readOnly:false,model:'m'});
+ element('translation-request').value='  more formal ';
+ element('revise-translation').onsubmit({preventDefault(){}});
+ assert.deepEqual({...sent.at(-1)},{action:'reviseTranslation',text:original,translation:'Can you send me the file?',request:'more formal'});
+ message({type:'busy',busy:true,action:'reviseTranslation'});
+ assert.equal(element('revise-translation-button').disabled,true,'revise waits while busy');
+ message({type:'busy',busy:false});
+ message({type:'translation',original,translation:'Could you please send me the file?',revised:true,canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('translation-text').textContent,'Could you please send me the file?');
+ assert.equal(element('translation-request').value,'','request field is cleared after a revision');
+ element('apply-translation').onclick();
+ assert.equal(sent.at(-1).text,'Could you please send me the file?','paste uses the revised translation');
+ const before=sent.length;element('translation-request').value='  ';element('revise-translation').onsubmit({preventDefault(){}});
+ assert.equal(sent.length,before,'empty request is not sent');
+}
+console.log('PASS: translation change requests revise the translation.');

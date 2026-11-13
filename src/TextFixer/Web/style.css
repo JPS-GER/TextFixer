@@ -112,6 +112,9 @@ dialog .chrome-setup { margin-bottom:0; }
 .startup-option input { margin-top:3px; }
 #translation-view pre { max-height:480px; font-size:15px; }
 #translation-view details { margin-top:12px; }
+.revise-translation { display:flex; gap:10px; margin-top:12px; }
+.revise-translation input { flex:1; min-width:0; border:1px solid var(--edge); border-radius:7px; padding:9px 12px; background:var(--room-1); font:14px "Segoe UI",Arial; color:var(--text); caret-color:var(--accent); }
+.revise-translation input::placeholder { color:var(--muted); }
 #history-view { display:none; }
 main.show-history > :not(#history-view) { display:none !important; }
 main.show-history > #history-view { display:block; }

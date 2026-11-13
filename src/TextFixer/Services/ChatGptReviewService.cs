@@ -33,6 +33,14 @@ public sealed class ChatGptReviewService : IReviewService
     /// <summary>Model slug to use when the account lists it; otherwise the first listed model is used.</summary>
     public string? PreferredModel { get; set; }
 
+    /// <summary>Asks for straight quotation marks and apostrophes only.</summary>
+    public bool StraightQuotes { get; set; }
+
+    /// <summary>Asks for plain hyphens instead of en or em dashes.</summary>
+    public bool PlainDashes { get; set; }
+
+    private string Style => ReviewPrompt.StyleRules(StraightQuotes, PlainDashes);
+
     /// <summary>Model slug used by the latest check.</summary>
     public string? ActiveModel { get; private set; }
 
@@ -127,13 +135,40 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, Style), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
+        return KeepOuterWhitespace(text, output);
+    }
+
+    public const int MaxRequestLength = 500;
+
+    /// <summary>Revises <paramref name="translation"/> of <paramref name="source"/> as the user asks, for example a more formal tone.</summary>
+    public async Task<string> ReviseTranslationAsync(string source, string translation, string request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(translation);
+        request = request?.Trim() ?? "";
+        if (request.Length == 0) throw new ChatGptServiceException("empty_request", "Describe the change you want, for example \"more formal\".");
+        if (request.Length > MaxRequestLength) throw new ChatGptServiceException("request_too_long", $"Keep the change request under {MaxRequestLength} characters.");
+        if (source.Length > MaxTextLength || translation.Length > MaxTextLength * 2)
+            throw new ChatGptServiceException("text_too_long", $"The selected text is too long to translate (maximum {MaxTextLength:N0} characters).");
+
+        var output = await WithAccessTokenAsync(async token =>
+        {
+            var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, Style), cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+
+        return KeepOuterWhitespace(source, output);
+    }
+
+    private static string KeepOuterWhitespace(string source, string output)
+    {
         var translation = output.Trim();
         if (translation.Length == 0) throw new ChatGptServiceException("empty_translation", "ChatGPT returned no translation. Try again.");
-        var lead = text[..(text.Length - text.TrimStart().Length)];
-        var trail = text[text.TrimEnd().Length..];
+        var lead = source[..(source.Length - source.TrimStart().Length)];
+        var trail = source[source.TrimEnd().Length..];
         return lead + translation + trail;
     }
 
@@ -142,7 +177,7 @@ public sealed class ChatGptReviewService : IReviewService
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured, focus), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured, focus, Style), cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -151,7 +186,7 @@ public sealed class ChatGptReviewService : IReviewService
         {
             // text.format isn't documented for plan usage. Without it, the parser validates the JSON alone.
             _structuredOutputUnsupported = true;
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false, focus), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false, focus, Style), cancellationToken).ConfigureAwait(false);
         }
     }
 
