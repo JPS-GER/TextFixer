@@ -1,0 +1,12 @@
+bin/
+obj/
+.local/
+artifacts/
+*.user
+.playwright-mcp/
+.playwright-cli/
+.build.lock
+.vs/
+.env
+.env.*
+*.log

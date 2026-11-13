@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker>
+    <TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
+    <ApplicationIcon>Assets\TextFixer.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <EmbeddedResource Include="Web\**\*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets\*.ico" LogicalName="brand/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Target Name="RemoveUnusedWebViewWpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,0 +1,20 @@
+Generated with the built-in image_gen tool. Concept exploration only; no application icons were replaced.
+
+Use case: logo-brand.
+Create ONE polished visual contact sheet showing EXACTLY TEN genuinely distinct logo concepts for the existing Windows writing assistant "TextFixer". This is a logo exploration mockup, not final production icons. Intended uses: application UI branding, Windows app icon, and Windows notification-area tray icon. The product checks spelling, grammar, terminology, and reasoning.
+
+Layout: a spacious landscape design board, five equal columns by two rows. All ten complete cards visible, generous outer margins, no cropping. Elegant off-white background, fine pale gray dividers, sophisticated restrained graphic-design presentation. Heading "TextFixer" with subtitle "10 logo directions". Every concept numbered clearly 01 through 10, left to right across the top row and then the bottom row. Each card has a large distinctive flat vector-style symbol, a small "TextFixer" UI wordmark beside or below it, a separate rounded-square Windows app icon preview, and simplified monochrome tray glyph previews shown on both a light and a charcoal square. The tray glyph must be the same recognizable silhouette as its own logo. Labels should be minimal and legible. Make the symbols readable at tiny sizes: bold shapes, clean negative space, few elements, no fine detail.
+
+Ten distinct concepts:
+01 "Proofmark": an upright T cleverly ending in a confident check stroke.
+02 "TF Ligature": custom geometric T and F interlocking into one compact typographic glyph, no checkmark.
+03 "Bracket": two editing brackets framing a small correction tick.
+04 "Text Lines": three bold horizontal writing lines, one line transformed into an upward correction stroke.
+05 "Caret": a proofreader insertion caret combined with a minimal pen nib.
+06 "Word Bubble": compact speech bubble with one strong text stroke and a small correction notch.
+07 "Folded Page": a clean page silhouette with one folded corner and an F formed by negative space.
+08 "Revision Loop": an open circular revision arrow built around a simple lowercase t.
+09 "Precision Cursor": strong text insertion cursor integrated into a rounded selection frame.
+10 "Logic Link": two interlocking angular links forming an abstract F, suggesting coherent reasoning.
+
+Visual direction: premium calm desktop productivity software, balanced geometric geometry, professional and ownable. Primarily deep forest green, teal, and ivory reflecting the current TextFixer UI, with subtle variation between concepts. Main logos may use at most two colors; monochrome tray versions must stand independently without relying on color. Do not simply repeat the same checkmark ten times. No gradients, no 3D, no shadows inside the logos, no sparkle cliches, no stock clipart, no generic AI brain, no decorative fine print, no trademarks from other companies. Exact brand spelling: "TextFixer". Show meaningful variety in silhouettes and visual metaphors. All typography straight and clean.

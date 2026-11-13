@@ -1,0 +1,11 @@
+Built-in image_gen edit. Reference: textfixer-10-concepts.png. Selected concept 02, TF Ligature. Output is a refinement mockup, not installed app icons.
+
+Use case: logo-brand. Edit the supplied concept board into ONE focused refinement presentation for ONLY concept 02 "TF Ligature", the second card in the top row. The reference board is a design reference, not a layout to retain. Remove the other nine concepts.
+
+Preserve the identity of concept 02: a confident forward-slanted geometric T and F ligature, wide horizontal cap on the T, a strong diagonal descending stem, a smaller F aligned alongside it, clean negative space. Keep this exact concept recognizable. Refine the geometry, spacing and optical balance instead of inventing a new symbol. Flat solid deep forest green for the T and rich teal for the F. No gradients, shadows, texture, beveling or 3D effects.
+
+Create an elegant, restrained brand application mockup on an ivory background. At the top, small heading "02 / TF LIGATURE". Main central feature: the refined two-color TF symbol with the exact wordmark "TextFixer" in a clean contemporary sans serif beside it. Beneath, three clearly separated practical application areas:
+1. "UI" showing the compact mark and TextFixer wordmark in a simple pale application header.
+2. "Windows app" showing the white monochrome TF mark on a forest-green rounded-square app icon, plus a small matching title-bar icon preview.
+3. "Tray" showing the same recognizable TF silhouette in single-color dark ink on a light taskbar and in white on a charcoal taskbar, with tiny icon previews at a plausible tray scale. Simplify only the smallest gaps as needed for tiny sizes; never add a box around the tray glyph itself.
+Use large generous whitespace, sharp geometry, and coherent proportions. Show only the selected concept in these applications. Keep it visually legible, quiet, practical and professional, optimized for eventual 16/20/24/32-pixel icons. No promotional copy or decorative elements. Exact visible texts only: "02 / TF LIGATURE", "TextFixer", "UI", "Windows app", "Tray".

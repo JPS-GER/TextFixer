@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "TextFixer Chrome Bridge",
+  "version": "0.2.4",
+  "description": "Review selected text in the TextFixer desktop app and apply targeted corrections without clipboard replacement.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "TextFixer: select text, then right-click to review",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png" }
+  },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA23VJ8r0+ylkBewNsmznJYsY5tA2KqalR08sKIMxabGj2jvzzRH3qiBNvc3nfQIlLo4lmSwCxP5ep2ZcEJ6SPKCpvf4sQKc+QVNk/Lj50G1jpf/fVEY7+2FigaAAwkzQD21wPTFRnwGjCnmRyaYZfMdCE+kh2lMY3lt2JCNVbBaA0f5568QEky2KrEzygy5zKXezTwPa/KYlwPgLWDt51I/JcHDU151z21whot50JRxi90Xaa9n7YjwukDD56NSPoAMJoOW7j7GPC9sQHW4mLj0XxcB3MMst085OrQZItjZ1goYm0pv9qUfaE8OPl2XRI2Mcu4W7khzo7nEFzgD4AMQIDAQAB"
+}
