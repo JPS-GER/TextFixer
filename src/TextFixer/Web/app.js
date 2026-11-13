@@ -2,6 +2,8 @@ const $=id=>document.getElementById(id);
 const post=(action,extra={})=>window.chrome.webview.postMessage({action,...extra});
 let connected=false,busy=false,canReplace=false,readOnlyCapture=false,sourceText='',reviewOriginal='',parts=[],captureMode='clipboard',richClipboard=false;
 let pendingAutoCheck=false;
+// Alt+E captures translate instead of review.
+let captureTask='review',translationOriginal='',translationText='';
 // "One request per tab" review: tabState holds ready | running | failed | stopped per requested tab.
 let reviewMode='single',partialReview=false,tabState={},tabResults={},tabErrors={},autoTab=true;
 const focusOrder=['spelling','grammar','punctuation','wording','worth'];
@@ -81,6 +83,7 @@ function readyNotice(){
 function startCapturedReview(){
   if(!pendingAutoCheck||!connected||busy||!sourceText.trim())return;
   pendingAutoCheck=false;
+  if(captureTask==='translate'){notice('Translating your text...');post('translate',{text:sourceText});return;}
   notice('Checking your text...');post('check',{text:sourceText});
 }
 function notice(message){$('notice').textContent=message||'Ready';$('notice').hidden=false;}
@@ -93,6 +96,7 @@ function update(){
   $('copy').disabled=busy;$('apply').disabled=busy||!canReplace||(captureMode!=='chrome'&&!formattedPaste&&!$('allow-plain-text').checked);
   $('allow-plain-text').disabled=busy;$('plain-text-option').hidden=captureMode==='chrome'||!canReplace;
   $('apply').hidden=readOnlyCapture;$('copy').classList.toggle('primary',readOnlyCapture);$('readonly-hint').hidden=!readOnlyCapture;
+  $('copy-translation').disabled=busy;$('apply-translation').disabled=busy||!canReplace;$('apply-translation').hidden=readOnlyCapture;$('copy-translation').classList.toggle('primary',readOnlyCapture);$('translation-readonly').hidden=!readOnlyCapture;
   const bulkCount=activeTab==='worth'?wordings.filter(w=>w.created&&!w.layoutProtected).length:tabCount(activeTab);
   $('accept-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);$('reject-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);
   document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true'||control.dataset.inactive==='true');
@@ -100,12 +104,12 @@ function update(){
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
   $('route').className='capture-icon';
-  const captureLabel=captureMode==='chrome'?'Captured from Chrome':'Captured with Alt+Q';
+  const captureLabel=captureMode==='chrome'?'Captured from Chrome':captureTask==='translate'?'Captured with Alt+E':'Captured with Alt+Q';
   $('route').title=captureLabel;$('route').setAttribute('aria-label',captureLabel);
   $('clipboard-icon').hidden=captureMode==='chrome';$('chrome-icon').hidden=captureMode!=='chrome';
   $('route').hidden=!canReplace&&!readOnlyCapture;
   $('route-title').textContent=captureMode==='chrome'?'Captured from Chrome':'Captured with Alt+Q';
-  $('formatting').hidden=richClipboard||captureMode==='chrome'||!canReplace;
+  $('formatting').hidden=richClipboard||captureMode==='chrome'||!canReplace||captureTask==='translate';
   $('formatting').textContent=richClipboard?'':'This selection includes formatting. Plain-text replacement may remove formatting.';
 }
 let formattingSuggestions=[];
@@ -259,6 +263,7 @@ $('open-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('
 $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');};$('close-settings').onclick=()=>$('settings').close();
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
+$('copy-translation').onclick=()=>post('copyTranslation',{text:translationText});$('apply-translation').onclick=()=>post('applyTranslation',{text:translationText,original:translationOriginal});
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
 document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
@@ -266,7 +271,8 @@ $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('regis
 $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
-  if(m.type==='capture'){activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?'Connect ChatGPT in Settings to review this selection.':'');startCapturedReview();}
+  if(m.type==='capture'){captureTask=m.task==='translate'?'translate':'review';$('translation-view').hidden=true;activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':'Connect ChatGPT in Settings to review this selection.'):'');startCapturedReview();}
+  if(m.type==='translation'){translationOriginal=m.original;translationText=m.translation;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=m.translation;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;notice(readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
   if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
   if(m.type==='historyCopied'){copiedId=m.id;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
@@ -306,7 +312,7 @@ window.chrome.webview.addEventListener('message',event=>{
     captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;showFormatting(m.formattingSuggestions||[]);activeTab=reviewTabs.find(([key])=>tabCount(key)>0)?.[0]||'spelling';showChanges();$('model').textContent=m.model||'';$('results').hidden=false;
     notice(parts.some(p=>p.layoutProtected)?'Review ready. Suggestions that would change line breaks were excluded to preserve your paragraph layout.':(readOnlyCapture?'Review ready. Accept or reject corrections, then copy your text.':'Review ready. Accept or reject corrections, then copy or replace your text.'));
   }
-  if(m.type==='applied'){canReplace=false;notice('Paste sent. Alt+Q cannot verify the result in the editor. Please check it there.'+(m.clipboardRestored===false?' The revised text remains on the clipboard.':''));}
+  if(m.type==='applied'){canReplace=false;notice('Paste sent. TextFixer cannot verify the result in the editor. Please check it there.'+(m.clipboardRestored===false?(captureTask==='translate'?' The translation remains on the clipboard.':' The revised text remains on the clipboard.'):''));}
   if(m.type==='chromeApplied'){canReplace=false;notice(m.message);}
   if(m.type==='targetLost'){canReplace=false;}
   if(m.type==='error'){notice(`${m.message}${m.code?'\nCode: '+m.code:''}${m.param?' ('+m.param+')':''}`);$('usage').classList.toggle('primary',!!m.usageLimit);if(m.requiresSignIn){connected=false;$('signin').hidden=false;}}

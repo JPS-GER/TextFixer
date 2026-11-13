@@ -254,10 +254,10 @@ console.log('PASS: first non-empty tab, all-empty fallback, zero counts and visi
 
 for(const formatted of [true,false]){
  message({type:'applied',formatted,clipboardRestored:false});
- assert.equal(element('notice').textContent,'Paste sent. Alt+Q cannot verify the result in the editor. Please check it there. The revised text remains on the clipboard.');
+ assert.equal(element('notice').textContent,'Paste sent. TextFixer cannot verify the result in the editor. Please check it there. The revised text remains on the clipboard.');
  assert.equal(element('apply').disabled,true,'paste consumes the capture');
  message({type:'applied',formatted,clipboardRestored:true});
- assert.equal(element('notice').textContent,'Paste sent. Alt+Q cannot verify the result in the editor. Please check it there.');
+ assert.equal(element('notice').textContent,'Paste sent. TextFixer cannot verify the result in the editor. Please check it there.');
 }
 assert.ok(!fs.readFileSync('src/TextFixer/ReviewWindow.cs','utf8').includes("target's clipboard read could not be confirmed"),'normal paste status is not overwritten by the old warning');
 console.log('PASS: neutral Alt+Q paste status and retained-clipboard information.');
@@ -320,3 +320,30 @@ console.log('PASS: one request per tab shows progressive results with tab states
  assert.equal(element('preview').textContent,'Ich glaube, dass wir gewinnen.','duplicate tab fixes are applied once');
 }
 console.log('PASS: duplicate fixes from several tabs are applied once.');
+{
+ // Alt+E: the capture is translated, not reviewed; the translation can be copied or pasted over the selection.
+ message({type:'status',status:{connected:true}});
+ const original='Ich glaube, dass wir gewinnen.';
+ sent.length=0;
+ message({type:'capture',task:'translate',text:original,canReplace:true,readOnly:false});
+ assert.equal(sent.at(-1)?.action,'translate','Alt+E capture starts a translation');
+ assert.equal(sent.at(-1).text,original);
+ assert.ok(!sent.some(s=>s.action==='check'),'Alt+E capture is not reviewed');
+ message({type:'busy',busy:false});
+ message({type:'translation',original,translation:'I think we will win.',canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('translation-view').hidden,false);
+ assert.equal(element('results').hidden,true);
+ assert.equal(element('translation-text').textContent,'I think we will win.');
+ assert.equal(element('apply-translation').hidden,false);
+ element('apply-translation').onclick();
+ assert.deepEqual({action:sent.at(-1).action,text:sent.at(-1).text,original:sent.at(-1).original},{action:'applyTranslation',text:'I think we will win.',original});
+ element('copy-translation').onclick();
+ assert.equal(sent.at(-1).action,'copyTranslation');
+ message({type:'translation',original,translation:'I think we will win.',canReplace:false,readOnly:true,model:'m'});
+ assert.equal(element('apply-translation').hidden,true,'read-only translation offers copy only');
+ assert.equal(element('translation-readonly').hidden,false);
+ message({type:'capture',text:original,canReplace:true,readOnly:false});
+ assert.equal(element('translation-view').hidden,true,'Alt+Q capture hides the translation');
+ assert.equal(sent.at(-1).action,'check');
+}
+console.log('PASS: Alt+E translates the capture.');

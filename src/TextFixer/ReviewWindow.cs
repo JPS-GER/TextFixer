@@ -81,7 +81,7 @@ internal sealed class ReviewWindow : Form
         if (!WindowFocus.BringOwnWindowForward(Handle)) Diagnostic("Foreground activation was refused by Windows.");
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
-    internal void SetCapture(CapturedText capture) { _chromeCapture = null; _capture = capture; SendCapture(); }
+    internal void SetCapture(CapturedText capture, bool translate = false) { _chromeCapture = null; _capture = capture; _translate = translate; SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
     {
@@ -130,7 +130,8 @@ internal sealed class ReviewWindow : Form
     private void Send(object value) { if (_ready && !_web.IsDisposed) _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, JsonOptions)); }
     private bool ReadOnlyCapture => _chromeCapture is null && _capture?.Editable == false;
     private bool CanReplace => _chromeCapture is not null || (_capture is not null && !ReadOnlyCapture);
-    private void SendCapture() => Send(new { type = "capture", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    private bool _translate;
+    private void SendCapture() => Send(new { type = "capture", task = _translate && _chromeCapture is null ? "translate" : "review", text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
     /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives.</summary>
     private async Task CheckByTabAsync(string original, CancellationToken cancellationToken)
     {
@@ -357,7 +358,7 @@ internal sealed class ReviewWindow : Form
                 var folder = ChromeSetup.ExtensionFolder ?? throw new InvalidOperationException("The chrome-extension folder was not found alongside this build.");
                 Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply")) return;
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "copyTranslation" or "applyTranslation")) return;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
             try
@@ -381,6 +382,30 @@ internal sealed class ReviewWindow : Form
                         }
                         var result = await _service.CheckAsync(original, _operation.Token);
                         Send(new { type = "result", original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        break;
+                    case "translate":
+                        var source = ReadText(root);
+                        if (_capture is not null && _capture.Text != source) _capture = null;
+                        var translation = await _service.TranslateAsync(source, _operation.Token);
+                        Send(new { type = "translation", original = source, translation, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        break;
+                    case "copyTranslation":
+                        TextTransfer.CopyRevision(ReadText(root));
+                        Notify("Translation copied to the clipboard.");
+                        break;
+                    case "applyTranslation":
+                        var translated = ReadText(root);
+                        if (_capture is null) throw new InvalidOperationException("Capture a selection with Alt+E first, or copy the translation.");
+                        if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the translation and paste it where you need it.");
+                        if (!root.TryGetProperty("original", out var translatedFrom) || translatedFrom.GetString() != _capture.Text)
+                            throw new InvalidOperationException("The translation no longer matches the captured selection. Translate the text again.");
+                        var translateCapture = _capture;
+                        bool translationConsumed;
+                        Hide();
+                        try { translationConsumed = await TextTransfer.ApplyAsync(translateCapture, translated); _capture = null; }
+                        catch { Open(); throw; }
+                        Send(new { type = "applied", clipboardRestored = translationConsumed, formatted = false });
+                        if (!translationConsumed) Open();
                         break;
                     case "copy":
                         var copyText = ReadText(root);

@@ -110,6 +110,8 @@ dialog .chrome-setup { margin-bottom:0; }
 .connection p { font-size:12px; color:var(--muted); margin:4px 0 0; }
 .startup-option { display:flex; align-items:flex-start; gap:12px; cursor:pointer; }
 .startup-option input { margin-top:3px; }
+#translation-view pre { max-height:480px; font-size:15px; }
+#translation-view details { margin-top:12px; }
 #history-view { display:none; }
 main.show-history > :not(#history-view) { display:none !important; }
 main.show-history > #history-view { display:block; }

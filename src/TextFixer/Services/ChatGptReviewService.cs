@@ -113,6 +113,30 @@ public sealed class ChatGptReviewService : IReviewService
             : result with { Findings = [], Corrections = [.. result.Corrections.Select(c => c with { Category = focus })] };
     }
 
+    /// <summary>Translates German into English and other text into German. Keeps the leading and trailing whitespace of the selection.</summary>
+    public async Task<string> TranslateAsync(string text, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (string.IsNullOrWhiteSpace(text)) return text;
+        if (text.Length > MaxTextLength)
+        {
+            throw new ChatGptServiceException(
+                "text_too_long", $"The selected text is too long to translate (maximum {MaxTextLength:N0} characters).");
+        }
+
+        var output = await WithAccessTokenAsync(async token =>
+        {
+            var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text), cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+
+        var translation = output.Trim();
+        if (translation.Length == 0) throw new ChatGptServiceException("empty_translation", "ChatGPT returned no translation. Try again.");
+        var lead = text[..(text.Length - text.TrimStart().Length)];
+        var trail = text[text.TrimEnd().Length..];
+        return lead + translation + trail;
+    }
+
     private async Task<string> RequestReviewAsync(string token, string model, string text, string? focus, CancellationToken cancellationToken)
     {
         var structured = !_structuredOutputUnsupported;

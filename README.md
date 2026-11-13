@@ -16,7 +16,7 @@ Locked retired files are retained and retried for cleanup on a later publish. Th
 
 The skill is available project-locally at `skills/hot-swap-update/SKILL.md`, referenced by `AGENTS.md`. Global installation into `C:\Users\JPS\.codex\skills` was denied by the filesystem sandbox. `install-codex-skill.ps1` is prepared for execution outside that restriction.
 
-The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q is the default global shortcut; startup reports if another app has registered it.
+The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q (review) and Alt+E (translate) are the global shortcuts; startup reports if another app has registered one of them.
 
 ## Review mode
 
@@ -47,6 +47,8 @@ The canonical current build is `artifacts/TextFixer/TextFixer.exe`. Earlier test
 `Update TextFixer.cmd` now uses the same hot-swap publisher. It does not wait for the running app to close and does not forcibly terminate it. The updated version becomes active on the next normal launch.
 
 AI connection and Chrome setup are in the Settings dialog, opened from the header. They do not occupy the daily review screen. Click "Register Chrome connection" there to register the currently running executable for your Windows user, then load the extension as described below. No registration is performed by merely starting the app.
+
+Alt+E captures a selection the same way and translates it instead of reviewing it: German text becomes English, text in other languages becomes German (`ReviewPrompt.BuildTranslationRequest`, one plain-text request, about 2 to 5 seconds). The window shows the translation with "Copy translation" and "Replace selection"; replacement pastes plain text over the captured selection after the same target checks as Alt+Q. Read-only captures get copy only. Leading and trailing whitespace of the selection is kept.
 
 Alt+Q captures any selection the active app can copy. At capture, Windows UI Automation reports whether the focused element accepts typing. Selected text in a read-only document (for example a web page paragraph) gets "Copy" only; editable fields and content-editable editors keep "Paste". When the answer is unclear, both actions stay available. A failed capture writes the app name and reason (never text) to `%LOCALAPPDATA%\TextFixer\diagnostics.log`.
 

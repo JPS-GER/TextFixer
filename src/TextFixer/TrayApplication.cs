@@ -30,9 +30,9 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
-        _tray = new NotifyIcon { Text = "TextFixer - Alt+Q", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
+        _tray = new NotifyIcon { Text = "TextFixer - Alt+Q review, Alt+E translate", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => _review.Open();
-        _hotkey.Pressed += async (_, _) => await CaptureAsync();
+        _hotkey.Pressed += async (_, translate) => await CaptureAsync(translate);
         _review.FormClosed += (_, _) => ExitThread();
         if (!startHidden) _review.Open();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
@@ -46,11 +46,14 @@ internal sealed class TrayApplication : ApplicationContext
         try { _chrome.Start(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { _review.Notify("Chrome connection unavailable. Another TextFixer instance may be using it. Clipboard capture remains available."); }
-        if (!_hotkey.Register())
+        var review = _hotkey.Register(HotkeyWindow.ReviewId, 0x51);
+        var translate = _hotkey.Register(HotkeyWindow.TranslateId, 0x45);
+        if (!review)
         {
             _review.Open();
             _review.Notify("Alt+Q is already in use. Close the conflicting app and restart TextFixer. You can still paste text into this window.");
         }
+        else if (!translate) _review.Notify("Alt+E is already in use by another app. Close it and restart TextFixer to translate with Alt+E.");
     }
 
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) => Dispatch(() =>
@@ -69,7 +72,7 @@ internal sealed class TrayApplication : ApplicationContext
         catch (InvalidOperationException) { }
     }
 
-    private async Task CaptureAsync()
+    private async Task CaptureAsync(bool translate)
     {
         if (_review.Busy) { _review.Open(); return; }
         if (_capturing) return;
@@ -80,12 +83,12 @@ internal sealed class TrayApplication : ApplicationContext
         try
         {
             var text = await TextTransfer.CaptureAsync(target);
-            _review.SetCapture(text);
+            _review.SetCapture(text, translate);
             _review.Open();
         }
         catch (Exception ex)
         {
-            ReviewWindow.Diagnostic($"Alt+Q capture failed in {ProcessName(target)}: {ex.Message}");
+            ReviewWindow.Diagnostic($"{(translate ? "Alt+E" : "Alt+Q")} capture failed in {ProcessName(target)}: {ex.Message}");
             _review.Open(); _review.Notify(ex.Message);
         }
         finally { _capturing = false; _clipboard.Paused = false; }
@@ -119,19 +122,22 @@ internal sealed class TrayApplication : ApplicationContext
     {
         [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
         [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint window, int id);
-        internal event EventHandler? Pressed;
+        internal const int ReviewId = 46, TranslateId = 47;
+        /// <summary>Raised with true for the translate hotkey.</summary>
+        internal event EventHandler<bool>? Pressed;
         public HotkeyWindow() => CreateHandle(new CreateParams());
-        internal bool Register() => RegisterHotKey(Handle, 46, 0x4001, 0x51); // Alt + Q, no repeat
+        /// <summary>Alt + key, no repeat.</summary>
+        internal bool Register(int id, uint key) => RegisterHotKey(Handle, id, 0x4001, key);
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == 0x0312 && m.WParam == 46)
+            if (m.Msg == 0x0312 && (m.WParam == ReviewId || m.WParam == TranslateId))
             {
                 try { TextTransfer.MaskAltMenu(); }
                 catch { return; }
-                Pressed?.Invoke(this, EventArgs.Empty);
+                Pressed?.Invoke(this, m.WParam == TranslateId);
             }
             base.WndProc(ref m);
         }
-        public void Dispose() { UnregisterHotKey(Handle, 46); DestroyHandle(); }
+        public void Dispose() { UnregisterHotKey(Handle, ReviewId); UnregisterHotKey(Handle, TranslateId); DestroyHandle(); }
     }
 }
