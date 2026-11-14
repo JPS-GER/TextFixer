@@ -474,7 +474,7 @@ internal sealed class ReviewWindow : Form
                 var keys = root.TryGetProperty("keys", out var keysElement) && keysElement.ValueKind == JsonValueKind.String ? keysElement.GetString() : null;
                 // An empty string removes an optional shortcut.
                 var problem = string.IsNullOrEmpty(keys) ? _hotkeys.TryChange(task, null)
-                    : Shortcut.Parse(keys) is { } shortcut ? _hotkeys.TryChange(task, shortcut) : "Use a letter, a digit or F1 to F24 as the key.";
+                    : Shortcut.Parse(keys) is { } shortcut ? _hotkeys.TryChange(task, shortcut) : "Use a letter, a digit, period, comma, minus or F1 to F24 as the key.";
                 if (problem is null)
                 {
                     try { _settings.Save(); }

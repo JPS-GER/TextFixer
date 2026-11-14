@@ -68,6 +68,8 @@ try
     // Shortcuts: parsing, rules, round-trip, swaps and fallbacks.
     Check(Shortcut.Parse("Ctrl+Alt+K") == new Shortcut(Shortcut.Control | Shortcut.Alt, 0x4B) && Shortcut.Parse("alt+f12") == new Shortcut(Shortcut.Alt, 0x7B)
         && Shortcut.Parse("Shift+Alt+7")?.ToString() == "Alt+Shift+7", "shortcut parse and display order");
+    Check(Shortcut.Parse("Ctrl+Alt+.")?.Key == Shortcut.PeriodKey && Shortcut.Parse("Ctrl+Alt+,")?.ToString() == "Ctrl+Alt+," && Shortcut.Parse("Ctrl+Alt+-")?.Key == Shortcut.MinusKey,
+        "period, comma and minus parse and print by their label");
     Check(Shortcut.Parse("Alt+Space") is null && Shortcut.Parse("Alt+Alt+Q") is null && Shortcut.Parse("Alt+F0") is null && Shortcut.Parse("Alt+F25") is null && Shortcut.Parse("Win+Q") is null && Shortcut.Parse("") is null,
         "malformed shortcuts are rejected");
     var defaults = Shortcuts.Defaults();
@@ -75,10 +77,10 @@ try
     Check(Shortcuts.Problem("review", Shortcut.Parse("Ctrl+C")!.Value, defaults)?.Contains("editing") == true && Shortcuts.Problem("review", Shortcut.Parse("Ctrl+Shift+C")!.Value, defaults) is null,
         "editing shortcuts are reserved, variants with Shift are allowed");
     Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+F4")!.Value, defaults) is not null, "Alt+F4 is reserved");
-    Check(Shortcuts.Problem("translate", Shortcut.Parse("Alt+E")!.Value, defaults) == "Alt+E is already the shortcut for Open.", "duplicates name the other task");
-    Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+Q")!.Value, defaults) is null, "keeping the own shortcut is fine");
+    Check(Shortcuts.Problem("translate", Shortcut.Parse("Ctrl+Alt+.")!.Value, defaults) == "Ctrl+Alt+. is already the shortcut for Open.", "duplicates name the other task");
+    Check(Shortcuts.Problem("review", Shortcut.Parse("Ctrl+Alt+-")!.Value, defaults) is null, "keeping the own shortcut is fine");
     settings = AppSettings.Load(settingsPath);
-    Check(settings.Shortcuts["open"]?.ToString() == "Alt+E" && settings.Shortcuts["review"]?.ToString() == "Alt+Q"
+    Check(settings.Shortcuts["open"]?.ToString() == "Ctrl+Alt+." && settings.Shortcuts["review"]?.ToString() == "Ctrl+Alt+-"
         && new[] { "translate", "factcheck", "rewrite", "summary", "explain" }.All(t => settings.Shortcuts[t] is null), "defaults: Open and Review set, the other tasks unset");
     settings.Shortcuts["summary"] = Shortcut.Parse("Ctrl+Alt+S");
     settings.Shortcuts["review"] = null;
@@ -90,10 +92,10 @@ try
     Check(swapped["open"]?.ToString() == "Alt+Q" && swapped["review"]?.ToString() == "Alt+E", "swapped shortcuts load");
     File.WriteAllText(settingsPath, """{"shortcuts":{"open":"Alt+E","translate":"Alt+E","factcheck":"Alt+W"}}""");
     var clash = AppSettings.Load(settingsPath).Shortcuts;
-    Check(clash["open"]?.ToString() == "Alt+E" && clash["translate"] is null && clash["factcheck"] is null, "a set with duplicates falls back to the defaults");
+    Check(clash["open"]?.ToString() == "Ctrl+Alt+." && clash["translate"] is null && clash["factcheck"] is null, "a set with duplicates falls back to the defaults");
     File.WriteAllText(settingsPath, """{"shortcuts":{"open":null,"review":"Ctrl+V","translate":"nonsense","explain":"Ctrl+Alt+X"}}""");
     var mixed = AppSettings.Load(settingsPath);
-    Check(mixed.Shortcuts["open"]?.ToString() == "Alt+E" && mixed.Shortcuts["review"]?.ToString() == "Alt+Q" && mixed.Shortcuts["translate"] is null && mixed.Shortcuts["explain"]?.ToString() == "Ctrl+Alt+X",
+    Check(mixed.Shortcuts["open"]?.ToString() == "Ctrl+Alt+." && mixed.Shortcuts["review"]?.ToString() == "Ctrl+Alt+-" && mixed.Shortcuts["translate"] is null && mixed.Shortcuts["explain"]?.ToString() == "Ctrl+Alt+X",
         "Open cannot be removed; invalid entries fall back to their defaults");
     File.WriteAllText(settingsPath, """{"emailSpelling":"E-Mail","addressForm":"Du"}""");
     var writing = AppSettings.Load(settingsPath);

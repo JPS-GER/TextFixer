@@ -29,7 +29,7 @@ element('close-settings').onclick();assert.equal(element('settings').open,false,
 message({type:'status',status:{connected:true,message:'Using ChatGPT plan'}});
 const original='A tesst.\r\nText <script>evil()</script>';
 message({type:'capture',text:original,canReplace:true,hasFormatting:true});
-assert.equal(element('route-title').textContent,'Captured with Alt+Q');
+assert.equal(element('route-title').textContent,'Captured with Ctrl+Alt+-');
 assert.equal(element('apply').disabled,true,'clipboard replacement is opt-in to prevent formatting loss');
 element('allow-plain-text').checked=true;element('allow-plain-text').onchange();
 assert.equal(element('apply').disabled,false,'explicit plain-text choice enables clipboard apply');
@@ -874,3 +874,11 @@ console.log('PASS: history cards copy only through plain or formatted copy butto
  assert.equal(sandbox.tr('Ask a follow-up question or object to something','de'),'Stelle eine Rückfrage oder widersprich');
 }
 console.log('PASS: composed headings and placeholders in German.');
+{
+ // Period, comma and minus are recorded by their label: German minus sits where US has "/", the keypad minus is not it.
+ const k=(code,key)=>sandbox.shortcutKeys({code,key,ctrlKey:true,altKey:true,shiftKey:false});
+ assert.equal(k('Period','.'),'Ctrl+Alt+.');assert.equal(k('Comma',','),'Ctrl+Alt+,');
+ assert.equal(k('Slash','-'),'Ctrl+Alt+-');assert.equal(k('Minus','-'),'Ctrl+Alt+-');
+ assert.equal(k('NumpadSubtract','-'),'Ctrl+Alt+NumpadSubtract');assert.equal(k('KeyT','t'),'Ctrl+Alt+T');
+}
+console.log('PASS: shortcut recorder reads period, comma and minus by label.');

@@ -4,6 +4,9 @@ namespace TextFixer.Services;
 internal readonly record struct Shortcut(uint Modifiers, uint Key)
 {
     internal const uint Alt = 1, Control = 2, Shift = 4;
+    /// <summary>The keys labeled ".", "," and "-" (VK_OEM_PERIOD, VK_OEM_COMMA, VK_OEM_MINUS). They follow the label, so
+    /// "-" is right of 0 on US keyboards and left of the right Shift on German ones.</summary>
+    internal const uint PeriodKey = 0xBE, CommaKey = 0xBC, MinusKey = 0xBD;
 
     /// <summary>Display and settings form, for example "Ctrl+Alt+K".</summary>
     public override string ToString()
@@ -20,6 +23,7 @@ internal readonly record struct Shortcut(uint Modifiers, uint Key)
     {
         >= 0x41 and <= 0x5A or >= 0x30 and <= 0x39 => ((char)key).ToString(),
         >= 0x70 and <= 0x87 => "F" + (key - 0x6F),
+        PeriodKey => ".", CommaKey => ",", MinusKey => "-",
         _ => "?",
     };
 
@@ -37,6 +41,7 @@ internal readonly record struct Shortcut(uint Modifiers, uint Key)
         }
 
         var key = parts[^1].ToUpperInvariant();
+        if (key is "." or "," or "-") return new Shortcut(modifiers, key switch { "." => PeriodKey, "," => CommaKey, _ => MinusKey });
         if (key.Length == 1 && (char.IsAsciiLetterUpper(key[0]) || char.IsAsciiDigit(key[0]))) return new Shortcut(modifiers, key[0]);
         if (key.Length is 2 or 3 && key[0] == 'F' && int.TryParse(key[1..], out var number) && number is >= 1 and <= 24 && key[1] != '0')
             return new Shortcut(modifiers, (uint)(0x6F + number));
@@ -57,11 +62,14 @@ internal static class Shortcuts
     /// <summary>Open is the only shortcut that cannot be removed.</summary>
     internal static bool Required(string task) => task == Open;
 
-    /// <summary>Open Alt+E and Review Alt+Q; the other tasks start without a shortcut.</summary>
+    /// <summary>
+    /// Open Ctrl+Alt+. and Review Ctrl+Alt+-; the other tasks start without a shortcut. On German keyboards these are
+    /// AltGr+. and AltGr+-, pressed with one hand; neither types a character on German or US layouts.
+    /// </summary>
     internal static Shortcut? Default(string task) => task switch
     {
-        Open => new Shortcut(Shortcut.Alt, 0x45),
-        Review => new Shortcut(Shortcut.Alt, 0x51),
+        Open => new Shortcut(Shortcut.Control | Shortcut.Alt, Shortcut.PeriodKey),
+        Review => new Shortcut(Shortcut.Control | Shortcut.Alt, Shortcut.MinusKey),
         _ => null,
     };
 
@@ -78,7 +86,7 @@ internal static class Shortcuts
     /// </summary>
     internal static string? Problem(string task, Shortcut shortcut, IReadOnlyDictionary<string, Shortcut?> current)
     {
-        if (Shortcut.KeyName(shortcut.Key) == "?") return "Use a letter, a digit or F1 to F24 as the key.";
+        if (Shortcut.KeyName(shortcut.Key) == "?") return "Use a letter, a digit, period, comma, minus or F1 to F24 as the key.";
         if ((shortcut.Modifiers & (Shortcut.Control | Shortcut.Alt)) == 0) return "Hold Ctrl or Alt, or both, with the key.";
         if ((shortcut.Modifiers & ~(Shortcut.Control | Shortcut.Alt | Shortcut.Shift)) != 0) return "Use only Ctrl, Alt and Shift as modifier keys.";
         if (shortcut.Modifiers == Shortcut.Control && shortcut.Key is 0x41 or 0x43 or 0x56 or 0x58 or 0x59 or 0x5A)

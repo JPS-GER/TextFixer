@@ -17,7 +17,7 @@ let factOriginal='',factClaims=[],factWordings=[],factMeta=null,factContext='',f
 // A rich capture (quotes, links, mentions, code): its protected items and ranges, and whether results use its markup.
 let captureDoc=null,translationStructured=false,translationIntact=true,rewriteStructured=false,rewriteIntact=true;
 let rewriteSteps=[],rewriteModel='',answers={},writingPrefs={email:'keep',address:'auto',reviewDu:'keep',appLanguage:'en',resultLanguage:'text'};
-let shortcutLabels={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''},shortcutDefaults={...shortcutLabels},shortcutRegistered={},shortcutError=null,recordingTask=null,renderingShortcuts=false;
+let shortcutLabels={open:'Ctrl+Alt+.',review:'Ctrl+Alt+-',translate:'',factcheck:'',rewrite:'',summary:'',explain:''},shortcutDefaults={...shortcutLabels},shortcutRegistered={},shortcutError=null,recordingTask=null,renderingShortcuts=false;
 const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify",needs_context:'Needs context'};
 // Settings > Punctuation style.
 let punctuationStyle={quotes:'keep',dashes:'keep',ellipsis:'keep',spaces:'keep',multiply:'keep',arrows:'keep',primes:'keep'};
@@ -658,7 +658,9 @@ meta.append(actions);card.append(top,body,meta);list.append(card);
 // While recording, C# suspends the global shortcuts so the pressed keys reach this window.
 const shortcutTasks=[['open','Open'],['review','Review'],['translate','Translate'],['factcheck','Fact check'],['summary','Summary'],['explain','Explain'],['rewrite','Rewrite']];
 function shortcutKeys(e){
-  const key=/^Key([A-Z])$/.exec(e.code)?.[1]??/^Digit(\d)$/.exec(e.code)?.[1]??/^(F\d{1,2})$/.exec(e.code)?.[1]??e.code;
+  // Period, comma and minus follow the key's label (C# registers them by label), the keypad minus is not one of them.
+  const sign=!e.code.startsWith('Numpad')&&['.',',','-'].includes(e.key)?e.key:{Period:'.',Comma:','}[e.code];
+  const key=/^Key([A-Z])$/.exec(e.code)?.[1]??/^Digit(\d)$/.exec(e.code)?.[1]??/^(F\d{1,2})$/.exec(e.code)?.[1]??sign??e.code;
   return [e.ctrlKey&&'Ctrl',e.altKey&&'Alt',e.shiftKey&&'Shift',key].filter(Boolean).join('+');
 }
 function stopRecording(){if(!recordingTask)return;recordingTask=null;post('shortcutRecording',{active:false});renderShortcuts();}

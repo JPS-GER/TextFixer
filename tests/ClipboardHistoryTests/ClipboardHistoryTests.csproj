@@ -14,5 +14,7 @@
     <Compile Include="..\..\src\TextFixer\Services\Shortcuts.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\WritingPreferences.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\Dpapi.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ReviewPrompt.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Contracts\ReviewContracts.cs" Link="Contracts\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
