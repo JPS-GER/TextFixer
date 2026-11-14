@@ -5,7 +5,7 @@ using Shortcut = TextFixer.Services.Shortcut;
 namespace TextFixer.Native;
 
 /// <summary>
-/// Registers the three capture shortcuts as global hotkeys. While the user records a new shortcut in Settings, all
+/// Registers the capture shortcuts as global hotkeys. While the user records a new shortcut in Settings, all
 /// hotkeys are suspended so the pressed combination reaches the window; they return after the change, on cancel, or
 /// after <see cref="SuspendLimit"/> at the latest.
 /// </summary>
@@ -24,7 +24,7 @@ internal sealed class HotkeyManager : NativeWindow, IDisposable
     private readonly System.Windows.Forms.Timer _resume = new() { Interval = (int)SuspendLimit.TotalMilliseconds };
     private bool _suspended;
 
-    /// <summary>Raised with the task of the pressed shortcut: review, translate or factcheck.</summary>
+    /// <summary>Raised with the task of the pressed shortcut (<see cref="Shortcuts.Tasks"/>).</summary>
     internal event EventHandler<string>? Pressed;
 
     /// <summary>Raised after registration changes, so the window and tray can show the current shortcuts.</summary>
@@ -37,10 +37,11 @@ internal sealed class HotkeyManager : NativeWindow, IDisposable
         _resume.Tick += (_, _) => Resume();
     }
 
-    /// <summary>False when another app or Windows holds the task's shortcut.</summary>
-    internal bool IsRegistered(string task) => _registered.GetValueOrDefault(task);
+    /// <summary>False when another app or Windows holds the task's shortcut; true when the task has none.</summary>
+    internal bool IsRegistered(string task) => _registered.GetValueOrDefault(task, true);
 
-    internal string Label(string task) => _settings.Shortcuts.TryGetValue(task, out var shortcut) ? shortcut.ToString() : Shortcuts.Default(task).ToString();
+    /// <summary>The task's shortcut as text, or "" when it has none.</summary>
+    internal string Label(string task) => _settings.Shortcuts.GetValueOrDefault(task)?.ToString() ?? "";
 
     /// <summary>Registers every task's shortcut from the settings.</summary>
     internal void RegisterAll()
@@ -48,7 +49,7 @@ internal sealed class HotkeyManager : NativeWindow, IDisposable
         _resume.Stop();
         _suspended = false;
         UnregisterAll();
-        foreach (var task in Shortcuts.Tasks) _registered[task] = Register(task, _settings.Shortcuts[task]);
+        foreach (var task in Shortcuts.Tasks) _registered[task] = _settings.Shortcuts.GetValueOrDefault(task) is not { } shortcut || Register(task, shortcut);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -65,11 +66,19 @@ internal sealed class HotkeyManager : NativeWindow, IDisposable
 
     /// <summary>
     /// Validates and registers <paramref name="shortcut"/> for <paramref name="task"/> and stores it in the settings
-    /// (the caller saves). Returns the reason when it cannot be used; the previous shortcut then stays.
-    /// All shortcuts are registered again afterwards.
+    /// (the caller saves); null removes an optional shortcut. Returns the reason when it cannot be used; the previous
+    /// shortcut then stays. All shortcuts are registered again afterwards.
     /// </summary>
-    internal string? TryChange(string task, Shortcut shortcut)
+    internal string? TryChange(string task, Shortcut? change)
     {
+        if (change is not { } shortcut)
+        {
+            if (Shortcuts.Required(task)) { RegisterAll(); return $"{Shortcuts.TaskName(task)} needs a shortcut. Choose another combination instead."; }
+            _settings.Shortcuts[task] = null;
+            RegisterAll();
+            return null;
+        }
+
         var problem = Shortcuts.Problem(task, shortcut, _settings.Shortcuts) ?? TypesCharacter(shortcut);
         if (problem is null)
         {
@@ -105,7 +114,8 @@ internal sealed class HotkeyManager : NativeWindow, IDisposable
         return $"{shortcut} types {typed} with your keyboard layout. Choose another combination.";
     }
 
-    private static int Id(string task) => task switch { Shortcuts.Translate => 47, Shortcuts.FactCheck => 48, _ => 46 };
+    /// <summary>Hotkey ids 46 to 52, one per task in <see cref="Shortcuts.Tasks"/> order.</summary>
+    private static int Id(string task) => 46 + Array.IndexOf(Shortcuts.Tasks, task);
 
     private bool Register(string task, Shortcut shortcut) => RegisterHotKey(Handle, Id(task), shortcut.Modifiers | NoRepeat, shortcut.Key);
 

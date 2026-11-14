@@ -44,28 +44,39 @@ internal readonly record struct Shortcut(uint Modifiers, uint Key)
     }
 }
 
-/// <summary>The three capture shortcuts: tasks, defaults and the rules a new combination must meet.</summary>
+/// <summary>
+/// The capture shortcuts. Open (required) captures the selection and opens the window, where the user chooses a task.
+/// Every task can also have its own shortcut, which captures and starts that task; a task without one is chosen in the
+/// window. Tasks, defaults and the rules a new combination must meet.
+/// </summary>
 internal static class Shortcuts
 {
-    internal const string Review = "review", Translate = "translate", FactCheck = "factcheck";
-    internal static readonly string[] Tasks = [Review, Translate, FactCheck];
+    internal const string Open = "open", Review = "review", Translate = "translate", FactCheck = "factcheck", Rewrite = "rewrite", Summary = "summary", Explain = "explain";
+    internal static readonly string[] Tasks = [Open, Review, Translate, FactCheck, Rewrite, Summary, Explain];
 
-    internal static Shortcut Default(string task) => task switch
+    /// <summary>Open is the only shortcut that cannot be removed.</summary>
+    internal static bool Required(string task) => task == Open;
+
+    /// <summary>Open Alt+E and Review Alt+Q; the other tasks start without a shortcut.</summary>
+    internal static Shortcut? Default(string task) => task switch
     {
-        Translate => new(Shortcut.Alt, 0x45),
-        FactCheck => new(Shortcut.Alt, 0x57),
-        _ => new(Shortcut.Alt, 0x51),
+        Open => new Shortcut(Shortcut.Alt, 0x45),
+        Review => new Shortcut(Shortcut.Alt, 0x51),
+        _ => null,
     };
 
-    internal static Dictionary<string, Shortcut> Defaults() => Tasks.ToDictionary(t => t, Default);
+    internal static Dictionary<string, Shortcut?> Defaults() => Tasks.ToDictionary(t => t, Default);
 
-    internal static string TaskName(string task) => task switch { Translate => "Translate", FactCheck => "Fact check", _ => "Review" };
+    internal static string TaskName(string task) => task switch
+    {
+        Open => "Open", Translate => "Translate", FactCheck => "Fact check", Rewrite => "Rewrite", Summary => "Summary", Explain => "Explain", _ => "Review",
+    };
 
     /// <summary>
     /// Why <paramref name="shortcut"/> cannot be used for <paramref name="task"/>, or null when it can. Layout and
     /// registration checks (AltGr characters, other apps) happen when the shortcut is registered.
     /// </summary>
-    internal static string? Problem(string task, Shortcut shortcut, IReadOnlyDictionary<string, Shortcut> current)
+    internal static string? Problem(string task, Shortcut shortcut, IReadOnlyDictionary<string, Shortcut?> current)
     {
         if (Shortcut.KeyName(shortcut.Key) == "?") return "Use a letter, a digit or F1 to F24 as the key.";
         if ((shortcut.Modifiers & (Shortcut.Control | Shortcut.Alt)) == 0) return "Hold Ctrl or Alt, or both, with the key.";

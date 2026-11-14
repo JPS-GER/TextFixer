@@ -53,7 +53,7 @@ internal sealed class TrayApplication : ApplicationContext
         var blocked = Shortcuts.Tasks.Where(t => !_hotkey.IsRegistered(t)).ToArray();
         if (blocked.Length > 0)
         {
-            if (blocked.Contains(Shortcuts.Review)) _review.Open();
+            if (blocked.Contains(Shortcuts.Open)) _review.Open();
             var names = string.Join(", ", blocked.Select(t => $"{_hotkey.Label(t)} ({Shortcuts.TaskName(t)})"));
             _review.Notify($"{names} {(blocked.Length == 1 ? "is" : "are")} already in use by another app. Choose another shortcut in Settings > Shortcuts. You can still paste text into this window.");
         }
@@ -61,7 +61,8 @@ internal sealed class TrayApplication : ApplicationContext
 
     private void UpdateTooltip()
     {
-        var text = $"TextFixer - {_hotkey.Label(Shortcuts.Review)} review, {_hotkey.Label(Shortcuts.Translate)} translate, {_hotkey.Label(Shortcuts.FactCheck)} fact check";
+        var set = Shortcuts.Tasks.Where(t => _hotkey.Label(t).Length > 0).Select(t => $"{_hotkey.Label(t)} {Shortcuts.TaskName(t).ToLowerInvariant()}");
+        var text = "TextFixer - " + string.Join(", ", set);
         _tray.Text = text.Length <= 127 ? text : "TextFixer";
     }
 
@@ -81,7 +82,7 @@ internal sealed class TrayApplication : ApplicationContext
         catch (InvalidOperationException) { }
     }
 
-    /// <param name="task">review, translate or factcheck.</param>
+    /// <param name="task">open or a task from <see cref="Shortcuts.Tasks"/>.</param>
     private async Task CaptureAsync(string task)
     {
         if (_review.Busy) { _review.Open(); return; }

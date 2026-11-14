@@ -17,17 +17,26 @@ internal sealed class AppSettings
     /// <summary>ChatGPT model slug chosen in Settings; null uses the first model the account lists.</summary>
     public string? Model { get; set; }
 
-    /// <summary>Model slug for Alt+E translations; null uses the review model.</summary>
+    /// <summary>Model slug for translations; null uses the review model.</summary>
     public string? TranslationModel { get; set; }
 
-    /// <summary>Model slug for Alt+W fact checks; null uses the review model.</summary>
+    /// <summary>Model slug for fact checks; null uses the review model.</summary>
     public string? FactCheckModel { get; set; }
 
     /// <summary>Mode per <see cref="Punctuation.Rules"/> key: keep, plain or typographic.</summary>
     public Dictionary<string, string> PunctuationStyle { get; } = Punctuation.Defaults();
 
+    /// <summary>Spelling of "E-Mail": keep, E-Mail, E-mail or Email (<see cref="WritingPreferences"/>).</summary>
+    public string EmailSpelling { get; set; } = WritingPreferences.Keep;
+
+    /// <summary>Capitalization of du forms in Review: keep, du or Du.</summary>
+    public string ReviewDu { get; set; } = WritingPreferences.Keep;
+
+    /// <summary>Form of address in translations into German: auto, du, Du or Sie.</summary>
+    public string AddressForm { get; set; } = WritingPreferences.Auto;
+
     /// <summary>Global shortcut per task (<see cref="Shortcuts.Tasks"/>), stored as text such as "Alt+Q".</summary>
-    public Dictionary<string, Shortcut> Shortcuts { get; } = Services.Shortcuts.Defaults();
+    public Dictionary<string, Shortcut?> Shortcuts { get; } = Services.Shortcuts.Defaults();
 
     private AppSettings(string path) => _path = path;
 
@@ -51,6 +60,12 @@ internal sealed class AppSettings
                 settings.FactCheckModel = factCheckSlug;
             if (document.RootElement.TryGetProperty("punctuationStyle", out var style) && style.ValueKind == JsonValueKind.Object)
                 settings.SetPunctuationStyle(style);
+            if (document.RootElement.TryGetProperty("emailSpelling", out var email) && email.ValueKind == JsonValueKind.String && WritingPreferences.IsEmail(email.GetString()))
+                settings.EmailSpelling = email.GetString()!;
+            if (document.RootElement.TryGetProperty("addressForm", out var address) && address.ValueKind == JsonValueKind.String && WritingPreferences.IsAddress(address.GetString()))
+                settings.AddressForm = address.GetString()!;
+            if (document.RootElement.TryGetProperty("reviewDu", out var reviewDu) && reviewDu.ValueKind == JsonValueKind.String && WritingPreferences.IsReviewDu(reviewDu.GetString()))
+                settings.ReviewDu = reviewDu.GetString()!;
             if (document.RootElement.TryGetProperty("shortcuts", out var shortcuts) && shortcuts.ValueKind == JsonValueKind.Object)
                 settings.SetShortcuts(shortcuts);
         }
@@ -67,18 +82,22 @@ internal sealed class AppSettings
     }
 
     /// <summary>
-    /// Takes the saved set as a whole, so swapped shortcuts load. An unreadable or invalid entry keeps its default;
-    /// if the result has duplicates, every task falls back to its default.
+    /// Takes the saved shortcuts: text such as "Alt+E", or null for an optional task without one. An unreadable or
+    /// invalid entry keeps its default; a set with duplicates falls back to all defaults.
     /// </summary>
     internal void SetShortcuts(JsonElement shortcuts)
     {
         var candidate = Services.Shortcuts.Defaults();
         foreach (var task in Services.Shortcuts.Tasks)
-            if (shortcuts.TryGetProperty(task, out var value) && value.ValueKind == JsonValueKind.String && Shortcut.Parse(value.GetString()) is { } shortcut)
-                candidate[task] = shortcut;
-        foreach (var task in Services.Shortcuts.Tasks)
-            if (Services.Shortcuts.Problem(task, candidate[task], new Dictionary<string, Shortcut>()) is not null) candidate[task] = Services.Shortcuts.Default(task);
-        if (candidate.Values.Distinct().Count() != candidate.Count) return;
+        {
+            if (!shortcuts.TryGetProperty(task, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.Null && !Services.Shortcuts.Required(task)) candidate[task] = null;
+            else if (value.ValueKind == JsonValueKind.String && Shortcut.Parse(value.GetString()) is { } parsed
+                && Services.Shortcuts.Problem(task, parsed, new Dictionary<string, Shortcut?>()) is null) candidate[task] = parsed;
+        }
+
+        var set = candidate.Values.OfType<Shortcut>().ToList();
+        if (set.Distinct().Count() != set.Count) return;
         foreach (var (task, shortcut) in candidate) Shortcuts[task] = shortcut;
     }
 
@@ -86,7 +105,7 @@ internal sealed class AppSettings
     {
         var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value.ToString()) }, Options));
+        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, emailSpelling = EmailSpelling, addressForm = AddressForm, reviewDu = ReviewDu, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value?.ToString()) }, Options));
         File.Move(temp, _path, overwrite: true);
     }
 }

@@ -12,6 +12,7 @@
     <Compile Include="..\..\src\TextFixer\Services\AppSettings.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\Punctuation.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\Shortcuts.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\WritingPreferences.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\Dpapi.cs" Link="Services\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

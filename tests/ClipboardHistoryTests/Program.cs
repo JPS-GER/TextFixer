@@ -75,22 +75,41 @@ try
     Check(Shortcuts.Problem("review", Shortcut.Parse("Ctrl+C")!.Value, defaults)?.Contains("editing") == true && Shortcuts.Problem("review", Shortcut.Parse("Ctrl+Shift+C")!.Value, defaults) is null,
         "editing shortcuts are reserved, variants with Shift are allowed");
     Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+F4")!.Value, defaults) is not null, "Alt+F4 is reserved");
-    Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+E")!.Value, defaults) == "Alt+E is already the shortcut for Translate.", "duplicates name the other task");
-    Check(Shortcuts.Problem("translate", Shortcut.Parse("Alt+E")!.Value, defaults) is null, "keeping the own shortcut is fine");
+    Check(Shortcuts.Problem("translate", Shortcut.Parse("Alt+E")!.Value, defaults) == "Alt+E is already the shortcut for Open.", "duplicates name the other task");
+    Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+Q")!.Value, defaults) is null, "keeping the own shortcut is fine");
     settings = AppSettings.Load(settingsPath);
-    Check(settings.Shortcuts["review"].ToString() == "Alt+Q" && settings.Shortcuts["factcheck"].ToString() == "Alt+W", "default shortcuts");
-    settings.Shortcuts["translate"] = Shortcut.Parse("Ctrl+Alt+T")!.Value;
+    Check(settings.Shortcuts["open"]?.ToString() == "Alt+E" && settings.Shortcuts["review"]?.ToString() == "Alt+Q"
+        && new[] { "translate", "factcheck", "rewrite", "summary", "explain" }.All(t => settings.Shortcuts[t] is null), "defaults: Open and Review set, the other tasks unset");
+    settings.Shortcuts["summary"] = Shortcut.Parse("Ctrl+Alt+S");
+    settings.Shortcuts["review"] = null;
     settings.Save();
-    Check(AppSettings.Load(settingsPath).Shortcuts["translate"].ToString() == "Ctrl+Alt+T", "shortcuts round-trip as text");
-    File.WriteAllText(settingsPath, """{"shortcuts":{"review":"Alt+E","translate":"Alt+Q"}}""");
+    var roundTrip = AppSettings.Load(settingsPath);
+    Check(roundTrip.Shortcuts["summary"]?.ToString() == "Ctrl+Alt+S" && roundTrip.Shortcuts["review"] is null, "set and removed shortcuts round-trip");
+    File.WriteAllText(settingsPath, """{"shortcuts":{"open":"Alt+Q","review":"Alt+E"}}""");
     var swapped = AppSettings.Load(settingsPath).Shortcuts;
-    Check(swapped["review"].ToString() == "Alt+E" && swapped["translate"].ToString() == "Alt+Q" && swapped["factcheck"].ToString() == "Alt+W", "swapped shortcuts load");
-    File.WriteAllText(settingsPath, """{"shortcuts":{"review":"Ctrl+V","translate":"nonsense","factcheck":"Ctrl+Alt+F"}}""");
-    var mixed = AppSettings.Load(settingsPath).Shortcuts;
-    Check(mixed["review"].ToString() == "Alt+Q" && mixed["translate"].ToString() == "Alt+E" && mixed["factcheck"].ToString() == "Ctrl+Alt+F", "invalid entries keep their defaults");
-    File.WriteAllText(settingsPath, """{"shortcuts":{"review":"Alt+W","translate":"Alt+W"}}""");
+    Check(swapped["open"]?.ToString() == "Alt+Q" && swapped["review"]?.ToString() == "Alt+E", "swapped shortcuts load");
+    File.WriteAllText(settingsPath, """{"shortcuts":{"open":"Alt+E","translate":"Alt+E","factcheck":"Alt+W"}}""");
     var clash = AppSettings.Load(settingsPath).Shortcuts;
-    Check(clash["review"].ToString() == "Alt+Q" && clash["translate"].ToString() == "Alt+E" && clash["factcheck"].ToString() == "Alt+W", "duplicate saved shortcuts fall back to defaults");
+    Check(clash["open"]?.ToString() == "Alt+E" && clash["translate"] is null && clash["factcheck"] is null, "a set with duplicates falls back to the defaults");
+    File.WriteAllText(settingsPath, """{"shortcuts":{"open":null,"review":"Ctrl+V","translate":"nonsense","explain":"Ctrl+Alt+X"}}""");
+    var mixed = AppSettings.Load(settingsPath);
+    Check(mixed.Shortcuts["open"]?.ToString() == "Alt+E" && mixed.Shortcuts["review"]?.ToString() == "Alt+Q" && mixed.Shortcuts["translate"] is null && mixed.Shortcuts["explain"]?.ToString() == "Ctrl+Alt+X",
+        "Open cannot be removed; invalid entries fall back to their defaults");
+    File.WriteAllText(settingsPath, """{"emailSpelling":"E-Mail","addressForm":"Du"}""");
+    var writing = AppSettings.Load(settingsPath);
+    Check(writing.EmailSpelling == "E-Mail" && writing.AddressForm == "Du", "writing preferences load");
+    File.WriteAllText(settingsPath, """{"emailSpelling":"mail","addressForm":"Ihr"}""");
+    writing = AppSettings.Load(settingsPath);
+    Check(writing.EmailSpelling == "keep" && writing.AddressForm == "auto", "unknown writing preferences fall back to keep and automatic");
+    Check(WritingPreferences.EmailRule("keep") == "" && WritingPreferences.TranslationAddressRule("auto") == "", "keep and automatic add no rule");
+    Check(WritingPreferences.TranslationAddressRule("Sie").Contains("formal Sie") && WritingPreferences.TranslationAddressRule("Du").Contains("capitalized"), "translation address rules");
+    Check(WritingPreferences.EmailRule("Email").Contains("Never change URLs"), "E-Mail rule protects URLs and code");
+    Check(WritingPreferences.ReviewDuRule("keep").Contains("never change du to Du or Du to du") && WritingPreferences.ReviewDuRule("Du").Contains("capitalize") && WritingPreferences.ReviewDuRule("du").Contains("Never switch between informal and formal"),
+        "review du rule: keep protects the written form, du/Du only change capitalization");
+    File.WriteAllText(settingsPath, """{"reviewDu":"Du"}""");
+    Check(AppSettings.Load(settingsPath).ReviewDu == "Du", "review du setting loads");
+    File.WriteAllText(settingsPath, """{"reviewDu":"Sie"}""");
+    Check(AppSettings.Load(settingsPath).ReviewDu == "keep", "Sie is not a review option");
 }
 finally { Directory.Delete(folder, recursive: true); }
 

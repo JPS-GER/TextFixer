@@ -42,7 +42,19 @@ public sealed class ChatGptReviewService : IReviewService
     /// <summary>Punctuation style sent as prompt rules (<see cref="Punctuation"/>).</summary>
     public IReadOnlyDictionary<string, string> PunctuationStyle { get; set; } = Punctuation.Defaults();
 
-    private string Style => Punctuation.PromptRules(PunctuationStyle);
+    /// <summary>Spelling of "E-Mail" for all tasks and the form of address for translations (<see cref="WritingPreferences"/>).</summary>
+    public string EmailSpelling { get; set; } = WritingPreferences.Keep;
+    public string AddressForm { get; set; } = WritingPreferences.Auto;
+    public string ReviewDu { get; set; } = WritingPreferences.Keep;
+
+    /// <summary>Punctuation and E-Mail rules for review, fact check, rewrite, summary and explanation.</summary>
+    private string Style => Punctuation.PromptRules(PunctuationStyle) + WritingPreferences.EmailRule(EmailSpelling);
+
+    /// <summary>Review and fact-check corrections also get the du capitalization.</summary>
+    private string ReviewStyle => Style + WritingPreferences.ReviewDuRule(ReviewDu);
+
+    /// <summary>Translations also get the form of address.</summary>
+    private string TranslationStyle => Style + WritingPreferences.TranslationAddressRule(AddressForm);
 
     /// <summary>Model slug used by the latest check.</summary>
     public string? ActiveModel { get; private set; }
@@ -138,13 +150,40 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, Style), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, TranslationStyle), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return KeepOuterWhitespace(text, output);
     }
 
     public const int MaxRequestLength = 500;
+
+    /// <summary>
+    /// Rewrite (as <paramref name="request"/> asks), summary or explanation of <paramref name="text"/>, answered as plain
+    /// text. A rewrite keeps the leading and trailing whitespace of the selection.
+    /// </summary>
+    public async Task<string> WriteAsync(string kind, string text, string? request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (kind is not (ReviewPrompt.Rewrite or ReviewPrompt.Summary or ReviewPrompt.Explain)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (string.IsNullOrWhiteSpace(text)) throw new ChatGptServiceException("empty_text", "Select some text first.");
+        if (text.Length > MaxTextLength * 2)
+            throw new ChatGptServiceException("text_too_long", $"The selected text is too long (maximum {MaxTextLength:N0} characters).");
+        request = request?.Trim() ?? "";
+        if (kind == ReviewPrompt.Rewrite && request.Length == 0) throw new ChatGptServiceException("empty_request", "Choose a preset or describe the change you want.");
+        if (request.Length > MaxRequestLength) throw new ChatGptServiceException("request_too_long", $"Keep the change request under {MaxRequestLength} characters.");
+
+        var output = await WithAccessTokenAsync(async token =>
+        {
+            var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildWritingRequest(model, kind, text, request, Style), cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (kind == ReviewPrompt.Rewrite) return KeepOuterWhitespace(text, output);
+        output = output.Trim();
+        if (output.Length == 0) throw new ChatGptServiceException("empty_answer", "ChatGPT returned no answer. Try again.");
+        return output;
+    }
 
     /// <summary>Revises <paramref name="translation"/> of <paramref name="source"/> as the user asks, for example a more formal tone.</summary>
     public async Task<string> ReviseTranslationAsync(string source, string translation, string request, CancellationToken cancellationToken)
@@ -160,7 +199,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, Style), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, TranslationStyle), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return KeepOuterWhitespace(source, output);
@@ -212,7 +251,7 @@ public sealed class ChatGptReviewService : IReviewService
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -220,7 +259,7 @@ public sealed class ChatGptReviewService : IReviewService
             && (ex.ApiParam is null || ex.ApiParam.StartsWith("text", StringComparison.Ordinal)))
         {
             _structuredOutputUnsupported = true;
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -229,7 +268,7 @@ public sealed class ChatGptReviewService : IReviewService
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured, focus, Style), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured, focus, ReviewStyle), cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -238,7 +277,7 @@ public sealed class ChatGptReviewService : IReviewService
         {
             // text.format isn't documented for plan usage. Without it, the parser validates the JSON alone.
             _structuredOutputUnsupported = true;
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false, focus, Style), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false, focus, ReviewStyle), cancellationToken).ConfigureAwait(false);
         }
     }
 

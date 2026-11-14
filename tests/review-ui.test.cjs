@@ -518,39 +518,93 @@ console.log('PASS: read-only fact check offers copy only.');
 }
 console.log('PASS: overlapping fact corrections cannot both be accepted.');
 {
- // Settings > Shortcuts: recording, key mapping, cancel, reset and errors.
- message({type:'shortcuts',shortcuts:{review:'Alt+Q',translate:'Ctrl+Alt+T',factcheck:'Alt+W'},defaults:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},registered:{review:true,translate:true,factcheck:false}});
+ // Settings > Shortcuts: Open required, optional task shortcuts, recording, key mapping, cancel, reset/remove and errors.
+ const defaults={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''};
+ message({type:'shortcuts',shortcuts:{...defaults,translate:'Ctrl+Alt+T'},defaults,registered:{open:true,review:true,translate:true,factcheck:true,rewrite:true,summary:true,explain:true}});
  const rows=()=>element('shortcut-list').children;
  const keys=i=>rows()[i].children[1];
- assert.deepEqual(keys(1).children.map(k=>k.textContent),['Ctrl','Alt','T']);
- assert.equal(rows()[1].children[2].hidden,false,'reset shows for a changed shortcut');
- assert.equal(rows()[0].children[2].hidden,true);
- assert.equal(rows()[2].children[3].textContent,'Another app uses this shortcut, so it does not work. Choose another one.');
+ assert.deepEqual(rows().map(r=>r.children[0].textContent),['Open','Review','Translate','Fact check','Rewrite','Summary','Explain']);
+ assert.deepEqual(keys(2).children.map(k=>k.textContent),['Ctrl','Alt','T']);
+ assert.equal(keys(3).children[0].textContent,'Not set');
+ assert.equal(rows()[0].children[2].hidden,true,'Open cannot be removed');
+ assert.equal(rows()[1].children[2].textContent,'Remove');assert.equal(rows()[1].children[2].hidden,false);
+ assert.equal(rows()[3].children[2].hidden,true,'nothing to remove for an unset task');
  sent.length=0;
- keys(2).onclick();
+ rows()[2].children[2].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'translate',keys:''},'Remove clears an optional shortcut');
+ keys(5).onclick();
  assert.deepEqual({...sent.at(-1)},{action:'shortcutRecording',active:true});
- assert.equal(keys(2).children[0].textContent,'Press the new keys');
- const key=(props)=>{let prevented=false;keys(2).onkeydown({ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,preventDefault(){prevented=true;},stopPropagation(){},...props});return prevented;};
- assert.equal(key({key:'Control',code:'ControlLeft',ctrlKey:true}),true);
- assert.equal(sent.length,1,'a modifier alone keeps recording');
- key({key:'k',code:'KeyK',ctrlKey:true,altKey:true});
- assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'factcheck',keys:'Ctrl+Alt+K'});
- keys(0).onclick();
- keys(0).onkeydown({key:'F5',code:'F5',ctrlKey:false,altKey:true,shiftKey:true,metaKey:false,preventDefault(){},stopPropagation(){}});
- assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'review',keys:'Alt+Shift+F5'});
- keys(0).onclick();
- keys(0).onkeydown({key:'Escape',code:'Escape',ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,preventDefault(){},stopPropagation(){}});
+ assert.equal(keys(5).children[0].textContent,'Press the new keys');
+ const press=(i,props)=>{let prevented=false;keys(i).onkeydown({ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,preventDefault(){prevented=true;},stopPropagation(){},...props});return prevented;};
+ const count=sent.length;
+ assert.equal(press(5,{key:'Control',code:'ControlLeft',ctrlKey:true}),true);
+ assert.equal(sent.length,count,'a modifier alone keeps recording');
+ press(5,{key:'s',code:'KeyS',ctrlKey:true,altKey:true});
+ assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'summary',keys:'Ctrl+Alt+S'});
+ keys(0).onclick();press(0,{key:'F5',code:'F5',altKey:true,shiftKey:true});
+ assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'open',keys:'Alt+Shift+F5'});
+ keys(1).onclick();press(1,{key:'Escape',code:'Escape'});
  assert.deepEqual({...sent.at(-1)},{action:'shortcutRecording',active:false},'Esc cancels');
- rows()[1].children[2].onclick();
- assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'translate',keys:'Alt+E'});
- message({type:'shortcuts',shortcuts:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},defaults:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},registered:{review:true,translate:true,factcheck:true},errorTask:'factcheck',error:'Ctrl+Alt+Q types @ with your keyboard layout. Choose another combination.'});
- assert.equal(rows()[2].children[3].textContent,'Ctrl+Alt+Q types @ with your keyboard layout. Choose another combination.');
- assert.equal(rows()[2].children[3].className,'shortcut-message error');
- // Labels follow the shortcuts.
- message({type:'shortcuts',shortcuts:{review:'Ctrl+Alt+R',translate:'Alt+E',factcheck:'Alt+W'},defaults:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},registered:{review:true,translate:true,factcheck:true}});
+ message({type:'shortcuts',shortcuts:{...defaults,open:'Ctrl+Alt+O',review:''},defaults,registered:{open:false},errorTask:'summary',error:'Ctrl+Alt+Q types @ with your keyboard layout. Choose another combination.'});
+ assert.equal(rows()[0].children[2].textContent,'Reset to Alt+E');
+ rows()[0].children[2].onclick();assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'open',keys:'Alt+E'});
+ assert.equal(rows()[1].children[2].textContent,'Reset to Alt+Q');
+ assert.equal(rows()[0].children[3].textContent,'Another app uses this shortcut, so it does not work. Choose another one.');
+ assert.equal(rows()[5].children[3].className,'shortcut-message error');
  element('settings').listeners.close?.();
+ message({type:'shortcuts',shortcuts:defaults,defaults,registered:{}});
 }
-console.log('PASS: shortcut recording, key mapping, cancel, reset and errors.');
+console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, remove and errors.');
+{
+ // Open: the task choice appears and nothing runs until a task is chosen.
+ message({type:'status',status:{connected:true,message:'ok'}});
+ message({type:'busy',busy:false});
+ sent.length=0;
+ const text='Wir treffen uns am Montag. Bitte schick mir die E-Mail.';
+ message({type:'capture',captureId:40,task:'open',text,canReplace:true,readOnly:false,canPreserveFormatting:true});
+ assert.equal(sent.filter(m=>['check','translate','factCheck','write'].includes(m.action)).length,0,'Open makes no request');
+ assert.equal(element('choose-view').hidden,false);assert.equal(element('task-row').hidden,true);
+ assert.equal(element('choose-text').textContent,text);
+ // Rewrite opens its presets without a request; a preset sends one.
+ sandbox.runTask('rewrite');
+ assert.equal(sent.filter(m=>m.action==='write').length,0,'Rewrite waits for a preset or request');
+ assert.equal(element('rewrite-view').hidden,false);assert.equal(element('choose-view').hidden,true);
+ const presets=element('rewrite-presets').children;
+ assert.deepEqual(presets.map(b=>b.textContent),['More formal','Friendlier','Shorter','Simpler','Clearer structure']);
+ presets[2].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'write',kind:'rewrite',text,original:text,request:'Shorter: remove repetition and filler, keep all facts',captureId:40});
+ message({type:'writing',captureId:40,kind:'rewrite',original:text,result:'Treffen am Montag. Schick mir die E-Mail.',request:'Shorter: remove repetition and filler, keep all facts',canReplace:true,readOnly:false,model:'m'});
+ // A free-text follow-up changes the latest rewrite; the diff compares with the captured original.
+ element('rewrite-request').value='mehr Ausrufezeichen';
+ element('rewrite-form').onsubmit({preventDefault(){}});
+ assert.deepEqual({...sent.at(-1)},{action:'write',kind:'rewrite',text:'Treffen am Montag. Schick mir die E-Mail.',original:text,request:'mehr Ausrufezeichen',captureId:40});
+ message({type:'writing',captureId:40,kind:'rewrite',original:text,result:'Treffen am Montag! Schick mir die E-Mail.',request:'mehr Ausrufezeichen',canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('rewrite-text').textContent,'Treffen am Montag! Schick mir die E-Mail.');
+ assert.equal(element('rewrite-steps').textContent,'Changes requested: Shorter, then mehr Ausrufezeichen');
+ assert.ok(element('rewrite-changes').children.filter(c=>c.tag==='del').map(c=>c.textContent).join('|').includes('Wir'),'diff against the original');
+ element('apply-rewrite').onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'applyRewrite',text:'Treffen am Montag! Schick mir die E-Mail.',original:text});
+ element('rewrite-reset').onclick();
+ assert.equal(element('rewrite-result').hidden,true);
+ // Summary runs once and is cached; a late answer for an older capture is dropped.
+ sandbox.runTask('summary');
+ assert.deepEqual({...sent.at(-1)},{action:'write',kind:'summary',text,original:text,captureId:40});
+ message({type:'writing',captureId:39,kind:'summary',original:text,result:'old',canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('answer-view').hidden,true);
+ message({type:'writing',captureId:40,kind:'summary',original:text,result:'- Treffen am Montag',canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('answer-title').textContent,'Summary');assert.equal(element('answer-text').textContent,'- Treffen am Montag');
+ const before=sent.length;
+ sandbox.runTask('rewrite');sandbox.runTask('summary');
+ assert.equal(sent.length,before,'cached summary');
+ element('copy-answer').onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyResult',kind:'summary',text:'- Treffen am Montag'});
+ // A capture from a task shortcut starts that task.
+ message({type:'capture',captureId:41,task:'explain',text:'API',canReplace:false,readOnly:true});
+ assert.deepEqual({...sent.at(-1)},{action:'write',kind:'explain',text:'API',original:'API',captureId:41});
+ message({type:'busy',busy:false});
+ message({type:'reviewMode',mode:'single',emailSpelling:'E-Mail',addressForm:'Du'});
+}
+console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, task shortcuts.');
 {
  // Clipboard history cards: only the two copy buttons copy an entry.
  sandbox.setTimeout=()=>0;sandbox.clearTimeout=()=>{};

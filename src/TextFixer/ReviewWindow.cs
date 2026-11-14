@@ -85,7 +85,7 @@ internal sealed class ReviewWindow : Form
         if (!WindowFocus.BringOwnWindowForward(Handle)) Diagnostic("Foreground activation was refused by Windows.");
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
-    /// <param name="task">review, translate or factcheck (see <see cref="Shortcuts"/>): the task the window starts with.</param>
+    /// <param name="task">open shows the task choice; any other task from <see cref="Shortcuts.Tasks"/> starts right away.</param>
     internal void SetCapture(CapturedText capture, string task = "review") { _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
@@ -95,6 +95,9 @@ internal sealed class ReviewWindow : Form
         _service.PreferredModel = settings.Model;
         _service.PreferredTranslationModel = settings.TranslationModel;
         _service.PreferredFactCheckModel = settings.FactCheckModel;
+        _service.EmailSpelling = settings.EmailSpelling;
+        _service.AddressForm = settings.AddressForm;
+        _service.ReviewDu = settings.ReviewDu;
         history.Changed += (_, _) => SendHistory();
     }
     internal void ConfigureShortcuts(HotkeyManager hotkeys)
@@ -102,13 +105,13 @@ internal sealed class ReviewWindow : Form
         _hotkeys = hotkeys;
         hotkeys.Changed += (_, _) => SendShortcuts();
     }
-    private string ShortcutLabel(string task) => _hotkeys?.Label(task) ?? Shortcuts.Default(task).ToString();
+    private string ShortcutLabel(string task) => _hotkeys?.Label(task) ?? Shortcuts.Default(task)?.ToString() ?? "";
     /// <param name="error">A rejected change: task and reason, shown under that task's row.</param>
     private void SendShortcuts(string? errorTask = null, string? error = null) => Send(new
     {
         type = "shortcuts",
         shortcuts = Shortcuts.Tasks.ToDictionary(t => t, ShortcutLabel),
-        defaults = Shortcuts.Tasks.ToDictionary(t => t, t => Shortcuts.Default(t).ToString()),
+        defaults = Shortcuts.Tasks.ToDictionary(t => t, t => Shortcuts.Default(t)?.ToString() ?? ""),
         registered = Shortcuts.Tasks.ToDictionary(t => t, t => _hotkeys?.IsRegistered(t) ?? false),
         errorTask,
         error,
@@ -226,7 +229,7 @@ internal sealed class ReviewWindow : Form
         }
     }
 
-    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, punctuationStyle = _settings?.PunctuationStyle ?? Punctuation.Defaults() });
+    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, punctuationStyle = _settings?.PunctuationStyle ?? Punctuation.Defaults(), emailSpelling = _settings?.EmailSpelling ?? WritingPreferences.Keep, addressForm = _settings?.AddressForm ?? WritingPreferences.Auto, reviewDu = _settings?.ReviewDu ?? WritingPreferences.Keep });
 
     private void SendHistory()
     {
@@ -390,7 +393,9 @@ internal sealed class ReviewWindow : Form
                 var task = root.TryGetProperty("task", out var taskElement) && taskElement.ValueKind == JsonValueKind.String ? taskElement.GetString() : null;
                 if (task is null || !Shortcuts.Tasks.Contains(task)) { _hotkeys.Resume(); return; }
                 var keys = root.TryGetProperty("keys", out var keysElement) && keysElement.ValueKind == JsonValueKind.String ? keysElement.GetString() : null;
-                var problem = Shortcut.Parse(keys) is { } shortcut ? _hotkeys.TryChange(task, shortcut) : "Use a letter, a digit or F1 to F24 as the key.";
+                // An empty string removes an optional shortcut.
+                var problem = string.IsNullOrEmpty(keys) ? _hotkeys.TryChange(task, null)
+                    : Shortcut.Parse(keys) is { } shortcut ? _hotkeys.TryChange(task, shortcut) : "Use a letter, a digit or F1 to F24 as the key.";
                 if (problem is null)
                 {
                     try { _settings.Save(); }
@@ -419,6 +424,19 @@ internal sealed class ReviewWindow : Form
             {
                 if (root.TryGetProperty("style", out var style) && style.ValueKind == JsonValueKind.Object) _settings.SetPunctuationStyle(style);
                 _service.PunctuationStyle = new Dictionary<string, string>(_settings.PunctuationStyle);
+                try { _settings.Save(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                SendReviewMode();
+                return;
+            }
+            if (action == "writing" && _settings is not null)
+            {
+                if (root.TryGetProperty("email", out var email) && email.ValueKind == JsonValueKind.String && WritingPreferences.IsEmail(email.GetString())) _settings.EmailSpelling = email.GetString()!;
+                if (root.TryGetProperty("address", out var address) && address.ValueKind == JsonValueKind.String && WritingPreferences.IsAddress(address.GetString())) _settings.AddressForm = address.GetString()!;
+                if (root.TryGetProperty("reviewDu", out var reviewDu) && reviewDu.ValueKind == JsonValueKind.String && WritingPreferences.IsReviewDu(reviewDu.GetString())) _settings.ReviewDu = reviewDu.GetString()!;
+                _service.EmailSpelling = _settings.EmailSpelling;
+                _service.AddressForm = _settings.AddressForm;
+                _service.ReviewDu = _settings.ReviewDu;
                 try { _settings.Save(); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
                 SendReviewMode();
@@ -463,7 +481,7 @@ internal sealed class ReviewWindow : Form
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck")) return;
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck" or "write" or "copyResult" or "applyRewrite")) return;
             _replyCaptureId = root.TryGetProperty("captureId", out var requestCapture) && requestCapture.ValueKind == JsonValueKind.Number && requestCapture.TryGetInt32(out var id) ? id : _captureId;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
@@ -515,16 +533,34 @@ internal sealed class ReviewWindow : Form
                         }
                         Send(new { type = "factCheck", captureId = _replyCaptureId, original = checkedText, result = facts, canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
+                    case "write":
+                        // Rewrite, summary or explanation. A rewrite request applies to "text", which is the capture or the latest rewrite.
+                        var kind = root.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String ? kindElement.GetString() : null;
+                        if (kind is not (ReviewPrompt.Rewrite or ReviewPrompt.Summary or ReviewPrompt.Explain)) break;
+                        var writeFrom = ReadText(root);
+                        var writeOriginal = root.TryGetProperty("original", out var writeOriginalElement) && writeOriginalElement.ValueKind == JsonValueKind.String ? writeOriginalElement.GetString() ?? writeFrom : writeFrom;
+                        var writeRequest = root.TryGetProperty("request", out var writeRequestElement) && writeRequestElement.ValueKind == JsonValueKind.String ? writeRequestElement.GetString() : null;
+                        var written = await _service.WriteAsync(kind, writeFrom, writeRequest, _operation.Token);
+                        Send(new { type = "writing", captureId = _replyCaptureId, kind, original = writeOriginal, result = written, request = writeRequest, canReplace = _capture is not null && _capture.Text == writeOriginal && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        break;
+                    case "copyResult":
+                        TextTransfer.CopyRevision(ReadText(root));
+                        var copiedKind = root.TryGetProperty("kind", out var copiedKindElement) && copiedKindElement.ValueKind == JsonValueKind.String ? copiedKindElement.GetString() : null;
+                        Notify(copiedKind switch { ReviewPrompt.Summary => "Summary", ReviewPrompt.Explain => "Explanation", _ => "Rewrite" } + " copied to the clipboard.");
+                        break;
                     case "copyTranslation":
                         TextTransfer.CopyRevision(ReadText(root));
                         Notify("Translation copied to the clipboard.");
                         break;
                     case "applyTranslation":
+                    case "applyRewrite":
+                        // Both replace the whole selection with plain text.
                         var translated = ReadText(root);
-                        if (_capture is null) throw new InvalidOperationException($"Capture a selection with {ShortcutLabel(Shortcuts.Translate)} first, or copy the translation.");
-                        if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the translation and paste it where you need it.");
+                        var what = action == "applyRewrite" ? "rewrite" : "translation";
+                        if (_capture is null) throw new InvalidOperationException($"Capture a selection with a shortcut first, or copy the {what}.");
+                        if (ReadOnlyCapture) throw new InvalidOperationException($"This text is read-only. Copy the {what} and paste it where you need it.");
                         if (!root.TryGetProperty("original", out var translatedFrom) || translatedFrom.GetString() != _capture.Text)
-                            throw new InvalidOperationException("The translation no longer matches the captured selection. Translate the text again.");
+                            throw new InvalidOperationException($"The {what} no longer matches the captured selection. Capture the text again.");
                         var translateCapture = _capture;
                         bool translationConsumed;
                         Hide();
@@ -546,7 +582,7 @@ internal sealed class ReviewWindow : Form
                             await ApplyChromeAsync(root, revision, _operation.Token);
                             break;
                         }
-                        if (_capture is null) throw new InvalidOperationException($"Capture a selection with {ShortcutLabel(Shortcuts.Review)} first, or use Copy revised text.");
+                        if (_capture is null) throw new InvalidOperationException($"Capture a selection with {ShortcutLabel(Shortcuts.Open)} first, or use Copy revised text.");
                         if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the revision and paste it where you need it.");
                         var explicitPlainText = root.TryGetProperty("allowPlainText", out var allowPlainText) && allowPlainText.ValueKind == JsonValueKind.True;
                         if (_capture.Html is null && !explicitPlainText)
