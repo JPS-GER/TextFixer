@@ -113,16 +113,23 @@ dialog .chrome-setup { margin-bottom:0; }
 .startup-option input { margin-top:3px; }
 #translation-view pre { max-height:480px; font-size:15px; }
 #translation-view details { margin-top:12px; }
-.task-row { display:inline-flex; gap:0; margin:0 0 18px; border:1px solid var(--edge); border-radius:8px; overflow:hidden; }
-.task-row button { border:0; border-radius:0; background:transparent; padding:8px 16px; }
-.task-row button + button { border-left:1px solid var(--edge); }
-.task-row button.active { background:var(--accent); color:var(--on-accent); }
 /* Open shortcut: choose a task for the captured text. */
-.task-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
-button.task-choice { display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; padding:14px 16px; background:var(--room-2); border:1px solid var(--edge); border-radius:10px; }
-button.task-choice:hover { background:var(--room-3); border-color:var(--accent-edge); }
-button.task-choice strong { font-size:14px; color:var(--text); }
-button.task-choice span { font:400 12px/1.4 "Segoe UI",Arial; color:var(--muted); }
+.task-menu { margin:0 0 18px; }
+.task-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+/* A card: the main button runs the default; the option buttons below it run variants. */
+.task-card { display:flex; flex-direction:column; background:var(--room-2); border:1px solid var(--edge); border-radius:10px; overflow:hidden; }
+.task-card:hover { border-color:var(--edge-strong); }
+.task-card.active { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+button.task-main { flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; padding:13px 16px 10px; background:transparent; border:0; border-radius:0; }
+button.task-main:hover { background:var(--room-3); }
+button.task-main strong { font-size:14px; color:var(--text); }
+.task-card.active button.task-main strong { color:var(--accent); }
+button.task-main span { font:400 12px/1.4 "Segoe UI",Arial; color:var(--muted); }
+.task-options { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 12px; }
+button.task-option { padding:4px 10px; font:600 12px "Segoe UI",Arial; border-radius:999px; background:var(--room-1); border-color:var(--edge); color:var(--text); }
+button.task-option:hover { background:var(--control-hover); border-color:var(--accent-edge); }
+button.task-option.selected { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+button.task-main:disabled,button.task-option:disabled { cursor:default; opacity:.6; }
 .rewrite-presets { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
 button.preset { padding:6px 12px; border-radius:16px; font-weight:600; }
 .diff-view { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; padding:10px 0; }

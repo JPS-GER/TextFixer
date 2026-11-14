@@ -166,10 +166,10 @@ internal sealed class ReviewWindow : Form
     /// <summary>Source URLs cited in the Summary and Explain dialogs of the current capture.</summary>
     private readonly HashSet<string> _dialogSources = new(StringComparer.Ordinal);
     private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
-    /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives.</summary>
-    private async Task CheckByTabAsync(string original, CancellationToken cancellationToken)
+    /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives. <paramref name="only"/> limits the tabs.</summary>
+    private async Task CheckByTabAsync(string original, CancellationToken cancellationToken, IReadOnlyList<string>? only = null)
     {
-        var tabs = ReviewFocus.All;
+        var tabs = only is { Count: > 0 } ? ReviewFocus.All.Where(only.Contains).ToList() : ReviewFocus.All;
         // Continuations run on the UI thread, so the running list and Send need no locking.
         var running = tabs.ToList();
         using var run = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -501,9 +501,13 @@ internal sealed class ReviewWindow : Form
                         var original = ReadText(root);
                         if (_capture is not null && _capture.Text != original) _capture = null;
                         if (_chromeCapture is not null && _chromeCapture.Text != original) _chromeCapture = null;
-                        if (_settings?.ReviewMode == AppSettings.FocusedReview)
+                        // "focus" (for example spelling and grammar only) runs just those review tabs.
+                        var focusTabs = root.TryGetProperty("focus", out var focusElement) && focusElement.ValueKind == JsonValueKind.Array
+                            ? focusElement.EnumerateArray().Where(f => f.ValueKind == JsonValueKind.String).Select(f => f.GetString()!).Where(ReviewFocus.All.Contains).Distinct().ToList()
+                            : [];
+                        if (focusTabs.Count > 0 || _settings?.ReviewMode == AppSettings.FocusedReview)
                         {
-                            await CheckByTabAsync(original, _operation.Token);
+                            await CheckByTabAsync(original, _operation.Token, focusTabs);
                             break;
                         }
                         var result = await _service.CheckAsync(original, _operation.Token);
@@ -512,8 +516,9 @@ internal sealed class ReviewWindow : Form
                     case "translate":
                         var source = ReadText(root);
                         if (_capture is not null && _capture.Text != source) _capture = null;
-                        var translation = await _service.TranslateAsync(source, _operation.Token);
-                        Send(new { type = "translation", captureId = _replyCaptureId, original = source, translation, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        var target = root.TryGetProperty("target", out var targetElement) && targetElement.ValueKind == JsonValueKind.String ? targetElement.GetString() ?? ReviewPrompt.TargetAuto : ReviewPrompt.TargetAuto;
+                        var translation = await _service.TranslateAsync(source, _operation.Token, target);
+                        Send(new { type = "translation", captureId = _replyCaptureId, original = source, translation, target, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "reviseTranslation":
                         var revisedFrom = ReadText(root);
@@ -556,8 +561,9 @@ internal sealed class ReviewWindow : Form
                         var writeFrom = ReadText(root);
                         var writeOriginal = root.TryGetProperty("original", out var writeOriginalElement) && writeOriginalElement.ValueKind == JsonValueKind.String ? writeOriginalElement.GetString() ?? writeFrom : writeFrom;
                         var writeRequest = root.TryGetProperty("request", out var writeRequestElement) && writeRequestElement.ValueKind == JsonValueKind.String ? writeRequestElement.GetString() : null;
-                        var written = await _service.WriteAsync(kind, writeFrom, writeRequest, _operation.Token);
-                        Send(new { type = "writing", captureId = _replyCaptureId, kind, original = writeOriginal, result = written, request = writeRequest, canReplace = _capture is not null && _capture.Text == writeOriginal && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        var variant = root.TryGetProperty("variant", out var variantElement) && variantElement.ValueKind == JsonValueKind.String ? variantElement.GetString() ?? "" : "";
+                        var written = await _service.WriteAsync(kind, writeFrom, writeRequest, _operation.Token, variant);
+                        Send(new { type = "writing", captureId = _replyCaptureId, kind, variant, original = writeOriginal, result = written, request = writeRequest, canReplace = _capture is not null && _capture.Text == writeOriginal && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "discuss":
                         // A follow-up question about a summary or explanation; "text" is the capture, "turns" the conversation so far.

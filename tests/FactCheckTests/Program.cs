@@ -258,5 +258,16 @@ const string Original = "Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Berl
     Check(request["tools"]![0]!["type"]!.GetValue<string>() == "web_search" && request["store"]!.GetValue<bool>() == false, "dialog request uses web search and is not stored");
 }
 
+{
+    // Card options: translation target and Summary/Explain variants.
+    string Instructions(System.Text.Json.Nodes.JsonObject r) => r["instructions"]!.GetValue<string>();
+    Check(Instructions(ReviewPrompt.BuildTranslationRequest("m", "x", target: "de")).Contains("into German. If it is already German")
+        && Instructions(ReviewPrompt.BuildTranslationRequest("m", "x", target: "en")).Contains("into English. If it is already English")
+        && Instructions(ReviewPrompt.BuildTranslationRequest("m", "x")).Contains("mainly German, translate it into English"), "translation targets");
+    Check(Instructions(ReviewPrompt.BuildWritingRequest("m", "summary", "x", variant: "actions")).Contains("Never invent tasks")
+        && Instructions(ReviewPrompt.BuildWritingRequest("m", "explain", "x", variant: "technical")).Contains("professional background")
+        && !Instructions(ReviewPrompt.BuildWritingRequest("m", "summary", "x")).Contains("Instead of"), "summary and explain variants");
+}
+
 Console.WriteLine(failures == 0 ? "All fact-check tests passed." : $"{failures} fact-check test(s) failed.");
 return failures == 0 ? 0 : 1;

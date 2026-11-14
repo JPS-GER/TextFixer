@@ -136,9 +136,13 @@ public sealed class ChatGptReviewService : IReviewService
             : result with { Findings = [], Corrections = [.. result.Corrections.Select(c => c with { Category = focus })] };
     }
 
-    /// <summary>Translates German into English and other text into German. Keeps the leading and trailing whitespace of the selection.</summary>
-    public async Task<string> TranslateAsync(string text, CancellationToken cancellationToken)
+    /// <summary>
+    /// Translates into <paramref name="target"/>: auto turns German into English and other text into German. Keeps the
+    /// leading and trailing whitespace of the selection.
+    /// </summary>
+    public async Task<string> TranslateAsync(string text, CancellationToken cancellationToken, string target = ReviewPrompt.TargetAuto)
     {
+        if (target is not (ReviewPrompt.TargetAuto or ReviewPrompt.TargetGerman or ReviewPrompt.TargetEnglish)) target = ReviewPrompt.TargetAuto;
         ArgumentNullException.ThrowIfNull(text);
         if (string.IsNullOrWhiteSpace(text)) return text;
         if (text.Length > MaxTextLength)
@@ -150,7 +154,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, TranslationStyle), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, TranslationStyle, target), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return KeepOuterWhitespace(text, output);
@@ -162,8 +166,10 @@ public sealed class ChatGptReviewService : IReviewService
     /// Rewrite (as <paramref name="request"/> asks), summary or explanation of <paramref name="text"/>, answered as plain
     /// text. A rewrite keeps the leading and trailing whitespace of the selection.
     /// </summary>
-    public async Task<string> WriteAsync(string kind, string text, string? request, CancellationToken cancellationToken)
+    public async Task<string> WriteAsync(string kind, string text, string? request, CancellationToken cancellationToken, string variant = "")
     {
+        variant ??= "";
+        if (variant.Length > 0 && !(ReviewPrompt.Variants.TryGetValue(kind, out var variants) && variants.Contains(variant))) variant = "";
         ArgumentNullException.ThrowIfNull(text);
         if (kind is not (ReviewPrompt.Rewrite or ReviewPrompt.Summary or ReviewPrompt.Explain)) throw new ArgumentOutOfRangeException(nameof(kind));
         if (string.IsNullOrWhiteSpace(text)) throw new ChatGptServiceException("empty_text", "Select some text first.");
@@ -176,7 +182,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildWritingRequest(model, kind, text, request, Style), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildWritingRequest(model, kind, text, request, Style, variant), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         if (kind == ReviewPrompt.Rewrite) return KeepOuterWhitespace(text, output);

@@ -4,9 +4,10 @@ let connected=false,busy=false,canReplace=false,readOnlyCapture=false,sourceText
 let pendingAutoCheck=false;
 // Alt+E captures translate instead of review.
 let captureTask='review',translationOriginal='',translationText='';
-// Task row: activeTask is the visible task; taskReady[task] holds the captureId its result belongs to.
+// Task menu: activeTask is the visible task; taskReady[task] holds the captureId its result belongs to.
+// taskOption[task] is the chosen card option ('' = the card's main action); readyOption[task] is the option of the shown result.
 // captureId increases with every capture; answers for an older capture are dropped.
-let captureId=0,activeTask='review',taskReady={};
+let captureId=0,activeTask='review',taskReady={},taskOption={},readyOption={},requestedOption={},factSetup=false,dialogKey='',menuButtons=[];
 // Fact check: claims with their correction wordings (exact quote replacements, applied like review edits).
 // factContext and factClarifications (answers to the questions of needs_context claims) belong to the current capture.
 let factOriginal='',factClaims=[],factWordings=[],factMeta=null,factContext='',factClarifications=[],factIds=0;
@@ -101,32 +102,90 @@ function startCapturedReview(){
   pendingAutoCheck=false;
   runTask(activeTask);
 }
+// Cards of the task menu: [task, title, description, options]. The card runs the main action; option buttons run a variant.
+const taskCards=[
+  ['review','Review','Spelling, grammar, punctuation, wording and points worth checking.',[['spelling','Spelling & grammar']]],
+  ['translate','Translate','German into English, other languages into German.',[['de','To German'],['en','To English']]],
+  ['factcheck','Fact check','Researches the claims on the web and cites sources.',[['context','Add context...']]],
+  ['rewrite','Rewrite','Improves wording and flow and keeps the meaning.',[['formal','More formal'],['friendly','Friendlier'],['short','Shorter'],['more','More...']]],
+  ['summary','Summary','The main points in a few lines.',[['sentence','One sentence'],['points','Key points'],['actions','Action items']]],
+  ['explain','Explain','What the text means, in plain language.',[['beginner','For beginners'],['technical','Technical detail']]],
+];
+const optionLabel=(task,option)=>taskCards.find(c=>c[0]===task)?.[3].find(o=>o[0]===option)?.[1]||'';
+const answerKey=task=>task+':'+(taskOption[task]||'');
+function renderTaskMenu(){
+  const list=$('task-choices');list.replaceChildren();menuButtons=[];
+  for(const [task,title,description,options] of taskCards){
+    const card=document.createElement('div');card.className='task-card';card.dataset.task=task;
+    const main=document.createElement('button');main.type='button';main.className='task-main';main.dataset.task=task;
+    const name=document.createElement('strong');name.textContent=title;const text=document.createElement('span');text.textContent=description;
+    main.append(name,text);main.onclick=()=>runTask(task,'');
+    const row=document.createElement('div');row.className='task-options';
+    for(const [option,label] of options){
+      const b=document.createElement('button');b.type='button';b.className='task-option';b.dataset.task=task;b.dataset.option=option;b.textContent=label;
+      b.onclick=()=>runTask(task,option);row.append(b);menuButtons.push({button:b,task,option,card:null});
+    }
+    card.append(main,row);list.append(card);menuButtons.push({button:main,task,option:'',card});
+  }
+}
+// Highlights the active card and option; the menu stays visible for every captured text.
+function updateTaskMenu(){
+  $('task-menu').hidden=!sourceText.trim();$('task-menu-title').hidden=!!activeTask;
+  for(const m of menuButtons){
+    m.button.disabled=busy;
+    if(m.card)m.card.className='task-card'+(activeTask===m.task?' active':'');
+    else{const selected=activeTask===m.task&&(m.option==='context'?factSetup:(taskOption[m.task]||'')===m.option);m.button.className='task-option'+(selected?' selected':'');}
+  }
+}
+// Whether the active option's result for this capture is ready to show.
+function ready(task){
+  if(task==='summary'||task==='explain')return !!answers[answerKey(task)];
+  if(task==='rewrite')return taskReady.rewrite===captureId;
+  return taskReady[task]===captureId&&(readyOption[task]||'')===(taskOption[task]||'');
+}
 // Shows the active task's result when it belongs to the current capture.
 function showTaskView(){
-  $('results').hidden=activeTask!=='review'||taskReady.review!==captureId;
-  $('translation-view').hidden=activeTask!=='translate'||taskReady.translate!==captureId;
-  $('factcheck-view').hidden=activeTask!=='factcheck'||taskReady.factcheck!==captureId;
-  $('factcheck-setup').hidden=activeTask!=='factcheck'||taskReady.factcheck===captureId;
-  $('rewrite-view').hidden=activeTask!=='rewrite'||taskReady.rewrite!==captureId;
+  $('results').hidden=activeTask!=='review'||!ready('review');
+  $('translation-view').hidden=activeTask!=='translate'||!ready('translate');
+  $('factcheck-view').hidden=activeTask!=='factcheck'||!ready('factcheck');
+  $('factcheck-setup').hidden=activeTask!=='factcheck'||ready('factcheck')||!factSetup;
+  $('rewrite-view').hidden=activeTask!=='rewrite'||!ready('rewrite');
   $('choose-view').hidden=!!activeTask||!sourceText.trim();
   $('choose-text').textContent=sourceText;
-  const answer=['summary','explain'].includes(activeTask)&&taskReady[activeTask]===captureId?answers[activeTask]:null;
+  const answer=['summary','explain'].includes(activeTask)?answers[answerKey(activeTask)]:null;
   $('answer-view').hidden=!answer;
-  if(answer){const summary=activeTask==='summary';$('answer-title').textContent=summary?'Summary':'Explanation';
-    $('answer-hint').textContent=(summary?'A short summary of the selected text, written from the text alone.':'A plain-language explanation of the selected text, written from the text alone.')+' Ask a follow-up question or object to something below.';
+  if(answer){const summary=activeTask==='summary',variant=optionLabel(activeTask,taskOption[activeTask]||'');$('answer-title').textContent=(summary?'Summary':'Explanation')+(variant?': '+variant:'');
+    $('answer-hint').textContent='Written from the selected text alone. Ask a follow-up question or object to something below.';
     $('answer-model').textContent=answer.model||'';renderDialog();}
 }
-// Runs a task on the captured text, or shows its cached result for this capture.
-function runTask(task){
+// Rewrite card: the main action improves the text; options are presets. Each starts from the captured original.
+const rewriteCardRequests={'':'Improve: clearer and smoother wording; keep the meaning, tone, form of address and length',formal:'More formal and professional; keep du or Sie as written',friendly:'Friendlier and warmer, still polite',short:'Shorter: remove repetition and filler, keep all facts'};
+// Runs a task option on the captured text, or shows its cached result for this capture.
+function runTask(task,option=''){
   if(busy||!sourceText.trim())return;
-  activeTask=task;showTaskView();
-  if(taskReady[task]===captureId){update();return;}
-  if(task==='rewrite'){taskReady.rewrite=captureId;showTaskView();renderRewrite();notice('Choose a preset or describe the change.');update();return;}
+  activeTask=task;
+  if(task==='factcheck'&&option==='context'){
+    factSetup=true;showTaskView();
+    if(ready('factcheck')){$('fact-more').open=true;$('fact-context-more').focus?.();notice('Add context, then check again.');}
+    else{$('fact-context').focus?.();notice('Add context, then start the fact check.');}
+    update();return;
+  }
+  if(task==='rewrite'&&option==='more'){taskOption.rewrite='more';taskReady.rewrite=captureId;showTaskView();renderRewrite();notice('Choose a preset or describe the change.');update();return;}
+  if(task==='factcheck')factSetup=false;
+  taskOption[task]=option;showTaskView();
+  if(task==='rewrite'){
+    const request=rewriteCardRequests[option]??rewriteCardRequests[''];
+    if(rewriteSteps.length===1&&rewriteSteps[0].request===request&&ready('rewrite')){update();return;}
+    if(!connected){notice('Connect ChatGPT in Settings first.');update();return;}
+    rewriteSteps=[];renderRewrite();requestRewrite(request);update();return;
+  }
+  if(ready(task)){update();return;}
   if(!connected){notice('Connect ChatGPT in Settings first.');update();return;}
-  if(task==='translate'){notice('Translating your text...');post('translate',{text:sourceText,captureId});}
-  else if(task==='summary'||task==='explain'){notice(task==='summary'?'Summarizing your text...':'Explaining your text...');post('write',{kind:task,text:sourceText,original:sourceText,captureId});}
-  else if(task==='factcheck'){notice('Add context if the claims need it, then start the fact check.');$('fact-context').focus?.();}
-  else{notice('Checking your text...');post('check',{text:sourceText,captureId});}
+  requestedOption[task]=option;
+  if(task==='translate'){notice('Translating your text...');post('translate',{text:sourceText,captureId,...(option?{target:option}:{})});}
+  else if(task==='summary'||task==='explain'){notice(task==='summary'?'Summarizing your text...':'Explaining your text...');post('write',{kind:task,text:sourceText,original:sourceText,captureId,...(option?{variant:option}:{})});}
+  else if(task==='factcheck')startFactCheck('');
+  else{notice('Checking your text...');post('check',{text:sourceText,captureId,...(option==='spelling'?{focus:['spelling','grammar']}:{})});}
   update();
 }
 // Starts a fact check of the whole text; context and earlier answers go along.
@@ -227,8 +286,7 @@ function update(){
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
   $('route').className='capture-icon';
   const captureLabel=captureMode==='chrome'?'Captured from Chrome':'Captured with '+(shortcutLabels[captureTask]||shortcutLabels.open);
-  $('task-row').hidden=!sourceText.trim()||!activeTask;
-  for(const b of $('task-row').querySelectorAll?.('button')||[]){b.classList.toggle('active',b.dataset.task===activeTask);b.disabled=busy;}
+  updateTaskMenu();
   const factFormatted=captureMode!=='chrome'&&richClipboard&&!$('fact-plain').checked;
   const factAccepted=factWordings.some(w=>w.accepted);
   $('fact-copy').disabled=busy;$('fact-copy').textContent=factFormatted?'Copy with formatting':'Copy plain text';$('fact-copy').classList.toggle('primary',readOnlyCapture);
@@ -395,7 +453,7 @@ $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');p
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
 document.querySelectorAll('input[data-writing]').forEach(r=>r.onchange=()=>{if(r.checked)post('writing',{[r.dataset.writing]:r.value});});
-$('task-choices').querySelectorAll?.('button').forEach(b=>b.onclick=()=>runTask(b.dataset.task));
+renderTaskMenu();
 $('rewrite-form').onsubmit=e=>{e.preventDefault();requestRewrite($('rewrite-request').value.trim());};
 $('copy-rewrite').onclick=()=>post('copyResult',{kind:'rewrite',text:rewriteSteps.at(-1)?.text||''});
 $('apply-rewrite').onclick=()=>post('applyRewrite',{text:rewriteSteps.at(-1)?.text||'',original:sourceText});
@@ -403,10 +461,9 @@ $('rewrite-reset').onclick=()=>{rewriteSteps=[];renderRewrite();update();notice(
 $('dialog-form').onsubmit=e=>{e.preventDefault();askDialog();};
 $('dialog-question').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();askDialog();}};
 $('dialog-question').oninput=sizeQuestion;
-$('copy-conversation').onclick=()=>{const a=answers[activeTask];if(a)post('copyResult',{kind:'conversation',text:conversationText(activeTask,a)});};
+$('copy-conversation').onclick=()=>{const a=answers[answerKey(activeTask)];if(a)post('copyResult',{kind:'conversation',text:conversationText(activeTask,a)});};
 document.querySelectorAll('input[data-style]').forEach(r=>r.onchange=()=>{if(r.checked)post('typography',{style:{[r.dataset.style]:r.value}});});
 $('revise-translation').onsubmit=e=>{e.preventDefault();const request=$('translation-request').value.trim();if(busy||!request||!translationText)return;notice('Revising the translation...');post('reviseTranslation',{text:translationOriginal,translation:translationText,request,captureId});};
-$('task-row').querySelectorAll?.('button').forEach(b=>b.onclick=()=>runTask(b.dataset.task));
 $('fact-copy').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-apply').onclick=()=>post('apply',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-plain').onchange=update;
@@ -423,9 +480,9 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();}
+  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();}
   if(m.type==='factCheck'){
-    taskReady.factcheck=captureId;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
+    taskReady.factcheck=captureId;readyOption.factcheck='';factSetup=false;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
     const fresh=(m.result.claims||[]).map(c=>factClaim(c,m.original));
     if(m.only?.length&&factClaims.length){
       // A re-check of single claims replaces only those cards.
@@ -446,7 +503,7 @@ window.chrome.webview.addEventListener('message',event=>{
     if(ask){notice(`Fact check finished. ${ask} ${ask===1?'claim needs':'claims need'} more context: answer the question on the card.`);return;}
     notice(!factClaims.length?'Fact check finished. No checkable factual claims found.':wrong?`Fact check finished. ${wrong} wrong ${wrong===1?'claim':'claims'} found. Review the sources before using a correction.`:'Fact check finished. Review the verdicts and their sources.');
   }
-  if(m.type==='translation'){taskReady.translate=captureId;translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
+  if(m.type==='translation'){taskReady.translate=captureId;if(!m.revised)readyOption.translate=m.target&&m.target!=='auto'?m.target:'';$('translation-hint').textContent=readyOption.translate==='de'?'Translated into German.':readyOption.translate==='en'?'Translated into English.':'German text becomes English; text in other languages becomes German.';translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
   if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
   if(m.type==='historyCopied'){copiedId=m.id;copiedPlain=!!m.plain;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
@@ -458,12 +515,12 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='models')renderModels(m);
   if(m.type==='connected'&&$('settings').open)post('models');
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
-  if(m.type==='dialog'){const a=answers[m.kind],r=m.answer||{};
+  if(m.type==='dialog'){const a=answers[dialogKey],r=m.answer||{};
     if(a){a.turns.push({role:'user',text:a.pending||m.question||''},{role:'assistant',text:r.text||'',sources:r.sources||[],searches:r.searches||0});a.pending='';}
-    if(activeTask===m.kind){renderDialog();$('dialog').lastElementChild?.scrollIntoView?.({block:'start',behavior:'smooth'});}
+    if(answerKey(activeTask)===dialogKey&&activeTask===m.kind){renderDialog();$('dialog').lastElementChild?.scrollIntoView?.({block:'start',behavior:'smooth'});}
     notice(r.searches?'Answer ready.':'Answer ready. No web search ran for it.');}
   // A failed or cancelled question goes back into the input field.
-  if(m.type==='busy'&&!m.busy)for(const k of ['summary','explain']){const a=answers[k];if(!a?.pending)continue;if(!$('dialog-question').value)$('dialog-question').value=a.pending;a.pending='';if(activeTask===k)renderDialog();}
+  if(m.type==='busy'&&!m.busy)for(const k of Object.keys(answers)){const a=answers[k];if(!a?.pending)continue;if(!$('dialog-question').value)$('dialog-question').value=a.pending;a.pending='';if(answerKey(activeTask)===k)renderDialog();}
   if(m.type==='busy'){busy=m.busy;if(factClaims.length)renderFacts();if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
@@ -471,12 +528,12 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='writing'){
     const text=reviewPlainStyle(m.result,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
     if(m.kind==='rewrite'){rewriteSteps.push({text,request:m.request||''});rewriteModel=m.model||'';$('rewrite-request').value='';taskReady.rewrite=captureId;renderRewrite();notice(readOnlyCapture?'Rewrite ready. Copy it, or request another change.':'Rewrite ready. Copy it, replace your selection, or request another change.');}
-    else{answers[m.kind]={text,model:m.model||'',turns:[],pending:''};taskReady[m.kind]=captureId;notice(m.kind==='summary'?'Summary ready.':'Explanation ready.');}
+    else{answers[m.kind+':'+(m.variant||'')]={text,model:m.model||'',turns:[],pending:''};taskReady[m.kind]=captureId;notice(m.kind==='summary'?'Summary ready.':'Explanation ready.');}
     showTaskView();
   }
   if(m.type==='reviewMode'){if(m.emailSpelling)writingPrefs.email=m.emailSpelling;if(m.addressForm)writingPrefs.address=m.addressForm;if(m.reviewDu)writingPrefs.reviewDu=m.reviewDu;for(const r of document.querySelectorAll?.('input[data-writing]')||[])r.checked=r.value===writingPrefs[r.dataset.writing];}
   if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;if(m.punctuationStyle)punctuationStyle={...punctuationStyle,...m.punctuationStyle};for(const r of document.querySelectorAll?.('input[data-style]')||[])r.checked=r.value===(punctuationStyle[r.dataset.style]||'keep');}
-  if(m.type==='tabProgress'){taskReady.review=captureId;
+  if(m.type==='tabProgress'){taskReady.review=captureId;readyOption.review=requestedOption.review||'';
     if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
     for(const k of m.running||[])tabState[k]='running';
     showChanges();tabProgressNotice();
@@ -495,7 +552,7 @@ window.chrome.webview.addEventListener('message',event=>{
     if(m.pending?.length)tabProgressNotice();else readyNotice();
   }
   if(m.type==='result'){
-    taskReady.review=captureId;partialReview=false;tabState={};
+    taskReady.review=captureId;readyOption.review=requestedOption.review||'';partialReview=false;tabState={};
     activeTab='spelling';reviewOriginal=m.original;parts=styledParts(m.original,m.result.correctedText,m.result.corrections);
     reviewFindings=styledFindings(m.result.findings);
     wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);
@@ -630,7 +687,7 @@ function renderShortcuts(){
 }
 
 // Rewrite: presets or a free-text request; each request changes the latest rewrite. Replace pastes plain text.
-const rewritePresets=[['More formal','More formal and professional'],['Friendlier','Friendlier and warmer, still polite'],['Shorter','Shorter: remove repetition and filler, keep all facts'],['Simpler','Simpler: plain language and short sentences'],['Clearer structure','Clearer structure: logical order, paragraphs or bullet points where they help']];
+const rewritePresets=[['Improve','Improve: clearer and smoother wording; keep the meaning, tone, form of address and length'],['More formal','More formal and professional; keep du or Sie as written'],['Friendlier','Friendlier and warmer, still polite'],['Shorter','Shorter: remove repetition and filler, keep all facts'],['Simpler','Simpler: plain language and short sentences'],['Clearer structure','Clearer structure: logical order, paragraphs or bullet points where they help']];
 function requestRewrite(request){
   if(busy||!request||!sourceText.trim())return;
   if(!connected){notice('Connect ChatGPT in Settings first.');return;}
@@ -661,7 +718,7 @@ function dialogMessage(role,text,extra={}){
   return box;
 }
 function renderDialog(){
-  const a=answers[activeTask],list=$('dialog');list.replaceChildren();
+  const a=answers[answerKey(activeTask)],list=$('dialog');list.replaceChildren();
   if(!a)return;
   const summary=activeTask==='summary';
   list.append(dialogMessage('assistant',a.text,{copyKind:activeTask,copyLabel:summary?'Copy summary':'Copy explanation'}));
@@ -671,10 +728,10 @@ function renderDialog(){
   $('dialog-form').hidden=full;$('dialog-keys').hidden=full;$('dialog-full').hidden=!full;
 }
 function askDialog(){
-  const a=answers[activeTask],question=$('dialog-question').value.trim();
+  const a=answers[answerKey(activeTask)],question=$('dialog-question').value.trim();
   if(busy||!a||!question||a.pending||a.turns.length/2>=maxDialogQuestions)return;
   if(!connected){notice('Connect ChatGPT in Settings first.');return;}
-  a.pending=question;$('dialog-question').value='';sizeQuestion();renderDialog();notice('Searching the web for an answer...');
+  a.pending=question;dialogKey=answerKey(activeTask);$('dialog-question').value='';sizeQuestion();renderDialog();notice('Searching the web for an answer...');
   post('discuss',{kind:activeTask,text:sourceText,turns:[{role:'assistant',text:a.text},...a.turns.map(t=>({role:t.role,text:t.text})),{role:'user',text:question}],captureId});
   $('dialog').lastElementChild?.scrollIntoView?.({block:'nearest',behavior:'smooth'});
 }

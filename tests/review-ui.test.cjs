@@ -436,7 +436,7 @@ console.log('PASS: model choice lists models and saves the selection.');
  message({type:'busy',busy:false});
  sent.length=0;
  message({type:'capture',captureId:7,task:'factcheck',text:original,canReplace:true,readOnly:false,canPreserveFormatting:true});
- assert.equal(sent.filter(x=>x.action==='factCheck').length,0,'a fact-check capture waits for optional context'); assert.equal(element('factcheck-setup').hidden,false); element('fact-context').value='  Artikel vom Mai  ';element('fact-start').onclick(); assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text:original,context:'Artikel vom Mai',clarifications:[],captureId:7},'Start sends the context');
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text:original,context:'',clarifications:[],captureId:7},'a Fact check shortcut checks right away'); message({type:'busy',busy:false}); sandbox.runTask('factcheck','context');assert.equal(element('factcheck-setup').hidden,false,'Add context opens the field'); element('fact-context').value='  Artikel vom Mai  ';element('fact-start').onclick(); assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text:original,context:'Artikel vom Mai',clarifications:[],captureId:7},'Start sends the context');
  const claim=(quote,verdict,extra={})=>({quote,verdict,explanation:'Erklärung.',correction:null,sources:[{url:'https://a.example/x',title:'A',domain:'a.example'}],noSource:false,...extra});
  const result={claims:[claim('Der Eiffelturm steht in Rom','wrong',{correction:'Der Eiffelturm steht in Paris'}),claim('Er wurde 1889 fertig','supported'),claim('Rom','wrong',{correction:'Paris'}),claim('Er wurde 1889 fertig','unverifiable',{sources:[],noSource:true})],model:'m1',elapsedMs:12000,searches:2};
  message({type:'factCheck',captureId:6,original,result,...meta});
@@ -481,7 +481,6 @@ console.log('PASS: model choice lists models and saves the selection.');
  assert.deepEqual({...sent.at(-1)},{action:'check',text:'Neu.',captureId:8});
  message({type:'result',captureId:8,original:'Neu.',result:{correctedText:'Neu.',findings:[],corrections:[]},canReplace:true,model:'m',mode:'clipboard'});
  sandbox.runTask('factcheck');
- assert.equal(sent.at(-1).action,'check');element('fact-start').onclick();
  assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text:'Neu.',context:'',clarifications:[],captureId:8});
  message({type:'busy',busy:false});
  // Settings: third model list.
@@ -523,7 +522,6 @@ console.log('PASS: overlapping fact corrections cannot both be accepted.');
  message({type:'busy',busy:false});
  const text='Die Studie zeigt 20 Prozent. Rom liegt in Italien.';
  message({type:'capture',captureId:31,task:'factcheck',text,canReplace:false,readOnly:true,canPreserveFormatting:false});
- element('fact-start').onclick();
  const src=[{url:'https://s.example/',title:'S',domain:'s.example'}];
  message({type:'factCheck',captureId:31,original:text,only:[],result:{claims:[
   {quote:'Die Studie zeigt 20 Prozent',verdict:'needs_context',explanation:'Unklar.',correction:null,sources:[],noSource:false,question:'Welche Studie ist gemeint?'},
@@ -547,6 +545,32 @@ console.log('PASS: overlapping fact corrections cannot both be accepted.');
  assert.equal(again.context,'Bildungsbericht');assert.equal(again.clarifications.length,1);assert.equal(again.only,undefined);
 }
 console.log('PASS: fact-check context, questions on claims and single-claim re-checks.');
+{
+ // Card options send their variant; each option has its own result, and the card shows which one is selected.
+ message({type:'busy',busy:false});
+ const text='Bitte bis Freitag den Bericht schicken.';
+ message({type:'capture',captureId:50,task:'open',text,canReplace:false,readOnly:true});
+ sandbox.runTask('translate','en');
+ assert.deepEqual({...sent.at(-1)},{action:'translate',text,captureId:50,target:'en'});
+ message({type:'translation',captureId:50,original:text,translation:'Please send the report by Friday.',target:'en',canReplace:false,readOnly:true,model:'m'});
+ message({type:'busy',busy:false});
+ assert.equal(element('translation-view').hidden,false);assert.equal(element('translation-hint').textContent,'Translated into English.');
+ const before=sent.length;sandbox.runTask('translate','en');assert.equal(sent.length,before,'same option shows the cached result');
+ sandbox.runTask('translate','');assert.equal(element('translation-view').hidden,true,'another option never shows the cached result');
+ assert.deepEqual({...sent.at(-1)},{action:'translate',text,captureId:50});
+ message({type:'busy',busy:false});
+ sandbox.runTask('summary','actions');
+ assert.deepEqual({...sent.at(-1)},{action:'write',kind:'summary',text,original:text,captureId:50,variant:'actions'});
+ message({type:'writing',captureId:50,kind:'summary',variant:'actions',original:text,result:'- Bericht bis Freitag schicken',canReplace:false,readOnly:true,model:'m'});
+ message({type:'busy',busy:false});
+ assert.equal(element('answer-title').textContent,'Summary: Action items');
+ const option=element('task-choices').children[4].children[1].children[2];assert.equal(option.className,'task-option selected');
+ sandbox.runTask('summary','');assert.equal(element('answer-view').hidden,true);assert.equal(sent.at(-1).variant,undefined);
+ message({type:'busy',busy:false});
+ sandbox.runTask('review','spelling');
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'check',text,captureId:50,focus:['spelling','grammar']});
+}
+console.log('PASS: task menu options, per-option results and selection.');
 {
  // Settings > Shortcuts: Open required, optional task shortcuts, recording, key mapping, cancel, reset/remove and errors.
  const defaults={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''};
@@ -593,15 +617,19 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  const text='Wir treffen uns am Montag. Bitte schick mir die E-Mail.';
  message({type:'capture',captureId:40,task:'open',text,canReplace:true,readOnly:false,canPreserveFormatting:true});
  assert.equal(sent.filter(m=>['check','translate','factCheck','write'].includes(m.action)).length,0,'Open makes no request');
- assert.equal(element('choose-view').hidden,false);assert.equal(element('task-row').hidden,true);
+ assert.equal(element('choose-view').hidden,false);assert.equal(element('task-menu').hidden,false);assert.equal(element('task-menu-title').hidden,false);
+ assert.deepEqual(element('task-choices').children.map(c=>c.dataset.task),['review','translate','factcheck','rewrite','summary','explain']);
  assert.equal(element('choose-text').textContent,text);
- // Rewrite opens its presets without a request; a preset sends one.
+ // The Rewrite card improves the text right away; More... opens all presets; a preset sends one.
  sandbox.runTask('rewrite');
- assert.equal(sent.filter(m=>m.action==='write').length,0,'Rewrite waits for a preset or request');
+ assert.equal(sent.at(-1).request,'Improve: clearer and smoother wording; keep the meaning, tone, form of address and length');
+ assert.equal(element('task-menu').hidden,false,'the task menu stays visible');assert.equal(element('task-menu-title').hidden,true);
+ message({type:'busy',busy:false});
+ sandbox.runTask('rewrite','more');
  assert.equal(element('rewrite-view').hidden,false);assert.equal(element('choose-view').hidden,true);
  const presets=element('rewrite-presets').children;
- assert.deepEqual(presets.map(b=>b.textContent),['More formal','Friendlier','Shorter','Simpler','Clearer structure']);
- presets[2].onclick();
+ assert.deepEqual(presets.map(b=>b.textContent),['Improve','More formal','Friendlier','Shorter','Simpler','Clearer structure']);
+ presets[3].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'write',kind:'rewrite',text,original:text,request:'Shorter: remove repetition and filler, keep all facts',captureId:40});
  message({type:'writing',captureId:40,kind:'rewrite',original:text,result:'Treffen am Montag. Schick mir die E-Mail.',request:'Shorter: remove repetition and filler, keep all facts',canReplace:true,readOnly:false,model:'m'});
  // A free-text follow-up changes the latest rewrite; the diff compares with the captured original.
@@ -624,7 +652,7 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  message({type:'writing',captureId:40,kind:'summary',original:text,result:'- Treffen am Montag',canReplace:true,readOnly:false,model:'m'});
  assert.equal(element('answer-title').textContent,'Summary');assert.equal(element('dialog').children[0].children[0].textContent,'- Treffen am Montag');
  const before=sent.length;
- sandbox.runTask('rewrite');sandbox.runTask('summary');
+ sandbox.runTask('rewrite','more');sandbox.runTask('summary');
  assert.equal(sent.length,before,'cached summary');
  element('dialog').children[0].children[1].children[1].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyResult',kind:'summary',text:'- Treffen am Montag'});
