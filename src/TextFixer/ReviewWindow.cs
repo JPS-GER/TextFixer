@@ -181,7 +181,7 @@ internal sealed class ReviewWindow : Form
     private readonly HashSet<string> _factSources = new(StringComparer.Ordinal);
     /// <summary>Source URLs cited in the Summary and Explain dialogs of the current capture.</summary>
     private readonly HashSet<string> _dialogSources = new(StringComparer.Ordinal);
-    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome", clip = ClipInfo(), doc = DocumentInfo() });
+    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = CanPreserveFormatting, mode = _chromeCapture is null ? "clipboard" : "chrome", clip = ClipInfo(), doc = DocumentInfo() });
 
     private CapturedText? _documentFor;
     private CaptureDocument? _document;
@@ -272,7 +272,7 @@ internal sealed class ReviewWindow : Form
                 type = "tabResult", captureId = _replyCaptureId, original, focus, result, error,
                 pending = running.ToArray(),
                 formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [],
-                canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null,
+                canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = CanPreserveFormatting,
                 model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome",
             });
         }
@@ -620,7 +620,7 @@ internal sealed class ReviewWindow : Form
                             break;
                         }
                         var result = await _service.CheckAsync(original, basics ? ReviewFocus.Basics : null, _operation.Token);
-                        Send(new { type = "result", captureId = _replyCaptureId, original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        Send(new { type = "result", captureId = _replyCaptureId, original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = CanPreserveFormatting, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "translate":
                         var source = ReadText(root);
@@ -667,7 +667,7 @@ internal sealed class ReviewWindow : Form
                             if (only.Count == 0) _factSources.Clear();
                             foreach (var cited in facts.Claims.SelectMany(c => c.Sources)) _factSources.Add(cited.Url);
                         }
-                        Send(new { type = "factCheck", captureId = _replyCaptureId, original = checkedText, result = facts, only, canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        Send(new { type = "factCheck", captureId = _replyCaptureId, original = checkedText, result = facts, only, canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = CanPreserveFormatting, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "write":
                         // Rewrite, summary or explanation. A rewrite request applies to "text", which is the capture or the latest rewrite.
@@ -756,9 +756,9 @@ internal sealed class ReviewWindow : Form
                         break;
                     case "copy":
                         var copyText = ReadText(root);
-                        var copyHtml = PrepareClipboardHtml(root, copyText);
-                        TextTransfer.CopyRevision(copyText, copyHtml);
-                        Notify(copyHtml is null ? "Revised plain text copied to the clipboard." : "Revised text copied with its original paragraph markup and formatting.");
+                        var (copyHtml, copyRtf) = PrepareFormatted(root, copyText);
+                        TextTransfer.CopyRevision(copyText, copyHtml, copyRtf);
+                        Notify(copyHtml is null && copyRtf is null ? "Revised plain text copied to the clipboard." : "Revised text copied with its original paragraph markup and formatting.");
                         break;
                     case "apply":
                         var revision = ReadText(root);
@@ -770,17 +770,17 @@ internal sealed class ReviewWindow : Form
                         if (_capture is null) throw new InvalidOperationException($"Capture a selection with {ShortcutLabel(Shortcuts.Open)} first, or use Copy revised text.");
                         if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the revision and paste it where you need it.");
                         var explicitPlainText = root.TryGetProperty("allowPlainText", out var allowPlainText) && allowPlainText.ValueKind == JsonValueKind.True;
-                        if (_capture.Html is null && !explicitPlainText)
+                        if (!CanPreserveFormatting && !explicitPlainText)
                             throw new InvalidOperationException("This is clipboard mode. Use Chrome's right-click review action for direct editing, or explicitly enable plain-text replacement.");
                         if (!root.TryGetProperty("original", out var originalElement) || originalElement.GetString() != _capture.Text)
                             throw new InvalidOperationException("The review no longer matches the captured selection. Check the text again.");
                         var capture = _capture;
-                        var pasteHtml = PrepareClipboardHtml(root, revision);
+                        var (pasteHtml, pasteRtf) = PrepareFormatted(root, revision);
                         bool consumed;
                         Hide();
-                        try { consumed = await TextTransfer.ApplyAsync(capture, revision, pasteHtml); _capture = null; }
+                        try { consumed = await TextTransfer.ApplyAsync(capture, revision, pasteHtml, pasteRtf); _capture = null; }
                         catch { Open(); throw; }
-                        Send(new { type = "applied", clipboardRestored = consumed, formatted = pasteHtml is not null });
+                        Send(new { type = "applied", clipboardRestored = consumed, formatted = pasteHtml is not null || pasteRtf is not null });
                         if (!consumed) Open();
                         break;
                 }
@@ -798,6 +798,31 @@ internal sealed class ReviewWindow : Form
             Send(new { type = "error", message = ex.Message, code = ex.Code, param = ex.ApiParam, usageLimit = ex.IsUsageLimit, requiresSignIn = ex.RequiresSignIn });
         }
         catch (Exception ex) { Notify(ex.Message); }
+    }
+
+    /// <summary>A clipboard capture with HTML or RTF: Copy and Replace keep its formatting.</summary>
+    private bool CanPreserveFormatting => _chromeCapture is null && (_capture?.Html is not null || _capture?.Rtf is not null);
+
+    /// <summary>
+    /// The revision's formatted clipboard data: the copied HTML and RTF with the accepted corrections written into
+    /// their text. Corrections never change markup typed as text (Markdown, BBCode, tags, links). HTML is required when
+    /// the copy had it; RTF is added when the corrections fit it, and is required only for an RTF-only copy (Word
+    /// tables, WordPad, rich text fields). Formatting fixes exist only for HTML, so a paste with them leaves the RTF out.
+    /// </summary>
+    private (string? Html, string? Rtf) PrepareFormatted(JsonElement root, string revision)
+    {
+        if (_capture is null) return (null, null);
+        if (!root.TryGetProperty("original", out var original) || original.GetString() != _capture.Text)
+            throw new InvalidOperationException("The review no longer matches the captured selection. Check the text again.");
+        var edits = EditorEdits.Validate(_capture.Text, revision, root.GetProperty("edits"));
+        MarkupGuard.Check(_capture.Text, edits);
+        if (root.TryGetProperty("allowPlainText", out var plainText) && plainText.ValueKind == JsonValueKind.True) return (null, null);
+        var html = PrepareClipboardHtml(root, revision);
+        var withFixes = root.TryGetProperty("formattingIds", out var fixes) && fixes.ValueKind == JsonValueKind.Array && fixes.GetArrayLength() > 0;
+        var rtf = withFixes && html is not null ? null : RtfClipboard.TryRewrite(_capture.Rtf, _capture.Text, edits);
+        if (html is null && rtf is null && _capture.Rtf is not null)
+            throw new InvalidOperationException("The corrections cannot be mapped safely to the copied formatting. Omit the affected correction, or select the plain-text option for copy or paste.");
+        return (html, rtf);
     }
 
     private string? PrepareClipboardHtml(JsonElement root, string revision)

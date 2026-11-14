@@ -1,6 +1,7 @@
 'use strict';
 // German texts for the window, keyed by the English text (see i18n.js). Child elements are {0}, {1} in order.
 const i18nDe={
+"The corrections cannot be mapped safely to the copied formatting. Omit the affected correction, or select the plain-text option for copy or paste.":"Die Korrekturen lassen sich nicht sicher in die kopierte Formatierung übertragen. Lass die betroffene Korrektur weg oder wähle die Nur-Text-Option zum Kopieren oder Einfügen.",
 "Ask a follow-up question or object to something":"Stelle eine Rückfrage oder widersprich",
 "For example: an article in Die Zeit of 12 March 2025 about heating subsidies, https://...":"Zum Beispiel: ein Artikel in der Zeit vom 12. März 2025 über Heizungsförderung, https://...",
 "Searched the web, no source cited":"Im Web gesucht, keine Quelle genannt",
@@ -242,7 +243,7 @@ const i18nDe={
 "Select any text you can copy, in an editor or on a web page, then press {0}.":"Markiere beliebigen Text, den du kopieren kannst, in einem Editor oder auf einer Webseite, und drücke dann {0}.",
 "Review starts automatically. Review the suggestions.":"Die Korrektur startet automatisch. Prüfe die Vorschläge.",
 "Choose \"Paste with formatting\" to replace the selection, or copy the revision.":"Wähle \"Mit Formatierung einfügen\", um die Auswahl zu ersetzen, oder kopiere die Überarbeitung.",
-"{0} uses the clipboard. When copied HTML is available, TextFixer preserves its paragraph markup and formatting. The destination controls how pasted HTML appears. Plain-text replacement is an explicit option and can remove formatting. For read-only text, such as a web page paragraph, TextFixer offers only copying the revision.":"{0} nutzt die Zwischenablage. Wenn kopiertes HTML vorhanden ist, behält TextFixer dessen Absatzstruktur und Formatierung. Wie eingefügtes HTML aussieht, bestimmt das Ziel. Das Ersetzen als Nur-Text ist eine ausdrückliche Option und kann Formatierung entfernen. Bei schreibgeschütztem Text, etwa einem Absatz auf einer Webseite, bietet TextFixer nur das Kopieren der Überarbeitung an.",
+"{0} uses the clipboard. When the copy has HTML or RTF (web pages, Word, Outlook, WordPad), TextFixer keeps its paragraphs and formatting. Markup typed as text, such as Markdown, BBCode, links or hashtags, stays as it is; a correction that would change it is refused. The destination controls how pasted formatting appears. Plain-text replacement is an explicit option and can remove formatting. For read-only text, such as a web page paragraph, TextFixer offers only copying the revision.":"{0} nutzt die Zwischenablage. Wenn die Kopie HTML oder RTF enthält (Webseiten, Word, Outlook, WordPad), behält TextFixer Absätze und Formatierung. Als Text geschriebene Auszeichnung wie Markdown, BBCode, Links oder Hashtags bleibt, wie sie ist; eine Korrektur, die sie ändern würde, wird abgelehnt. Wie die eingefügte Formatierung aussieht, bestimmt das Ziel. Das Ersetzen als Nur-Text ist eine ausdrückliche Option und kann Formatierung entfernen. Bei schreibgeschütztem Text, etwa einem Absatz auf einer Webseite, bietet TextFixer nur das Kopieren der Überarbeitung an.",
 "Open with {0}":"Öffnen mit {0}",
 "Select any text you can copy, then press {0}.":"Markiere beliebigen Text, den du kopieren kannst, und drücke dann {0}.",
 "Choose what TextFixer should do: Review, Translate, Fact check, Summary, Explain or Rewrite. Click the colored bar of a task for its main action, or one of its option lines. Nothing starts until you choose.":"Wähle, was TextFixer tun soll: Korrektur, Übersetzen, Faktencheck, Zusammenfassung, Erklären oder Umschreiben. Klicke auf den farbigen Balken einer Aufgabe für ihre Hauptaktion oder auf eine ihrer Optionszeilen. Nichts startet, bevor du wählst.",
@@ -464,6 +465,7 @@ const i18nDeList=s=>s.split(/, | and /).map(x=>i18nDeTabs[x]||x).reduce((a,x,i,a
 const i18nDeVerdict=s=>{const m=s.match(/^(\d+) (.+)$/);if(!m)return s;const w={'supported by the sources found':'von den Quellen gestützt','wrong':'falsch','disputed':'umstritten',"can't verify":'nicht überprüfbar','need context':'brauchen Kontext'}[m[2]];return w?`${m[1]} ${w}`:s;};
 const i18nDeExport={'formatted text':'formatierter Text','plain text':'Nur-Text','Markdown':'Markdown','BBCode':'BBCode','M! Forum text':'M!-Forum-Text','Reddit text':'Reddit-Text','YouTube text':'YouTube-Text'};
 const i18nDePatterns=[
+  [/^The correction of "(.+)" would change formatting markup, a link or a tag in the text\. Uncheck it, or edit that spot by hand\.$/,t=>`Die Korrektur von "${t}" würde Auszeichnung, einen Link oder ein Tag im Text ändern. Entferne den Haken oder ändere die Stelle von Hand.`],
   [/^(Summary|Explanation): (.+)$/,(t,v)=>`${tr(t,'de')}: ${tr(v,'de')}`],
   [/^Your answer: (.+)$/,a=>`Deine Antwort: ${a}`],
   [/^Use correction:$/,()=>'Korrektur übernehmen:'],

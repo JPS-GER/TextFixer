@@ -23,14 +23,20 @@ internal sealed class DelayedPaste : NativeWindow, IDisposable
     private readonly string _text;
     private readonly string? _html;
     private readonly uint _htmlFormat;
+    private readonly string? _rtf;
+    private readonly uint _rtfFormat;
     private readonly uint _targetProcess;
     private readonly TaskCompletionSource<bool> _read = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _textRendered;
     private bool _htmlRendered;
+    private bool _rtfRendered;
     internal bool StillOwnsClipboard => Handle != 0 && GetClipboardOwner() == Handle;
 
-    internal DelayedPaste(string text, nint target, string? html = null)
+    internal DelayedPaste(string text, nint target, string? html = null, string? rtf = null)
     {
+        _rtf = rtf;
+        if (rtf is not null) _rtfFormat = RegisterClipboardFormat("Rich Text Format");
+        if (rtf is not null && _rtfFormat == 0) throw new InvalidOperationException("Could not prepare the formatted clipboard data.");
         _text = text;
         _html = html;
         if (html is not null) _htmlFormat = RegisterClipboardFormat("HTML Format");
@@ -49,6 +55,7 @@ internal sealed class DelayedPaste : NativeWindow, IDisposable
                 Put(RegisterClipboardFormat(format), [0, 0, 0, 0]);
             SetClipboardData(13, 0); // CF_UNICODETEXT, delayed rendering
             if (_htmlFormat != 0) SetClipboardData(_htmlFormat, 0);
+            if (_rtfFormat != 0) SetClipboardData(_rtfFormat, 0);
         }
         finally { CloseClipboard(); }
     }
@@ -87,11 +94,17 @@ internal sealed class DelayedPaste : NativeWindow, IDisposable
             Put(_htmlFormat, Encoding.UTF8.GetBytes(_html + "\0"));
             _htmlRendered = true;
         }
+        else if (format == _rtfFormat && _rtf is not null && !_rtfRendered)
+        {
+            // RTF is ANSI text; corrections beyond ASCII are written as \uN escapes.
+            Put(_rtfFormat, RtfClipboard.Bytes(_rtf));
+            _rtfRendered = true;
+        }
     }
 
     protected override void WndProc(ref Message message)
     {
-        if (message.Msg == 0x0305 && (message.WParam == 13 || (_htmlFormat != 0 && message.WParam == _htmlFormat))) // WM_RENDERFORMAT
+        if (message.Msg == 0x0305 && (message.WParam == 13 || (_htmlFormat != 0 && message.WParam == _htmlFormat) || (_rtfFormat != 0 && message.WParam == _rtfFormat))) // WM_RENDERFORMAT
         {
             try
             {
@@ -117,6 +130,7 @@ internal sealed class DelayedPaste : NativeWindow, IDisposable
             {
                 Render(13);
                 if (_htmlFormat != 0) Render(_htmlFormat);
+                if (_rtfFormat != 0) Render(_rtfFormat);
             }
         }
         catch { /* Do not throw through a native window procedure. */ }

@@ -5,7 +5,8 @@ namespace TextFixer.Native;
 
 /// <param name="Editable">True: the focused element accepts typing. False: read-only (offer copy only). Null: unknown.</param>
 /// <param name="Formats">Clipboard format names the copy published, for the format display.</param>
-internal sealed record CapturedText(nint Window, string Text, bool HasFormatting, HtmlClipboard? Html = null, bool? Editable = null, IReadOnlyList<string>? Formats = null);
+/// <param name="Rtf">The copied RTF (Word, Outlook, WordPad, rich text fields), patched like the HTML on paste.</param>
+internal sealed record CapturedText(nint Window, string Text, bool HasFormatting, HtmlClipboard? Html = null, bool? Editable = null, IReadOnlyList<string>? Formats = null, string? Rtf = null);
 
 internal static class TextTransfer
 {
@@ -120,11 +121,13 @@ internal static class TextTransfer
         Clipboard.SetDataObject(data, true);
     }
 
-    internal static void CopyRevision(string text, string? html = null)
+    internal static void CopyRevision(string text, string? html = null, string? rtf = null)
     {
-        if (html is null) { Clipboard.SetText(text); return; }
+        if (html is null && rtf is null) { Clipboard.SetText(text); return; }
         var data = new DataObject(); data.SetText(text, TextDataFormat.UnicodeText);
-        data.SetText(html, TextDataFormat.Html); Clipboard.SetDataObject(data, true);
+        if (html is not null) data.SetText(html, TextDataFormat.Html);
+        if (rtf is not null) data.SetText(rtf, TextDataFormat.Rtf);
+        Clipboard.SetDataObject(data, true);
     }
 
     /// <summary>Copies a result in a chosen export format: plain text only, or an HTML fragment with its plain-text form in one clipboard item.</summary>
@@ -170,14 +173,17 @@ internal static class TextTransfer
             var text = Clipboard.GetText(TextDataFormat.UnicodeText);
             var hasHtml = Clipboard.ContainsText(TextDataFormat.Html);
             var html = hasHtml ? HtmlClipboard.Parse(Clipboard.GetText(TextDataFormat.Html)) : null;
-            var hasFormatting = hasHtml || Clipboard.ContainsText(TextDataFormat.Rtf);
+            var hasRtf = Clipboard.ContainsText(TextDataFormat.Rtf);
+            var hasFormatting = hasHtml || hasRtf;
+            var rtf = hasRtf ? Clipboard.GetText(TextDataFormat.Rtf) : null;
+            if (rtf is { Length: > 8_000_000 }) rtf = null;
             var formats = Clipboard.GetDataObject()?.GetFormats(false) ?? [];
             if (GetClipboardOwner() != copyOwner) throw new InvalidOperationException("Another app changed the clipboard during capture. Try again.");
             // Reading a delayed source format can itself increment the sequence number.
             ownedSequence = GetClipboardSequenceNumber();
             if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("The selection contains no text.");
             if (text.Length > 30000) throw new InvalidOperationException("Select at most 30,000 characters for one check.");
-            return new CapturedText(target, text, hasFormatting, html, editable, formats);
+            return new CapturedText(target, text, hasFormatting, html, editable, formats, rtf);
         }
         finally
         {
@@ -187,7 +193,7 @@ internal static class TextTransfer
         }
     }
 
-    internal static async Task<bool> ApplyAsync(CapturedText capture, string revision, string? html = null)
+    internal static async Task<bool> ApplyAsync(CapturedText capture, string revision, string? html = null, string? rtf = null)
     {
         if (!IsWindow(capture.Window)) throw new InvalidOperationException("The original window is closed. Use Copy revised text instead.");
         VerifyTargetAccess(capture.Window);
@@ -199,9 +205,11 @@ internal static class TextTransfer
             throw new InvalidOperationException("The selection changed. Nothing was replaced. Use Copy revised text instead.");
         if (html is not null && (current.Html is null || current.Html.Fragment != capture.Html?.Fragment))
             throw new InvalidOperationException("The selection's formatting changed. Capture and check it again before replacing it.");
+        if (rtf is not null && html is null && current.Rtf is null)
+            throw new InvalidOperationException("The selection's formatting changed. Capture and check it again before replacing it.");
         var previous = Snapshot();
         if (GetForegroundWindow() != capture.Window) throw new InvalidOperationException("The active window changed. Nothing was replaced.");
-        using var paste = new DelayedPaste(revision, capture.Window, html);
+        using var paste = new DelayedPaste(revision, capture.Window, html, rtf);
         paste.Publish();
         Shortcut(0x56);
         var consumed = await paste.WaitForTargetReadAsync(TimeSpan.FromSeconds(5));

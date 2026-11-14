@@ -75,6 +75,18 @@ Measured facts ("Received"): clipboard formats, CRLF/LF/CR counts, non-breaking 
 - Old forums may use Latin-1; do not turn emoji into `&#...;` automatically.
 - Length limits count differently per target (Discord 2,000 or 4,000 with Nitro; X weights emoji as 2 and URLs as 23). No verified official limits for YouTube and WhatsApp.
 
+## Writing corrections back
+
+Accepted Review and Fact check corrections are written into every format of the copy that can hold them, and each keeps its structure:
+
+| Copy | How the corrections are written |
+|---|---|
+| HTML | `HtmlClipboard.Rewrite`: text units of the fragment aligned with the plain text; a correction replaces characters of one text node, entities stay |
+| RTF | `RtfClipboard.Rewrite`: tokens are groups, control words, `\'hh` and `\uN` escapes and text; hidden groups (font, color and style tables, info, pictures, field codes, `\*` destinations) are skipped; list numbers (`\pntext`, `\listtext`) are optional, because some apps leave them out of the plain text; a correction is narrowed to the characters it changes and must stay inside one run; non-ASCII becomes `\uN` with the replacement characters of the current `\uc`, and a space follows a control word that would otherwise run into the text |
+| Plain text with markup | `MarkupGuard`: Markdown markers, code, links and their addresses, BBCode tags, HTML tags, spoilers, Discord mentions, URLs, hashtags and @mentions are protected; a correction that touches them is refused with its text |
+
+When HTML and RTF exist, both are offered; the destination takes the one it prefers. A failed RTF mapping leaves the RTF out; only an RTF-only copy then asks for plain-text replacement.
+
 ## Rich captures (step 2)
 
 `CaptureReader` reads the CF_HTML fragment with a tokenizer (no DOM, nothing loaded) into three views:

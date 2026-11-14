@@ -78,4 +78,5 @@ var post = headed.WithoutLeadingText("Der Txt & mehr.");
 Check(post?.Fragment == "<div><span></span><div data-testid=\"post-header\"><img alt=\"jp\"><b></b></div><p>Der Txt &amp; mehr.</p></div>", "texts in front of the post text removed, tags kept");
 Check(post!.Rewrite("Der Txt & mehr.", [new EditorEdit(4, 7, "Txt", "Text")]).Contains("<p>Der Text &amp; mehr.</p>"), "the post text maps after the header is removed");
 Check(headed.WithoutLeadingText("Anderer Text.") is null, "a text that is not the end of the HTML text is refused");
-Console.WriteLine($"PASS: {count} rich clipboard paragraph, formatting, Unicode, entity, byte-offset and refusal checks.");
+count += RtfAndMarkupTests.Run();
+Console.WriteLine($"PASS: {count} rich clipboard paragraph, formatting, Unicode, entity, byte-offset, refusal, RTF and markup checks.");
