@@ -16,7 +16,9 @@ Locked retired files are retained and retried for cleanup on a later publish. Th
 
 The skill is available project-locally at `skills/hot-swap-update/SKILL.md`, referenced by `AGENTS.md`. Global installation into `C:\Users\JPS\.codex\skills` was denied by the filesystem sandbox. `install-codex-skill.ps1` is prepared for execution outside that restriction.
 
-The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q (review), Alt+E (translate) and Alt+W (fact check) are the global shortcuts; startup reports if another app has registered one of them.
+The window opens on first launch. TextFixer has no taskbar button; it lives in the tray. Settings > Startup > "Start with Windows" (off by default) adds a current-user Run entry; a start with Windows opens no window and waits in the tray. Closing or minimizing the window hides it to the tray; double-click the tray icon to reopen, or choose Exit from the tray menu to stop the app. Alt+Q (review), Alt+E (translate) and Alt+W (fact check) are the default global shortcuts; startup reports if another app has registered one of them.
+
+Settings > Shortcuts changes each shortcut: click it, press the new keys (Esc cancels). A shortcut is Ctrl and/or Alt, optionally Shift, with A to Z, 0 to 9 or F1 to F24 (`Services/Shortcuts.cs`). Refused: duplicates between the tasks, Ctrl+A/C/V/X/Y/Z (editing, and TextFixer sends Ctrl+C and Ctrl+V itself), Alt+F4, Ctrl+Alt combinations that type a character on the current keyboard layout (AltGr, checked with `ToUnicodeEx`), and combinations another app has registered. While a shortcut is being recorded, `Native/HotkeyManager.cs` unregisters all three so the keys reach the window; they return after the change, on Esc, when the window or Settings closes, and after 30 seconds at the latest. Changes apply immediately and are stored as `shortcuts` (text such as "Ctrl+Alt+K") in `settings.json`; a saved set with an invalid entry keeps that task's default, and a set with duplicates falls back to all defaults. The tray tooltip, Help and window texts show the current shortcuts.
 
 ## Review mode
 
@@ -27,7 +29,7 @@ Settings > Review (stored in `%LOCALAPPDATA%\TextFixer\settings.json` as `review
 
 ## Clipboard history
 
-TextFixer keeps your last 20 copied texts (Clipboard history button in the header). Choose an entry, or its Copy button, to put it back on the clipboard; HTML and RTF formatting is restored with it. Copying the same text again moves its entry to the top. Images and files are not recorded. Content marked `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory = 0` (password managers, TextFixer's own temporary Alt+Q data) is skipped, as are texts over one million characters. The history is stored in `%LOCALAPPDATA%\TextFixer\clipboard-history.bin`, DPAPI-encrypted for the current Windows user. Settings > Clipboard history turns recording on or off (on by default; turning it off deletes the history) and clears it. The setting lives in `%LOCALAPPDATA%\TextFixer\settings.json`. Offline tests: `dotnet run -c Release --project tests/ClipboardHistoryTests`.
+TextFixer keeps your last 20 copied texts (Clipboard history button in the header). Each entry has "Copy plain" (text only) and, when it was copied with HTML or RTF, "Copy formatted" (text plus the saved HTML and RTF); these buttons are the only way to copy an entry, and clicking the entry text does nothing. The × in the corner removes an entry. A request without `plain:false` copies plain text. Copying the same text again moves its entry to the top. Images and files are not recorded. Content marked `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory = 0` (password managers, TextFixer's own temporary Alt+Q data) is skipped, as are texts over one million characters. The history is stored in `%LOCALAPPDATA%\TextFixer\clipboard-history.bin`, DPAPI-encrypted for the current Windows user. Settings > Clipboard history turns recording on or off (on by default; turning it off deletes the history) and clears it. The setting lives in `%LOCALAPPDATA%\TextFixer\settings.json`. Offline tests: `dotnet run -c Release --project tests/ClipboardHistoryTests`.
 
 ## First test
 
@@ -127,6 +129,7 @@ Validation commands (Node is development-only):
 
 - `node tests/review-model.test.cjs`: UTF-16 category matching, reconstruction, superseding and wording undo.
 - `node tests/review-ui.test.cjs`: tab counts, active/inert controls, scoped choices, preview and messaging contracts, fact-check rendering, exact corrections, task row cache and capture ids.
+- `dotnet run --project tests/ClipboardHistoryTests -c Release`: clipboard history, settings, and shortcut parsing, rules and loading.
 - `dotnet run --project tests/FactCheckTests -c Release`: fact-check stream reading (deltas, citation events, final-only citations, search call status) and provenance rules.
 - `node tests/diff.test.cjs` and `node tests/edit-trim.test.cjs`: local diff and minimal-edit reconstruction.
 - `dotnet run --project tests/ReviewParserTests -c Release -p:NuGetAudit=false`: categorized response parsing and offset resolution (S66-owned).

@@ -26,6 +26,9 @@ internal sealed class AppSettings
     /// <summary>Mode per <see cref="Punctuation.Rules"/> key: keep, plain or typographic.</summary>
     public Dictionary<string, string> PunctuationStyle { get; } = Punctuation.Defaults();
 
+    /// <summary>Global shortcut per task (<see cref="Shortcuts.Tasks"/>), stored as text such as "Alt+Q".</summary>
+    public Dictionary<string, Shortcut> Shortcuts { get; } = Services.Shortcuts.Defaults();
+
     private AppSettings(string path) => _path = path;
 
     internal static AppSettings Load(string? path = null)
@@ -48,6 +51,8 @@ internal sealed class AppSettings
                 settings.FactCheckModel = factCheckSlug;
             if (document.RootElement.TryGetProperty("punctuationStyle", out var style) && style.ValueKind == JsonValueKind.Object)
                 settings.SetPunctuationStyle(style);
+            if (document.RootElement.TryGetProperty("shortcuts", out var shortcuts) && shortcuts.ValueKind == JsonValueKind.Object)
+                settings.SetShortcuts(shortcuts);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
         return settings;
@@ -61,11 +66,27 @@ internal sealed class AppSettings
                 PunctuationStyle[rule.Key] = mode.GetString()!;
     }
 
+    /// <summary>
+    /// Takes the saved set as a whole, so swapped shortcuts load. An unreadable or invalid entry keeps its default;
+    /// if the result has duplicates, every task falls back to its default.
+    /// </summary>
+    internal void SetShortcuts(JsonElement shortcuts)
+    {
+        var candidate = Services.Shortcuts.Defaults();
+        foreach (var task in Services.Shortcuts.Tasks)
+            if (shortcuts.TryGetProperty(task, out var value) && value.ValueKind == JsonValueKind.String && Shortcut.Parse(value.GetString()) is { } shortcut)
+                candidate[task] = shortcut;
+        foreach (var task in Services.Shortcuts.Tasks)
+            if (Services.Shortcuts.Problem(task, candidate[task], new Dictionary<string, Shortcut>()) is not null) candidate[task] = Services.Shortcuts.Default(task);
+        if (candidate.Values.Distinct().Count() != candidate.Count) return;
+        foreach (var (task, shortcut) in candidate) Shortcuts[task] = shortcut;
+    }
+
     internal void Save()
     {
         var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel }, Options));
+        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value.ToString()) }, Options));
         File.Move(temp, _path, overwrite: true);
     }
 }

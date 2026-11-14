@@ -138,6 +138,21 @@ button.source-link { padding:2px 4px; margin-left:-4px; font-size:13px; text-ali
 .model-choice h4 ~ h4 { margin-top:16px; }
 .model-choice.empty h4 { display:none; }
 .model-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px 16px; }
+/* Settings > Shortcuts: each combination drawn as keycaps on a recorder button. */
+.shortcut-settings { display:block; }
+.shortcut-settings > .hint { margin:0 0 12px; }
+.shortcut-list { display:grid; gap:10px; }
+.shortcut-row { display:grid; grid-template-columns:100px auto 1fr; align-items:center; column-gap:14px; }
+.shortcut-task { font-weight:600; }
+button.shortcut-keys { display:inline-flex; align-items:center; gap:5px; min-width:150px; min-height:34px; padding:4px 7px; background:var(--room-1); border:1px solid var(--edge); border-radius:8px; }
+button.shortcut-keys:hover { background:var(--room-1); border-color:var(--edge-strong); }
+button.shortcut-keys:focus-visible { outline:2px solid var(--accent-edge); outline-offset:1px; }
+.shortcut-keys kbd { font:600 12px "Segoe UI",Arial; color:var(--text); background:var(--control); border:1px solid var(--edge-strong); border-bottom-width:2px; border-radius:5px; padding:2px 7px; min-width:24px; text-align:center; }
+button.shortcut-keys.recording { border:1px dashed var(--accent); background:rgba(245,204,87,.07); }
+.shortcut-prompt { color:var(--accent); font-size:12px; padding:0 3px; }
+button.shortcut-reset { justify-self:start; }
+.shortcut-row .shortcut-message { grid-column:2 / 4; margin:5px 0 0; font-size:12px; color:var(--muted); }
+.shortcut-row .shortcut-message.error { color:var(--bad); }
 .model-option { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); cursor:pointer; }
 .model-option input { accent-color:var(--accent); margin:0; }
 .model-option small { color:var(--muted); }
@@ -157,16 +172,17 @@ main.show-history > :not(#history-view) { display:none !important; }
 main.show-history > #history-view { display:block; }
 main.show-history { max-width:1600px; }
 .header-actions button.active { border-color:var(--accent); color:var(--accent); background:rgba(245,204,87,.08); }
-#history-list { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); grid-auto-rows:158px; gap:10px; }
+#history-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); grid-auto-rows:158px; gap:10px; }
 .history-entry { display:flex; flex-direction:column; min-width:0; overflow:hidden; border:1px solid var(--edge); border-radius:8px; background:var(--room-1); transition:border-color .15s; }
-.history-entry:hover { border-color:var(--accent-edge); }
 .history-entry.copied { border-color:var(--accent); }
-.history-text { flex:1; min-height:0; overflow:hidden; width:100%; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; border:0; background:transparent; border-radius:8px 8px 0 0; padding:6px 14px 0; cursor:pointer; font:400 13px/1.5 "Segoe UI",Arial; color:var(--text); -webkit-mask-image:linear-gradient(#000 calc(100% - 24px),transparent); mask-image:linear-gradient(#000 calc(100% - 24px),transparent); }
+.history-text { flex:1; min-height:0; overflow:hidden; width:100%; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; border:0; background:transparent; border-radius:8px 8px 0 0; padding:6px 14px 0; cursor:default; font:400 13px/1.5 "Segoe UI",Arial; color:var(--text); -webkit-mask-image:linear-gradient(#000 calc(100% - 24px),transparent); mask-image:linear-gradient(#000 calc(100% - 24px),transparent); }
 .history-top { display:flex; align-items:center; gap:10px; padding:10px 14px 0; white-space:nowrap; overflow:hidden; }
 .history-top .hint { margin:0; font-size:11px; }
-.history-meta { display:flex; justify-content:flex-end; padding:4px 6px; border-top:1px solid var(--edge); }
+button.history-remove { margin-left:auto; margin-right:-6px; padding:0 6px; border:0; background:transparent; color:var(--dim); font:400 16px/20px "Segoe UI",Arial; border-radius:5px; }
+button.history-remove:hover { color:var(--bad); background:var(--room-2); }
+.history-meta { display:flex; justify-content:flex-start; padding:4px 6px; border-top:1px solid var(--edge); }
 .history-meta .actions { display:flex; gap:2px; }
-.history-entry.copied .history-meta .actions button:first-child { color:var(--accent-hot); }
+.history-meta .actions button.done { color:var(--accent-hot); }
 .history-empty { border:1px dashed var(--edge-strong); border-radius:8px; padding:28px; text-align:center; color:var(--muted); }
 @media(max-width:800px) { header { padding:20px; flex-wrap:wrap; } main { padding:20px; } .connection,.toolbar { align-items:flex-start; flex-direction:column; } }
 

@@ -15,7 +15,7 @@ static class Program
         using var mutex = new Mutex(true, Bridge.BridgeProtocol.AppMutexName, out var first);
         if (!first)
         {
-            MessageBox.Show("TextFixer is already running. Use Alt+Q or its tray icon.", "TextFixer");
+            MessageBox.Show($"TextFixer is already running. Use {Services.AppSettings.Load().Shortcuts[Services.Shortcuts.Review]} or its tray icon.", "TextFixer");
             return 0;
         }
         ApplicationConfiguration.Initialize();

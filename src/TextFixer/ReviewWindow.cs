@@ -4,6 +4,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using TextFixer.Native;
 using TextFixer.Services;
+using Shortcut = TextFixer.Services.Shortcut;
 using TextFixer.Bridge;
 using System.Runtime.InteropServices;
 
@@ -21,6 +22,7 @@ internal sealed class ReviewWindow : Form
     private ClipboardHistory? _history;
     private ClipboardMonitor? _clipboardMonitor;
     private AppSettings? _settings;
+    private HotkeyManager? _hotkeys;
     private TaskCompletionSource<JsonElement>? _chromeApply;
     private ChromeCapture? _applyingChromeCapture;
     private bool _ready, _shutdown;
@@ -45,6 +47,8 @@ internal sealed class ReviewWindow : Form
         Resize += (_, _) => { if (WindowState == FormWindowState.Minimized && Visible) Hide(); };
         Shown += async (_, _) => { if (!_ready && !_initializing) await InitializeAsync(); };
         FormClosing += (_, e) => { if (!_shutdown) { e.Cancel = true; Hide(); } };
+        // A shortcut recording never outlives the visible window.
+        VisibleChanged += (_, _) => { if (!Visible) _hotkeys?.Resume(); };
     }
 
     protected override void OnLoad(EventArgs e)
@@ -81,7 +85,7 @@ internal sealed class ReviewWindow : Form
         if (!WindowFocus.BringOwnWindowForward(Handle)) Diagnostic("Foreground activation was refused by Windows.");
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
-    /// <param name="task">review (Alt+Q), translate (Alt+E) or factcheck (Alt+W): the task the window starts with.</param>
+    /// <param name="task">review, translate or factcheck (see <see cref="Shortcuts"/>): the task the window starts with.</param>
     internal void SetCapture(CapturedText capture, string task = "review") { _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
@@ -93,6 +97,22 @@ internal sealed class ReviewWindow : Form
         _service.PreferredFactCheckModel = settings.FactCheckModel;
         history.Changed += (_, _) => SendHistory();
     }
+    internal void ConfigureShortcuts(HotkeyManager hotkeys)
+    {
+        _hotkeys = hotkeys;
+        hotkeys.Changed += (_, _) => SendShortcuts();
+    }
+    private string ShortcutLabel(string task) => _hotkeys?.Label(task) ?? Shortcuts.Default(task).ToString();
+    /// <param name="error">A rejected change: task and reason, shown under that task's row.</param>
+    private void SendShortcuts(string? errorTask = null, string? error = null) => Send(new
+    {
+        type = "shortcuts",
+        shortcuts = Shortcuts.Tasks.ToDictionary(t => t, ShortcutLabel),
+        defaults = Shortcuts.Tasks.ToDictionary(t => t, t => Shortcuts.Default(t).ToString()),
+        registered = Shortcuts.Tasks.ToDictionary(t => t, t => _hotkeys?.IsRegistered(t) ?? false),
+        errorTask,
+        error,
+    });
     internal void ChromeConnected() => SendChromeStatus();
     internal void ReceiveChromeMessage(string sessionId, JsonElement message)
     {
@@ -243,13 +263,15 @@ internal sealed class ReviewWindow : Form
                 if (_history.Find(id) is not { } entry) { SendHistory(); return; }
                 var data = new DataObject();
                 data.SetText(entry.Text, TextDataFormat.UnicodeText);
-                if (entry.Html is not null) data.SetText(entry.Html, TextDataFormat.Html);
-                if (entry.Rtf is not null) data.SetData(DataFormats.Rtf, entry.Rtf);
+                // "Copy plain text" puts only the text on the clipboard; "Copy with formatting" adds the saved HTML and RTF.
+                var plain = !root.TryGetProperty("plain", out var plainElement) || plainElement.ValueKind != JsonValueKind.False;
+                if (!plain && entry.Html is not null) data.SetText(entry.Html, TextDataFormat.Html);
+                if (!plain && entry.Rtf is not null) data.SetData(DataFormats.Rtf, entry.Rtf);
                 try { Clipboard.SetDataObject(data, true); }
                 catch (ExternalException) { Notify("The clipboard is busy. Try again in a moment."); return; }
                 _clipboardMonitor.IgnoreCurrent();
                 _history.MoveToTop(id, DateTime.UtcNow);
-                Send(new { type = "historyCopied", id });
+                Send(new { type = "historyCopied", id, plain });
                 return;
             case "historyDelete": _history.Delete(root.GetProperty("id").GetString() ?? ""); return;
             case "historyClear": _history.Clear(); return;
@@ -345,7 +367,7 @@ internal sealed class ReviewWindow : Form
             var action = root.GetProperty("action").GetString();
             if (action == "ready")
             {
-                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); await SendStatusAsync();
+                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); SendShortcuts(); await SendStatusAsync();
                 if (_pendingNotice is not null) { Notify(_pendingNotice); _pendingNotice = null; }
                 return;
             }
@@ -357,6 +379,27 @@ internal sealed class ReviewWindow : Form
                 return;
             }
             if (action == "models") { await SendModelsAsync(); return; }
+            if (action == "shortcutRecording" && _hotkeys is not null)
+            {
+                if (root.TryGetProperty("active", out var active) && active.ValueKind == JsonValueKind.True) _hotkeys.Suspend();
+                else _hotkeys.Resume();
+                return;
+            }
+            if (action == "shortcut" && _hotkeys is not null && _settings is not null)
+            {
+                var task = root.TryGetProperty("task", out var taskElement) && taskElement.ValueKind == JsonValueKind.String ? taskElement.GetString() : null;
+                if (task is null || !Shortcuts.Tasks.Contains(task)) { _hotkeys.Resume(); return; }
+                var keys = root.TryGetProperty("keys", out var keysElement) && keysElement.ValueKind == JsonValueKind.String ? keysElement.GetString() : null;
+                var problem = Shortcut.Parse(keys) is { } shortcut ? _hotkeys.TryChange(task, shortcut) : "Use a letter, a digit or F1 to F24 as the key.";
+                if (problem is null)
+                {
+                    try { _settings.Save(); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                }
+                else _hotkeys.Resume();
+                SendShortcuts(problem is null ? null : task, problem);
+                return;
+            }
             if (action == "model" && _settings is not null)
             {
                 var slug = root.TryGetProperty("slug", out var slugElement) && slugElement.ValueKind == JsonValueKind.String ? slugElement.GetString() : null;
@@ -478,7 +521,7 @@ internal sealed class ReviewWindow : Form
                         break;
                     case "applyTranslation":
                         var translated = ReadText(root);
-                        if (_capture is null) throw new InvalidOperationException("Capture a selection with Alt+E first, or copy the translation.");
+                        if (_capture is null) throw new InvalidOperationException($"Capture a selection with {ShortcutLabel(Shortcuts.Translate)} first, or copy the translation.");
                         if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the translation and paste it where you need it.");
                         if (!root.TryGetProperty("original", out var translatedFrom) || translatedFrom.GetString() != _capture.Text)
                             throw new InvalidOperationException("The translation no longer matches the captured selection. Translate the text again.");
@@ -503,7 +546,7 @@ internal sealed class ReviewWindow : Form
                             await ApplyChromeAsync(root, revision, _operation.Token);
                             break;
                         }
-                        if (_capture is null) throw new InvalidOperationException("Capture a selection with Alt+Q first, or use Copy revised text.");
+                        if (_capture is null) throw new InvalidOperationException($"Capture a selection with {ShortcutLabel(Shortcuts.Review)} first, or use Copy revised text.");
                         if (ReadOnlyCapture) throw new InvalidOperationException("This text is read-only. Copy the revision and paste it where you need it.");
                         var explicitPlainText = root.TryGetProperty("allowPlainText", out var allowPlainText) && allowPlainText.ValueKind == JsonValueKind.True;
                         if (_capture.Html is null && !explicitPlainText)

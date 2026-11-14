@@ -64,6 +64,33 @@ try
     Check(!AppSettings.Load(settingsPath).ClipboardHistory, "setting round-trips");
     File.WriteAllText(settingsPath, "{ not json");
     Check(AppSettings.Load(settingsPath).ClipboardHistory, "damaged settings fall back to defaults");
+
+    // Shortcuts: parsing, rules, round-trip, swaps and fallbacks.
+    Check(Shortcut.Parse("Ctrl+Alt+K") == new Shortcut(Shortcut.Control | Shortcut.Alt, 0x4B) && Shortcut.Parse("alt+f12") == new Shortcut(Shortcut.Alt, 0x7B)
+        && Shortcut.Parse("Shift+Alt+7")?.ToString() == "Alt+Shift+7", "shortcut parse and display order");
+    Check(Shortcut.Parse("Alt+Space") is null && Shortcut.Parse("Alt+Alt+Q") is null && Shortcut.Parse("Alt+F0") is null && Shortcut.Parse("Alt+F25") is null && Shortcut.Parse("Win+Q") is null && Shortcut.Parse("") is null,
+        "malformed shortcuts are rejected");
+    var defaults = Shortcuts.Defaults();
+    Check(Shortcuts.Problem("review", Shortcut.Parse("Shift+Q")!.Value, defaults) is not null, "a shortcut needs Ctrl or Alt");
+    Check(Shortcuts.Problem("review", Shortcut.Parse("Ctrl+C")!.Value, defaults)?.Contains("editing") == true && Shortcuts.Problem("review", Shortcut.Parse("Ctrl+Shift+C")!.Value, defaults) is null,
+        "editing shortcuts are reserved, variants with Shift are allowed");
+    Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+F4")!.Value, defaults) is not null, "Alt+F4 is reserved");
+    Check(Shortcuts.Problem("review", Shortcut.Parse("Alt+E")!.Value, defaults) == "Alt+E is already the shortcut for Translate.", "duplicates name the other task");
+    Check(Shortcuts.Problem("translate", Shortcut.Parse("Alt+E")!.Value, defaults) is null, "keeping the own shortcut is fine");
+    settings = AppSettings.Load(settingsPath);
+    Check(settings.Shortcuts["review"].ToString() == "Alt+Q" && settings.Shortcuts["factcheck"].ToString() == "Alt+W", "default shortcuts");
+    settings.Shortcuts["translate"] = Shortcut.Parse("Ctrl+Alt+T")!.Value;
+    settings.Save();
+    Check(AppSettings.Load(settingsPath).Shortcuts["translate"].ToString() == "Ctrl+Alt+T", "shortcuts round-trip as text");
+    File.WriteAllText(settingsPath, """{"shortcuts":{"review":"Alt+E","translate":"Alt+Q"}}""");
+    var swapped = AppSettings.Load(settingsPath).Shortcuts;
+    Check(swapped["review"].ToString() == "Alt+E" && swapped["translate"].ToString() == "Alt+Q" && swapped["factcheck"].ToString() == "Alt+W", "swapped shortcuts load");
+    File.WriteAllText(settingsPath, """{"shortcuts":{"review":"Ctrl+V","translate":"nonsense","factcheck":"Ctrl+Alt+F"}}""");
+    var mixed = AppSettings.Load(settingsPath).Shortcuts;
+    Check(mixed["review"].ToString() == "Alt+Q" && mixed["translate"].ToString() == "Alt+E" && mixed["factcheck"].ToString() == "Ctrl+Alt+F", "invalid entries keep their defaults");
+    File.WriteAllText(settingsPath, """{"shortcuts":{"review":"Alt+W","translate":"Alt+W"}}""");
+    var clash = AppSettings.Load(settingsPath).Shortcuts;
+    Check(clash["review"].ToString() == "Alt+Q" && clash["translate"].ToString() == "Alt+E" && clash["factcheck"].ToString() == "Alt+W", "duplicate saved shortcuts fall back to defaults");
 }
 finally { Directory.Delete(folder, recursive: true); }
 

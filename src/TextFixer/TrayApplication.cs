@@ -10,10 +10,10 @@ internal sealed class TrayApplication : ApplicationContext
 {
     private readonly NotifyIcon _tray;
     private Icon _trayIcon = Branding.CreateTrayIcon();
-    private readonly HotkeyWindow _hotkey = new();
+    private readonly AppSettings _settings = AppSettings.Load();
+    private readonly HotkeyManager _hotkey;
     private readonly ReviewWindow _review = new(new ChatGptReviewService());
     private readonly ChromeBridgeServer _chrome = new();
-    private readonly AppSettings _settings = AppSettings.Load();
     private readonly ClipboardHistory _history = new();
     private readonly ClipboardMonitor _clipboard = new();
     private bool _capturing;
@@ -21,6 +21,7 @@ internal sealed class TrayApplication : ApplicationContext
 
     public TrayApplication(bool startHidden)
     {
+        _hotkey = new HotkeyManager(_settings);
         var menu = new ContextMenuStrip
         {
             ForeColor = PetrolMenuColors.Text,
@@ -30,14 +31,16 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
-        _tray = new NotifyIcon { Text = "TextFixer - Alt+Q review, Alt+E translate, Alt+W fact check", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
+        _tray = new NotifyIcon { Text = "TextFixer", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => _review.Open();
         _hotkey.Pressed += async (_, task) => await CaptureAsync(task);
+        _hotkey.Changed += (_, _) => UpdateTooltip();
         _review.FormClosed += (_, _) => ExitThread();
         if (!startHidden) _review.Open();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _review.ConfigureChrome(_chrome);
         _review.ConfigureHistory(_history, _clipboard, _settings);
+        _review.ConfigureShortcuts(_hotkey);
         _clipboard.Copied += (_, c) => _history.Add(c.Text, c.Html, c.Rtf, DateTime.UtcNow);
         _clipboard.Enabled = _settings.ClipboardHistory;
         _chrome.MessageReceived += (_, e) => Dispatch(() => _review.ReceiveChromeMessage(e.SessionId, e.Message));
@@ -46,16 +49,20 @@ internal sealed class TrayApplication : ApplicationContext
         try { _chrome.Start(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { _review.Notify("Chrome connection unavailable. Another TextFixer instance may be using it. Clipboard capture remains available."); }
-        var review = _hotkey.Register(HotkeyWindow.ReviewId, 0x51);
-        var translate = _hotkey.Register(HotkeyWindow.TranslateId, 0x45);
-        var factCheck = _hotkey.Register(HotkeyWindow.FactCheckId, 0x57);
-        if (!review)
+        _hotkey.RegisterAll();
+        var blocked = Shortcuts.Tasks.Where(t => !_hotkey.IsRegistered(t)).ToArray();
+        if (blocked.Length > 0)
         {
-            _review.Open();
-            _review.Notify("Alt+Q is already in use. Close the conflicting app and restart TextFixer. You can still paste text into this window.");
+            if (blocked.Contains(Shortcuts.Review)) _review.Open();
+            var names = string.Join(", ", blocked.Select(t => $"{_hotkey.Label(t)} ({Shortcuts.TaskName(t)})"));
+            _review.Notify($"{names} {(blocked.Length == 1 ? "is" : "are")} already in use by another app. Choose another shortcut in Settings > Shortcuts. You can still paste text into this window.");
         }
-        else if (!translate) _review.Notify("Alt+E is already in use by another app. Close it and restart TextFixer to translate with Alt+E.");
-        else if (!factCheck) _review.Notify("Alt+W is already in use by another app. Close it and restart TextFixer to fact-check with Alt+W.");
+    }
+
+    private void UpdateTooltip()
+    {
+        var text = $"TextFixer - {_hotkey.Label(Shortcuts.Review)} review, {_hotkey.Label(Shortcuts.Translate)} translate, {_hotkey.Label(Shortcuts.FactCheck)} fact check";
+        _tray.Text = text.Length <= 127 ? text : "TextFixer";
     }
 
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) => Dispatch(() =>
@@ -91,7 +98,7 @@ internal sealed class TrayApplication : ApplicationContext
         }
         catch (Exception ex)
         {
-            ReviewWindow.Diagnostic($"{task switch { "translate" => "Alt+E", "factcheck" => "Alt+W", _ => "Alt+Q" }} capture failed in {ProcessName(target)}: {ex.Message}");
+            ReviewWindow.Diagnostic($"{_hotkey.Label(task)} capture failed in {ProcessName(target)}: {ex.Message}");
             _review.Open(); _review.Notify(ex.Message);
         }
         finally { _capturing = false; _clipboard.Paused = false; }
@@ -119,28 +126,5 @@ internal sealed class TrayApplication : ApplicationContext
         _history.Dispose();
         _review.Shutdown();
         base.ExitThreadCore();
-    }
-
-    private sealed class HotkeyWindow : NativeWindow, IDisposable
-    {
-        [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(nint window, int id, uint modifiers, uint key);
-        [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint window, int id);
-        internal const int ReviewId = 46, TranslateId = 47, FactCheckId = 48;
-        /// <summary>Raised with the task of the pressed hotkey: review, translate or factcheck.</summary>
-        internal event EventHandler<string>? Pressed;
-        public HotkeyWindow() => CreateHandle(new CreateParams());
-        /// <summary>Alt + key, no repeat.</summary>
-        internal bool Register(int id, uint key) => RegisterHotKey(Handle, id, 0x4001, key);
-        protected override void WndProc(ref Message m)
-        {
-            if (m.Msg == 0x0312 && (m.WParam == ReviewId || m.WParam == TranslateId || m.WParam == FactCheckId))
-            {
-                try { TextTransfer.MaskAltMenu(); }
-                catch { return; }
-                Pressed?.Invoke(this, m.WParam == TranslateId ? "translate" : m.WParam == FactCheckId ? "factcheck" : "review");
-            }
-            base.WndProc(ref m);
-        }
-        public void Dispose() { UnregisterHotKey(Handle, ReviewId); UnregisterHotKey(Handle, TranslateId); UnregisterHotKey(Handle, FactCheckId); DestroyHandle(); }
     }
 }

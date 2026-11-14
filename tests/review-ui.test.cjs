@@ -517,3 +517,55 @@ console.log('PASS: read-only fact check offers copy only.');
  assert.equal(element('fact-preview').textContent,'Berlin hat knapp 4 Millionen Einwohner.');
 }
 console.log('PASS: overlapping fact corrections cannot both be accepted.');
+{
+ // Settings > Shortcuts: recording, key mapping, cancel, reset and errors.
+ message({type:'shortcuts',shortcuts:{review:'Alt+Q',translate:'Ctrl+Alt+T',factcheck:'Alt+W'},defaults:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},registered:{review:true,translate:true,factcheck:false}});
+ const rows=()=>element('shortcut-list').children;
+ const keys=i=>rows()[i].children[1];
+ assert.deepEqual(keys(1).children.map(k=>k.textContent),['Ctrl','Alt','T']);
+ assert.equal(rows()[1].children[2].hidden,false,'reset shows for a changed shortcut');
+ assert.equal(rows()[0].children[2].hidden,true);
+ assert.equal(rows()[2].children[3].textContent,'Another app uses this shortcut, so it does not work. Choose another one.');
+ sent.length=0;
+ keys(2).onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'shortcutRecording',active:true});
+ assert.equal(keys(2).children[0].textContent,'Press the new keys');
+ const key=(props)=>{let prevented=false;keys(2).onkeydown({ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,preventDefault(){prevented=true;},stopPropagation(){},...props});return prevented;};
+ assert.equal(key({key:'Control',code:'ControlLeft',ctrlKey:true}),true);
+ assert.equal(sent.length,1,'a modifier alone keeps recording');
+ key({key:'k',code:'KeyK',ctrlKey:true,altKey:true});
+ assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'factcheck',keys:'Ctrl+Alt+K'});
+ keys(0).onclick();
+ keys(0).onkeydown({key:'F5',code:'F5',ctrlKey:false,altKey:true,shiftKey:true,metaKey:false,preventDefault(){},stopPropagation(){}});
+ assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'review',keys:'Alt+Shift+F5'});
+ keys(0).onclick();
+ keys(0).onkeydown({key:'Escape',code:'Escape',ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,preventDefault(){},stopPropagation(){}});
+ assert.deepEqual({...sent.at(-1)},{action:'shortcutRecording',active:false},'Esc cancels');
+ rows()[1].children[2].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'translate',keys:'Alt+E'});
+ message({type:'shortcuts',shortcuts:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},defaults:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},registered:{review:true,translate:true,factcheck:true},errorTask:'factcheck',error:'Ctrl+Alt+Q types @ with your keyboard layout. Choose another combination.'});
+ assert.equal(rows()[2].children[3].textContent,'Ctrl+Alt+Q types @ with your keyboard layout. Choose another combination.');
+ assert.equal(rows()[2].children[3].className,'shortcut-message error');
+ // Labels follow the shortcuts.
+ message({type:'shortcuts',shortcuts:{review:'Ctrl+Alt+R',translate:'Alt+E',factcheck:'Alt+W'},defaults:{review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},registered:{review:true,translate:true,factcheck:true}});
+ element('settings').listeners.close?.();
+}
+console.log('PASS: shortcut recording, key mapping, cancel, reset and errors.');
+{
+ // Clipboard history cards: only the two copy buttons copy an entry.
+ sandbox.setTimeout=()=>0;sandbox.clearTimeout=()=>{};
+ message({type:'history',enabled:true,entries:[{id:'a',preview:'Plain entry',copiedAt:Date.now(),hasFormatting:false},{id:'b',preview:'Bold entry',copiedAt:Date.now(),hasFormatting:true}]});
+ const cards=()=>element('history-list').children;
+ const buttons=i=>cards()[i].children[2].children[0].children;
+ assert.equal(cards()[0].children[1].onclick,undefined,'the entry text does not copy');
+ assert.deepEqual(buttons(0).map(b=>b.textContent),['Copy plain']);
+ assert.equal(cards()[0].children[0].children[1].textContent,'×');
+ cards()[0].children[0].children[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyDelete',id:'a'});
+ assert.deepEqual(buttons(1).map(b=>b.textContent),['Copy plain','Copy formatted']);
+ sent.length=0;
+ buttons(1)[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'b',plain:true});
+ buttons(1)[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'b',plain:false});
+ message({type:'historyCopied',id:'b',plain:false});
+ assert.deepEqual(buttons(1).map(b=>b.textContent),['Copy plain','Copied'],'only the used button confirms');
+}
+console.log('PASS: history cards copy only through plain or formatted copy buttons.');

@@ -11,6 +11,7 @@
     <Compile Include="..\..\src\TextFixer\Services\ClipboardHistory.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\AppSettings.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\Punctuation.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\Shortcuts.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\Dpapi.cs" Link="Services\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

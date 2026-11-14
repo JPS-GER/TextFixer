@@ -54,7 +54,7 @@ internal static class TextTransfer
 
     internal static void MaskAltMenu()
     {
-        // Alt+Q consumes Q. Mark the held Alt as used before its release can activate a menu.
+        // The shortcut consumes its key. Mark a held Alt as used before its release can activate a menu.
         if ((GetAsyncKeyState(0x12) & 0x8000) == 0) return;
         INPUT[] events = [
             new() { Type = 1, Data = new INPUTUNION { Keyboard = new KEYBDINPUT { Key = 0xE8 } } },
@@ -130,7 +130,7 @@ internal static class TextTransfer
     {
         await WaitForModifiersAsync();
         if (target == 0 || GetForegroundWindow() != target)
-            throw new InvalidOperationException("The active window changed. Select your text and press Alt+Q again.");
+            throw new InvalidOperationException("The active window changed. Select your text and press the shortcut again.");
         VerifyTargetAccess(target);
         bool? editable = detectEditability ? await Task.Run(() => Editability.Detect(target, TimeSpan.FromMilliseconds(400))) : null;
         var previous = Snapshot();
@@ -143,7 +143,7 @@ internal static class TextTransfer
             var timer = Stopwatch.StartNew();
             while (GetClipboardSequenceNumber() == ownedSequence)
             {
-                if (timer.ElapsedMilliseconds > 1500) throw new InvalidOperationException("No text was copied. Select text and try Alt+Q again.");
+                if (timer.ElapsedMilliseconds > 1500) throw new InvalidOperationException("No text was copied. Select text and press the shortcut again.");
                 await Task.Delay(20);
             }
             // Copy may empty the clipboard and publish several formats in separate updates.

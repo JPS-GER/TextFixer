@@ -9,6 +9,7 @@ let captureTask='review',translationOriginal='',translationText='';
 let captureId=0,activeTask='review',taskReady={};
 // Fact check (Alt+W): claims with their correction wordings (exact quote replacements, applied like review edits).
 let factOriginal='',factClaims=[],factWordings=[],factMeta=null;
+let shortcutLabels={review:'Alt+Q',translate:'Alt+E',factcheck:'Alt+W'},shortcutDefaults={...shortcutLabels},shortcutRegistered={review:true,translate:true,factcheck:true},shortcutError=null,recordingTask=null,renderingShortcuts=false;
 const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify"};
 // Settings > Punctuation style.
 let punctuationStyle={quotes:'keep',dashes:'keep',ellipsis:'keep',spaces:'keep',multiply:'keep',arrows:'keep',primes:'keep'};
@@ -175,7 +176,7 @@ function update(){
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
   $('route').className='capture-icon';
-  const captureLabel=captureMode==='chrome'?'Captured from Chrome':captureTask==='translate'?'Captured with Alt+E':captureTask==='factcheck'?'Captured with Alt+W':'Captured with Alt+Q';
+  const captureLabel=captureMode==='chrome'?'Captured from Chrome':'Captured with '+shortcutLabels[captureTask];
   $('task-row').hidden=!sourceText.trim();
   for(const b of $('task-row').querySelectorAll?.('button')||[]){b.classList.toggle('active',b.dataset.task===activeTask);b.disabled=busy;}
   const factFormatted=captureMode!=='chrome'&&richClipboard&&!$('fact-plain').checked;
@@ -187,7 +188,7 @@ function update(){
   $('route').title=captureLabel;$('route').setAttribute('aria-label',captureLabel);
   $('clipboard-icon').hidden=captureMode==='chrome';$('chrome-icon').hidden=captureMode!=='chrome';
   $('route').hidden=!canReplace&&!readOnlyCapture;
-  $('route-title').textContent=captureMode==='chrome'?'Captured from Chrome':'Captured with Alt+Q';
+  $('route-title').textContent=captureMode==='chrome'?'Captured from Chrome':'Captured with '+shortcutLabels.review;
   $('formatting').hidden=richClipboard||captureMode==='chrome'||!canReplace||activeTask!=='review';
   $('formatting').textContent=richClipboard?'':'This selection includes formatting. Plain-text replacement may remove formatting.';
 }
@@ -339,6 +340,7 @@ function bulkCorrections(accepted){
 $('source').addEventListener('input',()=>{pendingAutoCheck=false;sourceText=$('source').value;canReplace=false;readOnlyCapture=false;richClipboard=false;$('formatting').hidden=true;$('results').hidden=true;update();});
 $('signin').onclick=()=>post('signin');$('signout').onclick=()=>post('signout');$('usage').onclick=()=>post('usage');$('cancel').onclick=()=>post('cancel');
 $('open-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('help').close();
+$('settings').addEventListener('close',stopRecording);
 $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');post('models');};$('close-settings').onclick=()=>$('settings').close();
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 $('allow-plain-text').onchange=update;
@@ -369,7 +371,7 @@ window.chrome.webview.addEventListener('message',event=>{
   }
   if(m.type==='translation'){taskReady.translate=captureId;translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
   if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
-  if(m.type==='historyCopied'){copiedId=m.id;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
+  if(m.type==='historyCopied'){copiedId=m.id;copiedPlain=!!m.plain;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
   if(m.type==='autostart')$('autostart').checked=!!m.enabled;
   if(m.type==='chromeStatus'){
@@ -382,6 +384,7 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='busy'){busy=m.busy;if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
+  if(m.type==='shortcuts'){shortcutLabels={...shortcutLabels,...m.shortcuts};shortcutDefaults={...shortcutDefaults,...m.defaults};shortcutRegistered=m.registered||{};shortcutError=m.error?{task:m.errorTask,message:m.error}:null;recordingTask=null;renderShortcuts();}
   if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;if(m.punctuationStyle)punctuationStyle={...punctuationStyle,...m.punctuationStyle};for(const r of document.querySelectorAll?.('input[data-style]')||[])r.checked=r.value===(punctuationStyle[r.dataset.style]||'keep');}
   if(m.type==='tabProgress'){taskReady.review=captureId;
     if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
@@ -448,7 +451,7 @@ function renderModels(m){
 update();post('ready');
 
 // Clipboard history view
-let historyEntries=[],historyEnabled=true,copiedId=null,copiedTimer=0,historyClock=0;
+let historyEntries=[],historyEnabled=true,copiedId=null,copiedPlain=false,copiedTimer=0,historyClock=0;
 let historyShown=false;
 function historyVisible(){return historyShown;}
 function showHistory(on){historyShown=on;$('main').classList.toggle('show-history',on);$('open-history').classList.toggle('active',on);if(on){post('historyList');renderHistory();historyClock=historyClock||setInterval(()=>{if(historyVisible())renderHistory();},30000);}}
@@ -463,13 +466,71 @@ function renderHistory(){
   if(!historyEnabled)return;
   for(const entry of historyEntries){
     const card=el('article','history-entry'+(entry.id===copiedId?' copied':''));
-    const body=el('div','history-text',entry.preview);body.title='Copy to clipboard';body.onclick=()=>post('historyRestore',{id:entry.id});
+    const body=el('div','history-text',entry.preview);
     const top=el('div','history-top');top.append(el('span','hint',ago(entry.copiedAt)));
-    if(entry.hasFormatting)top.append(el('span','kind','Formatted'));
+    const remove=el('button','history-remove','×');remove.type='button';remove.title='Remove from history';remove.onclick=()=>post('historyDelete',{id:entry.id});top.append(remove);
     const meta=el('div','history-meta');
     const actions=el('div','actions');
-    const copy=el('button','link',entry.id===copiedId?'Copied':'Copy');copy.onclick=()=>post('historyRestore',{id:entry.id});
-    const remove=el('button','link','Remove');remove.onclick=()=>post('historyDelete',{id:entry.id});
-    actions.append(copy,remove);meta.append(actions);card.append(top,body,meta);list.append(card);
+    // The only ways to copy an entry: plain text, or with its HTML/RTF formatting when it has any.
+    const copied=plain=>entry.id===copiedId&&copiedPlain===plain;
+    const plain=el('button','link history-copy'+(copied(true)?' done':''),copied(true)?'Copied':'Copy plain');plain.title='Copy the text without formatting';plain.onclick=()=>post('historyRestore',{id:entry.id,plain:true});
+    actions.append(plain);
+    if(entry.hasFormatting){const rich=el('button','link history-copy'+(copied(false)?' done':''),copied(false)?'Copied':'Copy formatted');rich.title='Copy the text with its formatting';rich.onclick=()=>post('historyRestore',{id:entry.id,plain:false});actions.append(rich);}
+meta.append(actions);card.append(top,body,meta);list.append(card);
   }
+}
+
+// Settings > Shortcuts. The window records a combination; C# validates, registers and saves it, then sends 'shortcuts'.
+// While recording, C# suspends the global shortcuts so the pressed keys reach this window.
+const shortcutTasks=[['review','Review'],['translate','Translate'],['factcheck','Fact check']];
+function shortcutKeys(e){
+  const key=/^Key([A-Z])$/.exec(e.code)?.[1]??/^Digit(\d)$/.exec(e.code)?.[1]??/^(F\d{1,2})$/.exec(e.code)?.[1]??e.code;
+  return [e.ctrlKey&&'Ctrl',e.altKey&&'Alt',e.shiftKey&&'Shift',key].filter(Boolean).join('+');
+}
+function stopRecording(){if(!recordingTask)return;recordingTask=null;post('shortcutRecording',{active:false});renderShortcuts();}
+function recordShortcut(task){
+  if(recordingTask===task){stopRecording();return;}
+  if(recordingTask)post('shortcutRecording',{active:false});
+  recordingTask=task;shortcutError=null;post('shortcutRecording',{active:true});renderShortcuts();
+  document.querySelector?.(`.shortcut-keys[data-task="${task}"]`)?.focus();
+}
+function shortcutKeyDown(task,e){
+  if(recordingTask!==task||e.key==='Tab')return;
+  e.preventDefault();e.stopPropagation();
+  if(['Control','Alt','Shift','Meta','AltGraph','OS'].includes(e.key))return;
+  if(e.key==='Escape'&&!e.ctrlKey&&!e.altKey&&!e.shiftKey){stopRecording();return;}
+  if(e.metaKey){shortcutError={task,message:'Use Ctrl or Alt with the key. The Windows key is reserved for Windows.'};stopRecording();return;}
+  const keys=shortcutKeys(e);
+  if(keys===shortcutLabels[task]){stopRecording();return;}
+  recordingTask=null;post('shortcut',{task,keys});renderShortcuts();
+}
+function renderShortcuts(){
+  for(const el of document.querySelectorAll?.('[data-shortcut]')||[])if(shortcutLabels[el.dataset.shortcut])el.textContent=shortcutLabels[el.dataset.shortcut];
+  renderingShortcuts=true;
+  const list=$('shortcut-list');list.replaceChildren();
+  for(const [task,name] of shortcutTasks){
+    const row=document.createElement('div');row.className='shortcut-row';
+    const label=document.createElement('span');label.className='shortcut-task';label.textContent=name;
+    const button=document.createElement('button');button.type='button';button.className='shortcut-keys';button.dataset.task=task;
+    const recording=recordingTask===task;
+    button.classList.toggle('recording',recording);
+    if(recording){const prompt=document.createElement('span');prompt.className='shortcut-prompt';prompt.textContent='Press the new keys';button.append(prompt);}
+    else for(const part of shortcutLabels[task].split('+')){const key=document.createElement('kbd');key.textContent=part;button.append(key);}
+    button.title=recording?'Press Esc to keep the current shortcut.':'Change the shortcut for '+name;
+    button.onclick=()=>recordShortcut(task);
+    button.onkeydown=e=>shortcutKeyDown(task,e);
+    button.onblur=()=>{if(!renderingShortcuts&&recordingTask===task)stopRecording();};
+    const reset=document.createElement('button');reset.type='button';reset.className='link shortcut-reset';reset.textContent='Reset to '+shortcutDefaults[task];
+    reset.hidden=shortcutLabels[task]===shortcutDefaults[task]||recording;
+    reset.onclick=()=>{shortcutError=null;post('shortcut',{task,keys:shortcutDefaults[task]});};
+    row.append(label,button,reset);
+    const message=document.createElement('p');message.className='shortcut-message';
+    if(recording)message.textContent='Esc keeps the current shortcut.';
+    else if(shortcutError?.task===task){message.textContent=shortcutError.message;message.className='shortcut-message error';}
+    else if(shortcutRegistered[task]===false){message.textContent='Another app uses this shortcut, so it does not work. Choose another one.';message.className='shortcut-message error';}
+    message.hidden=!message.textContent;
+    row.append(message);
+    list.append(row);
+  }
+  renderingShortcuts=false;
 }
