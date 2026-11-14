@@ -13,6 +13,7 @@
   --muted: #a0b2bc;
   --dim: #7893a2;
   --accent: #f5cc57;
+  --ask: #8ecbff;
   --accent-hot: #ffd45a;
   --accent-edge: rgba(245,204,87,.35);
   --on-accent: #102630;
@@ -136,6 +137,12 @@ button.preset { padding:6px 12px; border-radius:16px; font-weight:600; }
 .verdict-wrong { border-left-color:var(--bad); } .verdict-wrong .verdict { background:rgba(240,110,110,.16); color:var(--bad); }
 .verdict-disputed { border-left-color:var(--accent); } .verdict-disputed .verdict { background:rgba(245,204,87,.14); color:var(--accent); }
 .verdict-unverifiable { border-left-color:var(--muted); } .verdict-unverifiable .verdict { background:rgba(255,255,255,.08); color:var(--muted); }
+.verdict-needs_context { border-left-color:var(--ask); } .verdict-needs_context .verdict { background:rgba(142,203,255,.14); color:var(--ask); }
+.fact-question { color:var(--text); font-weight:600; margin-top:12px !important; }
+.fact-answer { margin:8px 0 4px; }
+.context-input { height:84px; min-height:60px; padding:12px 14px; font-size:14px; margin-top:6px; }
+.fact-more { margin:4px 0 18px; }
+.fact-more summary { margin-bottom:8px; }
 .fact-sources { list-style:none; margin:8px 0 0; padding:0; display:grid; gap:2px; }
 .fact-sources li { display:flex; align-items:center; gap:8px; min-width:0; }
 .fact-sources .hint { margin:0; white-space:nowrap; }

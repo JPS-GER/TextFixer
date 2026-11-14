@@ -527,13 +527,27 @@ internal sealed class ReviewWindow : Form
                         var checkedText = ReadText(root);
                         if (_capture is not null && _capture.Text != checkedText) _capture = null;
                         if (_chromeCapture is not null && _chromeCapture.Text != checkedText) _chromeCapture = null;
-                        var facts = await _service.FactCheckAsync(checkedText, _operation.Token);
+                        // Optional context, answers to claim questions, and "only" (quotes to check again; their sources join the list).
+                        var factContext = root.TryGetProperty("context", out var factContextElement) && factContextElement.ValueKind == JsonValueKind.String ? factContextElement.GetString() ?? "" : "";
+                        var clarifications = new List<Contracts.FactClarification>();
+                        if (root.TryGetProperty("clarifications", out var clarificationsElement) && clarificationsElement.ValueKind == JsonValueKind.Array)
+                            foreach (var item in clarificationsElement.EnumerateArray())
+                            {
+                                if (item.ValueKind != JsonValueKind.Object) continue;
+                                string Field(string name) => item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+                                if (Field("answer").Trim().Length > 0) clarifications.Add(new Contracts.FactClarification(Field("quote"), Field("question"), Field("answer").Trim()));
+                            }
+                        var only = new List<string>();
+                        if (root.TryGetProperty("only", out var onlyElement) && onlyElement.ValueKind == JsonValueKind.Array)
+                            foreach (var item in onlyElement.EnumerateArray())
+                                if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } quote) only.Add(quote);
+                        var facts = await _service.FactCheckAsync(checkedText, _operation.Token, factContext, clarifications, only);
                         if (_replyCaptureId == _captureId)
                         {
-                            _factSources.Clear();
+                            if (only.Count == 0) _factSources.Clear();
                             foreach (var cited in facts.Claims.SelectMany(c => c.Sources)) _factSources.Add(cited.Url);
                         }
-                        Send(new { type = "factCheck", captureId = _replyCaptureId, original = checkedText, result = facts, canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+                        Send(new { type = "factCheck", captureId = _replyCaptureId, original = checkedText, result = facts, only, canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "write":
                         // Rewrite, summary or explanation. A rewrite request applies to "text", which is the capture or the latest rewrite.

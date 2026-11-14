@@ -226,6 +226,21 @@ const string Original = "Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Berl
 }
 
 {
+    // A needs_context claim keeps its question and needs no source; other verdicts lose their question.
+    var output = "{\"claims\":[{\"quote\":\"Die Studie\",\"verdict\":\"needs_context\",\"explanation\":\"Unklar, welche Studie.\",\"correction\":null,\"question\":\"Welche Studie ist gemeint?\"},"
+        + "{\"quote\":\"Rom\",\"verdict\":\"unverifiable\",\"explanation\":\"x\",\"correction\":null,\"question\":\"Warum?\"}]}";
+    var claims = FactCheckParser.Parse("Die Studie zeigt, dass Rom gross ist.", new ResponseResult(output, [], []));
+    Check(claims.Length == 2 && claims[0].Verdict == "needs_context" && claims[0].Question == "Welche Studie ist gemeint?" && !claims[0].NoSource, "needs_context claim keeps its question without a source");
+    Check(claims[1].Question is null, "only needs_context claims carry a question");
+    var request = ReviewPrompt.BuildFactCheckRequest("m", "Die Studie zeigt.", structured: true, context: "Artikel: https://example.org/a", clarifications: [new FactClarification("Die Studie", "Welche?", "Die PISA-Studie 2022")], only: ["Die Studie"]);
+    var content = System.Text.Json.Nodes.JsonNode.Parse(request["input"]![0]!["content"]!.GetValue<string>())!;
+    Check(content["text"]!.GetValue<string>() == "Die Studie zeigt." && content["context"]!.GetValue<string>().Contains("example.org") && content["clarifications"]![0]!["answer"]!.GetValue<string>() == "Die PISA-Studie 2022"
+        && content["only"]![0]!.GetValue<string>() == "Die Studie", "fact-check request carries context, clarifications and only");
+    var schema = request["text"]!["format"]!["schema"]!["properties"]!["claims"]!["items"]!;
+    Check(schema["required"]!.AsArray().Any(x => x!.GetValue<string>() == "question") && schema["properties"]!["verdict"]!["enum"]!.AsArray().Any(x => x!.GetValue<string>() == "needs_context"), "schema has needs_context and question");
+}
+
+{
     // Dialog answers: citation markers go, line breaks stay, sources only from annotations.
     var output = "Die Aussage stimmt nicht. ([who.int](https://www.who.int/x))\n- Erster Punkt ([bund.de](https://www.bund.de/y))\n- Zweiter Punkt, siehe [Quelle](https://evil.example/z)";
     var m1 = "([who.int](https://www.who.int/x))";

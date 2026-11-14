@@ -8,12 +8,13 @@ let captureTask='review',translationOriginal='',translationText='';
 // captureId increases with every capture; answers for an older capture are dropped.
 let captureId=0,activeTask='review',taskReady={};
 // Fact check: claims with their correction wordings (exact quote replacements, applied like review edits).
-let factOriginal='',factClaims=[],factWordings=[],factMeta=null;
+// factContext and factClarifications (answers to the questions of needs_context claims) belong to the current capture.
+let factOriginal='',factClaims=[],factWordings=[],factMeta=null,factContext='',factClarifications=[],factIds=0;
 // Rewrite steps for the current capture (each request changes the latest one) and Summary/Explain answers with their dialogs
 // (turns: alternating user and assistant messages; pending: the question waiting for an answer).
 let rewriteSteps=[],rewriteModel='',answers={},writingPrefs={email:'keep',address:'auto',reviewDu:'keep'};
 let shortcutLabels={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''},shortcutDefaults={...shortcutLabels},shortcutRegistered={},shortcutError=null,recordingTask=null,renderingShortcuts=false;
-const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify"};
+const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify",needs_context:'Needs context'};
 // Settings > Punctuation style.
 let punctuationStyle={quotes:'keep',dashes:'keep',ellipsis:'keep',spaces:'keep',multiply:'keep',arrows:'keep',primes:'keep'};
 const styledParts=(original,corrected,corrections,styleAll=true)=>reviewStyleParts(reviewParts(original,styleAll?reviewStyleText(corrected,punctuationStyle):corrected,corrections,punctuationStyle.spaces==='plain'),punctuationStyle);
@@ -105,6 +106,7 @@ function showTaskView(){
   $('results').hidden=activeTask!=='review'||taskReady.review!==captureId;
   $('translation-view').hidden=activeTask!=='translate'||taskReady.translate!==captureId;
   $('factcheck-view').hidden=activeTask!=='factcheck'||taskReady.factcheck!==captureId;
+  $('factcheck-setup').hidden=activeTask!=='factcheck'||taskReady.factcheck===captureId;
   $('rewrite-view').hidden=activeTask!=='rewrite'||taskReady.rewrite!==captureId;
   $('choose-view').hidden=!!activeTask||!sourceText.trim();
   $('choose-text').textContent=sourceText;
@@ -123,9 +125,32 @@ function runTask(task){
   if(!connected){notice('Connect ChatGPT in Settings first.');update();return;}
   if(task==='translate'){notice('Translating your text...');post('translate',{text:sourceText,captureId});}
   else if(task==='summary'||task==='explain'){notice(task==='summary'?'Summarizing your text...':'Explaining your text...');post('write',{kind:task,text:sourceText,original:sourceText,captureId});}
-  else if(task==='factcheck'){notice('Researching the claims on the web. This can take a minute...');post('factCheck',{text:sourceText,captureId});}
+  else if(task==='factcheck'){notice('Add context if the claims need it, then start the fact check.');$('fact-context').focus?.();}
   else{notice('Checking your text...');post('check',{text:sourceText,captureId});}
   update();
+}
+// Starts a fact check of the whole text; context and earlier answers go along.
+function startFactCheck(context){
+  if(busy||!sourceText.trim())return;
+  if(!connected){notice('Connect ChatGPT in Settings first.');return;}
+  factContext=context.trim();$('fact-context').value=factContext;$('fact-context-more').value=factContext;
+  notice('Researching the claims on the web. This can take a minute...');
+  post('factCheck',{text:sourceText,context:factContext,clarifications:factClarifications,captureId});
+}
+// Checks one needs_context claim again with the user's answer.
+function answerClaim(c,answer){
+  if(busy||!answer)return;
+  if(!connected){notice('Connect ChatGPT in Settings first.');return;}
+  c.draft=answer;
+  factClarifications=factClarifications.filter(x=>x.quote!==c.quote).concat({quote:c.quote,question:c.question||'',answer});
+  notice('Checking the claim again with your answer...');
+  post('factCheck',{text:sourceText,context:factContext,clarifications:factClarifications,only:[c.quote],captureId});
+}
+function factClaim(c,original){
+  const correction=c.correction?reviewPlainStyle(c.correction,c.quote,punctuationStyle):null;
+  const wording=correction?reviewWording(original,{quotes:[c.quote],suggestedRewrite:correction},factIds++):null;
+  if(wording)wording.category='fact';
+  return {...c,explanation:reviewPlainStyle(c.explanation,original,punctuationStyle),correction,wording};
 }
 function factRevised(){return reviewRevised(factOriginal,[],factWordings);}
 function factEdits(){return reviewEdits([],factWordings);}
@@ -133,7 +158,7 @@ function renderFacts(){
   const claims=factClaims,count=v=>claims.filter(c=>c.verdict===v).length;
   $('fact-count').textContent=claims.length;
   $('fact-meta').textContent=factMeta?`Researched in ${Math.max(1,Math.round(factMeta.ms/1000))} s with ${factMeta.model}`:'';
-  const parts=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"]].filter(([v])=>count(v)).map(([v,t])=>`${count(v)} ${t}`);
+  const parts=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"],['needs_context','need context']].filter(([v])=>count(v)).map(([v,t])=>`${count(v)} ${t}`);
   $('fact-summary').textContent=claims.length?`${claims.length} ${claims.length===1?'claim':'claims'}: ${parts.join(', ')}.`:'No checkable factual claims found in this text.';
   const list=$('fact-claims');list.replaceChildren();
   for(const c of claims){
@@ -142,6 +167,16 @@ function renderFacts(){
     const quote=document.createElement('blockquote');quote.textContent=c.quote;
     card.append(badge,quote);
     if(c.explanation){const p=document.createElement('p');p.textContent=c.explanation;card.append(p);}
+    const given=factClarifications.find(x=>x.quote===c.quote);
+    if(given&&c.verdict!=='needs_context'){const p=document.createElement('p');p.className='hint';p.textContent='Your answer: '+given.answer;card.append(p);}
+    if(c.verdict==='needs_context'){
+      const ask=document.createElement('p');ask.className='fact-question';ask.textContent=c.question||'What does this claim refer to? Add the details needed to check it.';
+      const form=document.createElement('form');form.className='revise-translation fact-answer';
+      const input=document.createElement('input');input.type='text';input.maxLength=1000;input.autocomplete='off';input.placeholder='Your answer';input.value=c.draft||'';input.disabled=busy;input.oninput=()=>{c.draft=input.value;};
+      const send=document.createElement('button');send.type='submit';send.textContent='Check this claim';send.disabled=busy;
+      form.onsubmit=e=>{e.preventDefault();answerClaim(c,input.value.trim());};
+      form.append(input,send);card.append(ask,form);
+    }
     if(c.noSource){const p=document.createElement('p');p.className='hint';p.textContent='No source was cited for this verdict, so the claim is marked as not verifiable.';card.append(p);}
     if(c.sources.length){
       const sources=document.createElement('ul');sources.className='fact-sources';
@@ -176,6 +211,7 @@ function update(){
   $('count').textContent=`${$('source').value.length.toLocaleString()} / 30,000`;
   $('signin').disabled=busy;$('signout').disabled=busy;$('source').disabled=busy;
   $('cancel').hidden=!busy;
+  for(const id of ['fact-start','fact-recheck','fact-context','fact-context-more'])$(id).disabled=busy;
   $('dialog-send').disabled=busy;$('dialog-question').disabled=busy;$('copy-conversation').disabled=busy;
   document.querySelectorAll('#formatting-findings input, #formatting-findings button').forEach(x=>x.disabled=locked()||$('allow-plain-text').checked);
   const formattedPaste=captureMode!=='chrome'&&richClipboard&&!$('allow-plain-text').checked;
@@ -374,6 +410,10 @@ $('task-row').querySelectorAll?.('button').forEach(b=>b.onclick=()=>runTask(b.da
 $('fact-copy').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-apply').onclick=()=>post('apply',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-plain').onchange=update;
+$('fact-start').onclick=()=>startFactCheck($('fact-context').value);
+$('fact-recheck').onclick=()=>startFactCheck($('fact-context-more').value);
+$('fact-context').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context').value);}};
+$('fact-context-more').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context-more').value);}};
 $('copy-translation').onclick=()=>post('copyTranslation',{text:translationText});$('apply-translation').onclick=()=>post('applyTranslation',{text:translationText,original:translationOriginal});
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
@@ -383,14 +423,27 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();}
+  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();}
   if(m.type==='factCheck'){
     taskReady.factcheck=captureId;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
+    const fresh=(m.result.claims||[]).map(c=>factClaim(c,m.original));
+    if(m.only?.length&&factClaims.length){
+      // A re-check of single claims replaces only those cards.
+      let replaced=0;
+      for(const q of m.only){const i=factClaims.findIndex(c=>c.quote===q),n=fresh.find(c=>c.quote===q);if(i>=0&&n){factClaims[i]=n;replaced++;}}
+      factWordings=factClaims.map(c=>c.wording).filter(Boolean);
+      renderFacts();showTaskView();
+      const still=fresh.some(c=>c.verdict==='needs_context');
+      notice(!replaced?'The claim was not returned. Try again, or add more context.':still?'Checked again. The claim still needs more context.':'Claim checked again with your answer.');
+      return;
+    }
     factMeta={ms:m.result.elapsedMs,model:m.result.model};
-    factClaims=(m.result.claims||[]).map((c,i)=>{const correction=c.correction?reviewPlainStyle(c.correction,c.quote,punctuationStyle):null;const wording=correction?reviewWording(m.original,{quotes:[c.quote],suggestedRewrite:correction},i):null;if(wording)wording.category='fact';return {...c,explanation:reviewPlainStyle(c.explanation,m.original,punctuationStyle),correction,wording};});
+    factClaims=fresh;
     factWordings=factClaims.map(c=>c.wording).filter(Boolean);
+    $('fact-context-more').value=factContext;
     renderFacts();showTaskView();
-    const wrong=factClaims.filter(c=>c.verdict==='wrong').length;
+    const wrong=factClaims.filter(c=>c.verdict==='wrong').length,ask=factClaims.filter(c=>c.verdict==='needs_context').length;
+    if(ask){notice(`Fact check finished. ${ask} ${ask===1?'claim needs':'claims need'} more context: answer the question on the card.`);return;}
     notice(!factClaims.length?'Fact check finished. No checkable factual claims found.':wrong?`Fact check finished. ${wrong} wrong ${wrong===1?'claim':'claims'} found. Review the sources before using a correction.`:'Fact check finished. Review the verdicts and their sources.');
   }
   if(m.type==='translation'){taskReady.translate=captureId;translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
@@ -411,7 +464,7 @@ window.chrome.webview.addEventListener('message',event=>{
     notice(r.searches?'Answer ready.':'Answer ready. No web search ran for it.');}
   // A failed or cancelled question goes back into the input field.
   if(m.type==='busy'&&!m.busy)for(const k of ['summary','explain']){const a=answers[k];if(!a?.pending)continue;if(!$('dialog-question').value)$('dialog-question').value=a.pending;a.pending='';if(activeTask===k)renderDialog();}
-  if(m.type==='busy'){busy=m.busy;if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
+  if(m.type==='busy'){busy=m.busy;if(factClaims.length)renderFacts();if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
   if(m.type==='shortcuts'){shortcutLabels={...shortcutLabels,...m.shortcuts};shortcutDefaults={...shortcutDefaults,...m.defaults};shortcutRegistered=m.registered||{};shortcutError=m.error?{task:m.errorTask,message:m.error}:null;recordingTask=null;renderShortcuts();}

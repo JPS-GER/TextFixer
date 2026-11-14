@@ -10,10 +10,13 @@ public sealed record ConnectionStatus(bool Connected, string Message);
 /// <summary>A cited web source. Url is an exact absolute https URL as cited by the search.</summary>
 public sealed record FactSource(string Url, string Title, string Domain);
 /// <summary>
-/// A checkable claim. Quote occurs in the checked text. Verdict: supported, wrong, disputed or unverifiable.
+/// A checkable claim. Quote occurs in the checked text. Verdict: supported, wrong, disputed, unverifiable or needs_context.
 /// Correction replaces Quote and exists only for wrong claims. NoSource: the model gave a verdict without a citation, so it became unverifiable.
+/// Question exists only for needs_context: what the user should tell so the claim can be checked.
 /// </summary>
-public sealed record FactClaim(string Quote, string Verdict, string Explanation, string? Correction, FactSource[] Sources, bool NoSource);
+public sealed record FactClaim(string Quote, string Verdict, string Explanation, string? Correction, FactSource[] Sources, bool NoSource, string? Question = null);
+/// <summary>The user's answer to the question of a needs_context claim.</summary>
+public sealed record FactClarification(string Quote, string Question, string Answer);
 /// <summary>Empty Claims means no checkable claims. Searches counts completed web searches.</summary>
 public sealed record FactCheckResult(FactClaim[] Claims, string Model, long ElapsedMs, int Searches);
 /// <summary>One message in a Summary or Explain dialog. Role: user or assistant.</summary>

@@ -257,9 +257,23 @@ public sealed class ChatGptReviewService : IReviewService
     /// Checks the factual claims in <paramref name="text"/> with web search. Throws search_unavailable when claims
     /// were returned but no web search completed, so an answer from memory never counts as a fact check.
     /// </summary>
-    public async Task<FactCheckResult> FactCheckAsync(string text, CancellationToken cancellationToken)
+    public const int MaxContextLength = 4000, MaxClarifications = 40;
+
+    /// <param name="context">The user's notes about the text (topic, time, article, links); empty for none.</param>
+    /// <param name="clarifications">The user's answers to questions of needs_context claims.</param>
+    /// <param name="only">Quotes to check again; empty checks the whole text.</param>
+    public async Task<FactCheckResult> FactCheckAsync(string text, CancellationToken cancellationToken, string context = "",
+        IReadOnlyList<FactClarification>? clarifications = null, IReadOnlyList<string>? only = null)
     {
         ArgumentNullException.ThrowIfNull(text);
+        context = context?.Trim() ?? "";
+        clarifications ??= [];
+        only ??= [];
+        if (context.Length > MaxContextLength) throw new ChatGptServiceException("context_too_long", $"Keep the context under {MaxContextLength:N0} characters.");
+        if (clarifications.Count > MaxClarifications || clarifications.Any(c => c.Answer.Length > MaxQuestionLength || c.Question.Length > MaxQuestionLength || c.Quote.Length > MaxTextLength))
+            throw new ChatGptServiceException("context_too_long", $"Keep each answer under {MaxQuestionLength:N0} characters.");
+        if (only.Count > FactCheckParser.MaxClaims || only.Any(q => string.IsNullOrEmpty(q) || !text.Contains(q, StringComparison.Ordinal)))
+            throw new ChatGptServiceException("invalid_recheck", "The claim no longer matches the captured text. Capture the text again.");
         if (string.IsNullOrWhiteSpace(text)) return new FactCheckResult([], ActiveModel ?? "", 0, 0);
         if (text.Length > MaxTextLength)
         {
@@ -271,12 +285,13 @@ public sealed class ChatGptReviewService : IReviewService
         var (response, model) = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.FactCheck).ConfigureAwait(false);
-            return (await RequestFactCheckAsync(token, model, text, cancellationToken).ConfigureAwait(false), model);
+            return (await RequestFactCheckAsync(token, model, text, context, clarifications, only, cancellationToken).ConfigureAwait(false), model);
         }, cancellationToken).ConfigureAwait(false);
 
         var claims = FactCheckParser.Parse(text, response);
         var searches = response.SearchCalls.Count(s => s == "completed");
-        if (claims.Length > 0 && searches == 0)
+        // A claim waiting for the user's context needs no search; every other verdict does.
+        if (claims.Any(c => c.Verdict != FactCheckParser.NeedsContext) && searches == 0)
         {
             throw new ChatGptServiceException(
                 "search_unavailable", "Web search did not run, so the claims could not be checked. Try again, or choose another fact-check model in Settings.");
@@ -285,12 +300,13 @@ public sealed class ChatGptReviewService : IReviewService
         return new FactCheckResult(claims, model, watch.ElapsedMilliseconds, searches);
     }
 
-    private async Task<ResponseResult> RequestFactCheckAsync(string token, string model, string text, CancellationToken cancellationToken)
+    private async Task<ResponseResult> RequestFactCheckAsync(string token, string model, string text, string context,
+        IReadOnlyList<FactClarification> clarifications, IReadOnlyList<string> only, CancellationToken cancellationToken)
     {
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle, context, clarifications, only), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -298,7 +314,7 @@ public sealed class ChatGptReviewService : IReviewService
             && (ex.ApiParam is null || ex.ApiParam.StartsWith("text", StringComparison.Ordinal)))
         {
             _structuredOutputUnsupported = true;
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle, context, clarifications, only), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
     }
 

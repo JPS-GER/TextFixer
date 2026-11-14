@@ -12,7 +12,7 @@ namespace TextFixer.Services;
 /// </summary>
 internal static partial class FactCheckParser
 {
-    internal const string Supported = "supported", Wrong = "wrong", Disputed = "disputed", Unverifiable = "unverifiable";
+    internal const string Supported = "supported", Wrong = "wrong", Disputed = "disputed", Unverifiable = "unverifiable", NeedsContext = "needs_context";
     internal const int MaxClaims = 40, MaxSources = 5;
 
     public static FactClaim[] Parse(string original, ResponseResult response)
@@ -47,7 +47,7 @@ internal static partial class FactCheckParser
                 var quote = JsonRead.String(claim, "quote");
                 if (string.IsNullOrWhiteSpace(quote) || !original.Contains(quote, StringComparison.Ordinal)) continue;
                 var verdict = JsonRead.String(claim, "verdict")?.Trim().ToLowerInvariant();
-                if (verdict is not (Supported or Wrong or Disputed or Unverifiable)) verdict = Unverifiable;
+                if (verdict is not (Supported or Wrong or Disputed or Unverifiable or NeedsContext)) verdict = Unverifiable;
 
                 var span = spans[index];
                 var cited = response.Citations.Where(c => c.Start >= span.Start && c.End <= span.End && c.Start < c.End && c.End <= text.Length).ToList();
@@ -57,11 +57,13 @@ internal static partial class FactCheckParser
                 explanation = Clean(explanation);
 
                 var sources = cited.Select(ToSource).OfType<FactSource>().DistinctBy(s => DedupKey(s.Url)).Take(MaxSources).ToArray();
-                var noSource = sources.Length == 0 && verdict != Unverifiable;
+                var noSource = sources.Length == 0 && verdict is not (Unverifiable or NeedsContext);
                 if (noSource) verdict = Unverifiable;
+                var question = verdict == NeedsContext ? Clean(JsonRead.String(claim, "question") ?? "") : "";
+                if (question.Length > 300) question = question[..300];
                 var correction = JsonRead.String(claim, "correction");
                 if (verdict != Wrong || string.IsNullOrWhiteSpace(correction) || correction == quote) correction = null;
-                result.Add(new FactClaim(quote, verdict, explanation, correction, sources, noSource));
+                result.Add(new FactClaim(quote, verdict, explanation, correction, sources, noSource, question.Length > 0 ? question : null));
             }
 
             return [.. result];

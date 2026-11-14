@@ -436,7 +436,7 @@ console.log('PASS: model choice lists models and saves the selection.');
  message({type:'busy',busy:false});
  sent.length=0;
  message({type:'capture',captureId:7,task:'factcheck',text:original,canReplace:true,readOnly:false,canPreserveFormatting:true});
- assert.deepEqual({...sent.at(-1)},{action:'factCheck',text:original,captureId:7},'Alt+W capture starts a fact check');
+ assert.equal(sent.filter(x=>x.action==='factCheck').length,0,'a fact-check capture waits for optional context'); assert.equal(element('factcheck-setup').hidden,false); element('fact-context').value='  Artikel vom Mai  ';element('fact-start').onclick(); assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text:original,context:'Artikel vom Mai',clarifications:[],captureId:7},'Start sends the context');
  const claim=(quote,verdict,extra={})=>({quote,verdict,explanation:'Erklärung.',correction:null,sources:[{url:'https://a.example/x',title:'A',domain:'a.example'}],noSource:false,...extra});
  const result={claims:[claim('Der Eiffelturm steht in Rom','wrong',{correction:'Der Eiffelturm steht in Paris'}),claim('Er wurde 1889 fertig','supported'),claim('Rom','wrong',{correction:'Paris'}),claim('Er wurde 1889 fertig','unverifiable',{sources:[],noSource:true})],model:'m1',elapsedMs:12000,searches:2};
  message({type:'factCheck',captureId:6,original,result,...meta});
@@ -481,7 +481,8 @@ console.log('PASS: model choice lists models and saves the selection.');
  assert.deepEqual({...sent.at(-1)},{action:'check',text:'Neu.',captureId:8});
  message({type:'result',captureId:8,original:'Neu.',result:{correctedText:'Neu.',findings:[],corrections:[]},canReplace:true,model:'m',mode:'clipboard'});
  sandbox.runTask('factcheck');
- assert.deepEqual({...sent.at(-1)},{action:'factCheck',text:'Neu.',captureId:8});
+ assert.equal(sent.at(-1).action,'check');element('fact-start').onclick();
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text:'Neu.',context:'',clarifications:[],captureId:8});
  message({type:'busy',busy:false});
  // Settings: third model list.
  message({type:'models',connected:true,models:[{slug:'a',displayName:'A'},{slug:'b',displayName:'B'}],selected:null,translationSelected:null,factCheckSelected:'b'});
@@ -517,6 +518,35 @@ console.log('PASS: read-only fact check offers copy only.');
  assert.equal(element('fact-preview').textContent,'Berlin hat knapp 4 Millionen Einwohner.');
 }
 console.log('PASS: overlapping fact corrections cannot both be accepted.');
+{
+ // A needs_context claim asks a question; the answer re-checks only that claim and replaces its card.
+ message({type:'busy',busy:false});
+ const text='Die Studie zeigt 20 Prozent. Rom liegt in Italien.';
+ message({type:'capture',captureId:31,task:'factcheck',text,canReplace:false,readOnly:true,canPreserveFormatting:false});
+ element('fact-start').onclick();
+ const src=[{url:'https://s.example/',title:'S',domain:'s.example'}];
+ message({type:'factCheck',captureId:31,original:text,only:[],result:{claims:[
+  {quote:'Die Studie zeigt 20 Prozent',verdict:'needs_context',explanation:'Unklar.',correction:null,sources:[],noSource:false,question:'Welche Studie ist gemeint?'},
+  {quote:'Rom liegt in Italien',verdict:'supported',explanation:'.',correction:null,sources:src,noSource:false}],model:'m',elapsedMs:1,searches:1},canReplace:false,readOnly:true,canPreserveFormatting:false,mode:'clipboard'});
+ message({type:'busy',busy:false});
+ const card=element('fact-claims').children[0];
+ assert.equal(card.className,'fact-card verdict-needs_context');
+ const question=card.children.find(c=>c.className==='fact-question');assert.equal(question.textContent,'Welche Studie ist gemeint?');
+ const form=card.children.find(c=>c.className==='revise-translation fact-answer');
+ form.children[0].value='PISA 2022';form.onsubmit({preventDefault(){}});
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'factCheck',text,context:'',clarifications:[{quote:'Die Studie zeigt 20 Prozent',question:'Welche Studie ist gemeint?',answer:'PISA 2022'}],only:['Die Studie zeigt 20 Prozent'],captureId:31});
+ message({type:'factCheck',captureId:31,original:text,only:['Die Studie zeigt 20 Prozent'],result:{claims:[
+  {quote:'Die Studie zeigt 20 Prozent',verdict:'supported',explanation:'PISA 2022.',correction:null,sources:src,noSource:false}],model:'m',elapsedMs:1,searches:1},canReplace:false,readOnly:true,canPreserveFormatting:false,mode:'clipboard'});
+ message({type:'busy',busy:false});
+ assert.equal(element('fact-claims').children.length,2);
+ assert.equal(element('fact-claims').children[0].className,'fact-card verdict-supported');
+ assert.equal(element('fact-claims').children[1].className,'fact-card verdict-supported');
+ // Checking again with more context sends the whole text, the context and the answers.
+ element('fact-context-more').value='Bildungsbericht';element('fact-recheck').onclick();
+ const again=JSON.parse(JSON.stringify(sent.at(-1)));
+ assert.equal(again.context,'Bildungsbericht');assert.equal(again.clarifications.length,1);assert.equal(again.only,undefined);
+}
+console.log('PASS: fact-check context, questions on claims and single-claim re-checks.');
 {
  // Settings > Shortcuts: Open required, optional task shortcuts, recording, key mapping, cancel, reset/remove and errors.
  const defaults={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''};
