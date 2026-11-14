@@ -326,6 +326,21 @@ button.group-head:disabled,button.group-row:disabled { cursor:default; filter:no
 .md ol > li::marker { color:var(--accent); font-weight:700; }
 .md strong { font-weight:700; color:var(--text); }
 .md .md-head { margin-top:1em; }
+/* Title, author and date of a copied forum post, above the captured text. */
+.post-info { display:flex; flex-direction:column; gap:3px; margin:0 0 12px; }
+.post-title { font-size:calc(15px * var(--text-scale)); font-weight:700; color:var(--text); }
+.post-byline { font-size:calc(12px * var(--text-scale)); color:var(--muted); }
+/* Quotes of a rich capture: other people's words, set back from the author's lines. */
+.md blockquote { margin:0 0 .75em; padding:.15em 0 .15em .9em; border-left:3px solid var(--edge); color:var(--muted); }
+.md blockquote blockquote { margin:.4em 0 .4em; }
+.md blockquote > :last-child { margin-bottom:0; }
+.md hr { border:0; border-top:1px solid var(--edge); margin:.9em 0; }
+.md code { font:calc(.92em) Consolas,"Cascadia Mono",monospace; background:var(--room-2); padding:1px 5px; border-radius:4px; }
+/* Protected objects kept from the capture: links, videos, images, mentions. */
+.md .md-token { color:var(--accent); overflow-wrap:anywhere; }
+.md .md-link { text-decoration:underline; text-decoration-color:var(--accent-edge); text-underline-offset:2px; }
+.md .md-mention { font-weight:600; }
+.md .md-spoiler { background:var(--room-3); border-radius:3px; padding:0 3px; }
 .fact-card .fact-explanation { margin:6px 0; overflow-wrap:anywhere; }
 /* Text size: the Aa button in the header opens a small panel; the wheel over either changes the size. */
 .icon-button.text-size { font:700 calc(17px * var(--text-scale)) / 1 "Segoe UI",Arial; letter-spacing:-.5px; }

@@ -277,5 +277,90 @@ const string Original = "Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Berl
     Check(summaryPrompt.Contains("Markdown subset") && summaryPrompt.Contains("**bold**") && !rewritePrompt.Contains("Markdown subset"), "summary allows the Markdown subset, rewrite does not");
 }
 
+{
+    // Rich capture (M! Forum editor copy): nested quote, own text with a shortened link, mention, inline code and a poll.
+    const string html = "<blockquote data-pm-slice=\"0 0 []\"><blockquote><p>Alt <strong>fett</strong></p></blockquote><p>Zitat eins</p></blockquote>"
+        + "<p>Meine Antwort mit \u200B<a href=\"https://www.youtube.com/watch?v=DOhAxIhPqLA\">www.youtube.com/watch?v=DOhAx...</a> und "
+        + "<mention-component data-id=\"7\" data-label=\"JP\">@JP</mention-component>, <code>x &lt; 2</code>.<br class=\"ProseMirror-trailingBreak\"></p>"
+        + "<div data-poll-id=\"5\"><span>Umfrage</span></div><p><spoiler>geheim</spoiler> <u>unter</u> <s>weg</s></p>";
+    const string plain = "Alt fett\r\nZitat eins\r\n\r\nMeine Antwort mit www.youtube.com/watch?v=DOhAx... und @JP, x < 2.\r\ngeheim unter weg";
+    var doc = CaptureReader.Read(html, plain)!;
+    Check(doc.ModelText == "> > Alt **fett**\n>\n> Zitat eins\n\nMeine Antwort mit \u27E61\u27E7 und \u27E62\u27E7, \u27E63\u27E7.\n\n\u27E64\u27E7\n\n||geheim|| __unter__ ~~weg~~",
+        "reader builds the model text with quote levels, placeholders and marks");
+    Check(doc.ContextText.Contains("Meine Antwort mit https://www.youtube.com/watch?v=DOhAxIhPqLA und @JP, `x < 2`.") && doc.ContextText.Contains("[Poll]"),
+        "context text spells out shortened links, mentions and code");
+    Check(doc.Items.Select(i => i.Kind).SequenceEqual(["link", "mention", "code", "poll"]) && doc.Items[1].Html!.StartsWith("<mention-component data-id=\"7\"") && doc.HasQuotes,
+        "reader keeps link, mention HTML, code and poll as protected items");
+    Check(doc.Quoted(plain).SequenceEqual(["Alt fett\r\nZitat eins"]), "quoted passages map to the captured plain text");
+    var elements = doc.ProtectedRanges.Where(r => r[2] == CaptureDocument.ElementRange).Select(r => plain[r[0]..r[1]]).ToList();
+    Check(elements.SequenceEqual(["www.youtube.com/watch?v=DOhAx...", "@JP", "x < 2"]), "link text, mention and code are protected ranges");
+    Check(doc.Links.SequenceEqual(["https://www.youtube.com/watch?v=DOhAxIhPqLA"]), "links list the full address");
+    Check(CaptureReader.Intact(doc, "x \u27E64\u27E7 \u27E62\u27E7 \u27E61\u27E7 \u27E63\u27E7") && !CaptureReader.Intact(doc, "\u27E61\u27E7 \u27E62\u27E7 \u27E63\u27E7")
+        && !CaptureReader.Intact(doc, "\u27E61\u27E7 \u27E61\u27E7 \u27E62\u27E7 \u27E63\u27E7 \u27E64\u27E7") && !CaptureReader.Intact(doc, "\u27E61\u27E7 \u27E62\u27E7 \u27E63\u27E7 \u27E64\u27E7 \u27E65\u27E7"),
+        "intact needs every placeholder exactly once and no new one");
+
+    // Read view: an embedded YouTube player and an image with its caption.
+    var view = CaptureReader.Read("<p><iframe src=\"https://www.youtube.com/embed/DOhAxIhPqLA?rel=0\" title=\"Ein Video\"></iframe></p><figure><img src=\"https://i.imgur.com/K.png\" alt=\"Image: i.imgur.com\"><figcaption data-testid=\"image-card-caption\">Quelle: i.imgur.com/K.png</figcaption></figure>", "Image: i.imgur.com")!;
+    Check(view.ContextText == "[Video: Ein Video, https://www.youtube.com/watch?v=DOhAxIhPqLA]\n\n[Image: https://i.imgur.com/K.png]", "read view turns embeds into video and image items without captions");
+    // An editor that spaces paragraphs with empty paragraphs (M! Forum): adjacent paragraphs are lines, the empty one is the break.
+    var spaced = CaptureReader.Read("<p>Eins</p><p><br class=\"ProseMirror-trailingBreak\"></p><p>Zwei <a href=\"https://example.org/x\">x</a></p><p>Drei</p><ul><li><p>Punkt</p></li></ul><p>Vier</p>", "Eins\n\nZwei x\nDrei\nPunkt\nVier")!;
+    Check(spaced.ModelText == "Eins\n\nZwei \u27e61\u27e7\nDrei\n\n- Punkt\n\nVier", "empty paragraphs separate, adjacent paragraphs are lines: " + spaced.ModelText);
+    Check(CaptureReader.Read("<p>Eins <a href=\"https://example.org/x\">x</a></p><p>Zwei</p>", "Eins x\n\nZwei")!.ModelText == "Eins \u27e61\u27e7\n\nZwei", "without empty paragraphs every paragraph stays one");
+    Check(CaptureReader.Read("<p>Nur <b>fett</b></p>", "Nur fett")!.Structured == false, "text without quotes or objects is not structured");
+    Check(CaptureReader.SameAddress("www.example.com/pa...", "https://www.example.com/path") && !CaptureReader.SameAddress("Startseite", "https://www.example.com/"), "shortened link text counts as the address");
+
+    var request = ReviewPrompt.BuildFactCheckRequest("m", plain, structured: true, quoted: doc.Quoted(plain), links: doc.Links);
+    var content = JsonDocument.Parse(request["input"]![0]!["content"]!.GetValue<string>()).RootElement;
+    Check(content.GetProperty("quoted")[0].GetString() == "Alt fett\r\nZitat eins" && content.GetProperty("links")[0].GetString()!.Contains("DOhAxIhPqLA")
+        && request["instructions"]!.GetValue<string>().Contains("Never return claims from these passages"), "fact check gets quoted passages and full links");
+    var rewrite = ReviewPrompt.BuildWritingRequest("m", ReviewPrompt.Rewrite, doc.ModelText, "shorter", ReviewPrompt.MarkupRules + ReviewPrompt.QuotesUnchangedRule)["instructions"]!.GetValue<string>();
+    Check(rewrite.Contains("copy every placeholder exactly once") && rewrite.Contains("Copy lines that start with"), "rewrite of a rich capture keeps placeholders and quotes");
+}
+
+{
+    // Forum post copied from the read view: the header title is the heading, the icon numbers are page stats.
+    const string post = "<div data-testid=\"post-header\"><div class=\"font-bold\">Titel des Beitrags</div><div><div><svg class=\"lucide lucide-users\"><path d=\"M1\"></path></svg><span>467</span></div>"
+        + "<div><svg class=\"lucide lucide-pen\"></svg><span>1</span></div><div role=\"button\"><svg class=\"lucide lucide-eye\"></svg><span>21%</span></div></div></div>"
+        + "<div id=\"editor\"><p>Text mit 21% Anteil.</p></div>";
+    var stats = CaptureReader.HeaderStats(post);
+    Check(stats.SequenceEqual(["467", "1", "21%"]), "header stats are read from the icons");
+    var stripped = CaptureReader.WithoutHeader("Titel des Beitrags\r\n467\r\n1\r\n21%\r\nText mit 21% Anteil.", CaptureReader.ReadHeader(post)!);
+    Check(stripped == "Text mit 21% Anteil.", "title and header stats are removed from the captured text");
+    Check(CaptureReader.WithoutStats("Text\r\n1\r\n467", stats) == "Text\r\n1\r\n467", "text without the stats in order stays unchanged");
+    var postDoc = CaptureReader.Read(post, stripped)!;
+    Check(postDoc.ModelText == "Text mit 21% Anteil." && postDoc.ContextText == "[Title: Titel des Beitrags]\n\nText mit 21% Anteil.", "the header is left out of the text; its title is context");
+}
+
+{
+    // Post header with author: avatar (profile link and image), name with badge icons, mood badge, date, title, stats.
+    const string post = "<div data-testid=\"post-header\"><div><a href=\"https://remix.maniac-forum.de/profile/jp\"><div><img alt=\"jp\" src=\"https://cdn.example/a.webp\"></div></a>"
+        + "<div><div class=\"flex font-medium\"><div class=\"text-base font-medium\">jp<span><svg class=\"lucide lucide-crown\"></svg></span></div>"
+        + "<span class=\"text-xs font-medium\">Themenstimmung: Gut</span></div><div class=\"text-xs\">26.02.2026, 20:12</div></div></div>"
+        + "<div><div class=\"font-bold truncate\">Titel</div><div><svg class=\"lucide lucide-users\"></svg><span>467</span></div></div></div>"
+        + "<div id=\"editor\"><p>Text.</p></div>";
+    var header = CaptureReader.ReadHeader(post)!;
+    Check(header.Author == "jp" && header.Date == "26.02.2026, 20:12" && header.Title == "Titel" && header.Byline == "Post by jp, 26.02.2026, 20:12", "post header gives author, date and title");
+    var text = CaptureReader.WithoutHeader("jp\r\njp\r\nThemenstimmung: Gut\r\n26.02.2026, 20:12\r\nTitel\r\n467\r\nText.", header);
+    Check(text == "Text.", "avatar name, author, badge, date, title and stats are removed from the captured text");
+    Check(CaptureReader.WithoutHeader("Eigener Satz\r\nTitel\r\nText.", header) == "Eigener Satz\r\nTitel\r\nText.", "lines before the title that are not header texts stay");
+    // A selection that starts above the post: the divider label before the header is page detail too.
+    const string divided = "<div><span>Beitrag</span></div>" + post;
+    var dividedHeader = CaptureReader.ReadHeader(divided)!;
+    Check(CaptureReader.WithoutHeader("\r\n\r\nBeitrag\r\njp\r\njp\r\nThemenstimmung: Gut\r\n26.02.2026, 20:12\r\nTitel\r\n467\r\nText.", dividedHeader) == "Text.",
+        "page parts selected above the header are removed");
+    Check(CaptureReader.Read(divided, "Text.")!.ModelText == "Text.", "page parts above the header are not read");
+    // Selections that start inside the header: the copy holds the cut texts, and so does the header markup.
+    var fromDate = CaptureReader.ReadHeader("<div data-testid=\"post-header\"><div><div class=\"text-xs\">26.02.2026, 20:12</div></div><div><div class=\"font-bold\">Titel</div><div><svg></svg><span>467</span></div></div></div><div id=\"editor\"><p>Text.</p></div>")!;
+    Check(CaptureReader.WithoutHeader("26.02.2026, 20:12\r\nTitel\r\n467\r\nText.", fromDate) == "Text.", "a selection starting at the date keeps only the post text");
+    var cutName = CaptureReader.ReadHeader("<div data-testid=\"post-header\"><div><div class=\"text-base font-medium\">aightedge</div><span class=\"font-medium\">Themenstimmung: Gut</span></div><div><div class=\"font-bold\">Titel</div></div></div><div id=\"editor\"><p>Text.</p></div>")!;
+    Check(CaptureReader.WithoutHeader("aightedge\r\nThemenstimmung: Gut\r\nTitel\r\nText.", cutName) == "Text.", "a selection starting inside the name removes the cut name");
+    var fromStats = CaptureReader.ReadHeader("<div data-testid=\"post-header\"><div><div><svg></svg><span>1</span></div><div><svg></svg><span>21%</span></div></div></div><div id=\"editor\"><p>1</p><p>Text.</p></div>")!;
+    Check(CaptureReader.WithoutHeader("1\r\n21%\r\n1\r\nText.", fromStats) == "1\r\nText.", "a selection starting in the stats removes only the stats");
+    var earlierPost = CaptureReader.ReadHeader("<div><p>" + new string('x', 300) + "</p><p>Vorheriger Beitrag</p></div>" + post)!;
+    Check(CaptureReader.WithoutHeader("Vorheriger Beitrag\r\nTitel\r\nText.", earlierPost) == "Vorheriger Beitrag\r\nTitel\r\nText.", "a longer part above the header stays");
+    var doc = CaptureReader.Read(post, text)!;
+    Check(doc.ModelText == "Text." && doc.Items.Count == 0 && doc.ContextText == "[Post by jp, 26.02.2026, 20:12. Title: Titel]\n\nText.", "avatar and profile link are not read as image and link; author, date and title are context");
+}
+
 Console.WriteLine(failures == 0 ? "All fact-check tests passed." : $"{failures} fact-check test(s) failed.");
 return failures == 0 ? 0 : 1;

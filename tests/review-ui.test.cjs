@@ -84,10 +84,23 @@ assert.equal(element('setup-details').open,false,'connected bridge collapses set
 message({type:'capture',mode:'clipboard',text:original,canReplace:true,hasFormatting:true,canPreserveFormatting:true});
 assert.equal(element('apply').textContent,'Paste with formatting');
 assert.equal(element('apply').disabled,false,'rich clipboard replacement does not require plain-text opt-in');
-assert.equal(element('copy').textContent,'Copy with formatting');
+assert.equal(element('copy').hidden,false,'a rich capture offers its original formatting');
 message({type:'result',mode:'clipboard',original,result:{correctedText:original.replace('tesst','test'),findings:[]},canReplace:true,canPreserveFormatting:true});
 element('copy').onclick();assert.equal(sent.at(-1).original,original,'rich copy binds to original selection');
 assert.equal(sent.at(-1).edits[0].before,'s','rich copy sends minimal exact local patch');
+{
+ // Copy as for corrections: plain text directly, other formats of a rich capture from the corrected HTML.
+ const row=element('review-export').children.at(-1);
+ assert.deepEqual(row.children.slice(1).map(b=>b.dataset.format),['formatted','plain','markdown','reddit','youtube','bbcode','mforum']);
+ row.children[2].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'plain',text:original.replace('tesst','test')});
+ row.children[6].onclick();
+ assert.deepEqual({action:sent.at(-1).action,format:sent.at(-1).format,original:sent.at(-1).original,before:sent.at(-1).edits[0].before},{action:'exportRevised',format:'bbcode',original,before:'s'});
+ message({type:'revisedExport',format:'bbcode',model:'Mit **fett** und ⟦1⟧.',items:[{id:1,kind:'link',label:'Seite',url:'https://example.org/'}]});
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'bbcode',text:'Mit [b]fett[/b] und [url=https://example.org/]Seite[/url].'});
+ const count=sent.length;message({type:'revisedExport',format:'html',model:'x',items:[]});
+ assert.equal(sent.length,count,'unknown formats are ignored');
+}
 element('allow-plain-text').checked=true;element('allow-plain-text').onchange();
 assert.equal(element('apply').textContent,'Paste plain text','plain-text fallback remains explicit');
 console.log('PASS: review UI message contract, CRLF, source invalidation, busy guards, accept/reject, and safe text rendering.');
@@ -269,7 +282,7 @@ console.log('PASS: neutral Alt+Q paste status and retained-clipboard information
  assert.equal(element('readonly-hint').hidden,false,'read-only capture explains copy-only');
  assert.equal(element('route').hidden,false,'read-only capture still shows the Alt+Q route');
  assert.equal(element('copy').disabled,false,'copy stays available');
- assert.equal(element('copy').textContent,'Copy with formatting','formatted read-only capture copies with formatting');
+ assert.equal(element('copy').hidden,false,'formatted read-only capture copies with its original formatting');
  message({type:'capture',text,canReplace:true,readOnly:false});
  assert.equal(element('apply').hidden,false,'editable capture shows the paste button again');
  assert.equal(element('readonly-hint').hidden,true);
@@ -337,8 +350,8 @@ console.log('PASS: duplicate fixes from several tabs are applied once.');
  assert.equal(element('apply-translation').hidden,false);
  element('apply-translation').onclick();
  assert.deepEqual({action:sent.at(-1).action,text:sent.at(-1).text,original:sent.at(-1).original},{action:'applyTranslation',text:'I think we will win.',original});
- element('copy-translation').onclick();
- assert.equal(sent.at(-1).action,'copyTranslation');
+ element('translation-export').children.at(-1).children[2].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'plain',text:'I think we will win.'});
  message({type:'translation',original,translation:'I think we will win.',canReplace:false,readOnly:true,model:'m'});
  assert.equal(element('apply-translation').hidden,true,'read-only translation offers copy only');
  assert.equal(element('translation-readonly').hidden,false);
@@ -665,6 +678,82 @@ console.log('PASS: text size steps, limits and reset.');
  assert.equal(element('format-received').textContent,'Received: Result of a TextFixer task.');
 }
 console.log('PASS: source format display and matching export buttons.');
+{
+ // Rich capture: quotes, a shortened link and a mention arrive as placeholders; results keep them and paste the forum's HTML.
+ const plain='Alt fett\r\nMeine Antwort mit www.youtube.com/watch?v=DOhAx... und @JP.';
+ const at=(t,kind)=>[plain.indexOf(t),plain.indexOf(t)+t.length,kind];
+ const mention='<mention-component data-id="7" data-label="JP">@JP</mention-component>';
+ const url='https://www.youtube.com/watch?v=DOhAxIhPqLA';
+ message({type:'capture',captureId:95,task:'open',text:plain,canReplace:true,readOnly:false,clip:{formats:['Plain text','HTML'],host:'remix.maniac-forum.de',found:['quote','link','mention'],unknown:['mention-component']},
+  doc:{model:'> Alt **fett**\n\nMeine Antwort mit \u27E61\u27E7 und \u27E62\u27E7.',quotes:true,ranges:[at('Alt fett',1),at('www.youtube.com/watch?v=DOhAx...',0),at('@JP',0)],
+   items:[{id:'1',kind:'link',label:'www.youtube.com/watch?v=DOhAx...',url},{id:'2',kind:'mention',label:'@JP',html:mention}]}});
+ const translated='> Old **bold**\n\nMy answer with \u27E61\u27E7 and \u27E62\u27E7, ||secret||.';
+ message({type:'translation',captureId:95,original:plain,translation:translated,structured:true,intact:true,canReplace:true,readOnly:false,model:'m'});
+ assert.deepEqual(element('translation-text').children.map(c=>c.tag),['blockquote','p']);
+ assert.equal(element('translation-text').children[1].children[1].title,url,'the link shows its full address on hover');
+ element('translation-export').children.at(-1).children[7].onclick();
+ const html=`<blockquote><p>Old <strong>bold</strong></p></blockquote><p>My answer with <a href="${url}">${url}</a> and ${mention}, <spoiler>secret</spoiler>.</p>`;
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'mforum',text:`> Old bold\n\nMy answer with ${url} and @JP, Spoiler: secret.`,html});
+ element('apply-translation').onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'applyTranslation',text:`> Old bold\n\nMy answer with ${url} and @JP, Spoiler: secret.`,html,model:translated,original:plain});
+ assert.equal(sandbox.markupExport(translated,'formatted').html,`<blockquote><p>Old <strong>bold</strong></p></blockquote><p>My answer with <a href="${url}">${url}</a> and @JP, Spoiler: secret.</p>`);
+ assert.equal(sandbox.markupExport(translated,'markdown').text,`> Old **bold**\n\nMy answer with ${url} and @JP, Spoiler: secret.`);
+ assert.equal(sandbox.markupExport(translated,'reddit').text,`> Old **bold**\n\nMy answer with ${url} and @JP, >!secret!<.`);
+ assert.equal(sandbox.markupExport(translated,'youtube').text,`> Old *bold*\n\nMy answer with ${url} and @JP, Spoiler: secret.`);
+ assert.equal(sandbox.markupExport(translated,'bbcode').text,`[quote]\nOld [b]bold[/b]\n[/quote]\n\nMy answer with [url]${url}[/url] and @JP, [spoiler]secret[/spoiler].`);
+ assert.equal(sandbox.markupExport('Siehe \u27E61\u27E7 und \u27E69\u27E7 __unter__ ~~weg~~','markdown').text,`Siehe ${url} und \u27E69\u27E7 unter ~~weg~~`,'unknown placeholders stay text; Markdown has no underline');
+ // A link a site labels with words keeps its label.
+ sandbox.markupSetItems([{id:'1',kind:'link',label:'die Seite',url:'https://example.org/a'},{id:'2',kind:'mention',label:'@JP',html:'<mention-component onclick="x()"><b>x</b></mention-component>'}]);
+ assert.equal(sandbox.markupExport('Auf \u27E61\u27E7 bei \u27E62\u27E7','formatted').html,'<p>Auf <a href="https://example.org/a">die Seite</a> bei @JP</p>');
+ assert.equal(sandbox.markupExport('Auf \u27E61\u27E7 bei \u27E62\u27E7','mforum').html,'<p>Auf <a href="https://example.org/a">https://example.org/a</a> bei @JP</p>','a mention with nested markup pastes as text');
+ assert.equal(sandbox.markupExport('Auf \u27E61\u27E7','plain').text,'Auf die Seite (https://example.org/a)');
+ sandbox.markupSetItems([{id:'1',kind:'link',label:'www.youtube.com/watch?v=DOhAx...',url},{id:'2',kind:'mention',label:'@JP',html:mention}]);
+ // A result that lost a placeholder cannot replace the selection.
+ message({type:'translation',captureId:95,original:plain,translation:'> Old\n\nMy answer.',structured:true,intact:false,canReplace:true,readOnly:false,model:'m'});
+ assert.equal(element('apply-translation').disabled,true);
+ assert.match(element('notice').textContent,/Some links or other objects are missing from the translation/);
+ // Rewrite: shown formatted, the changes compare plain forms, Replace sends the HTML.
+ message({type:'writing',captureId:95,kind:'rewrite',original:plain,result:'> Alt **fett**\n\nMeine kurze Antwort mit \u27E61\u27E7 und \u27E62\u27E7.',request:'kürzer',structured:true,intact:true,canReplace:true,readOnly:false,model:'m'});
+ assert.deepEqual(element('rewrite-changes').children.filter(c=>c.tag==='ins').map(c=>c.textContent),['kurze ']);
+ // Rewrite and Translate offer every export format; the placeholders resolve from the capture.
+ const rewriteRow=element('rewrite-export').children.at(-1);
+ assert.deepEqual(rewriteRow.children.slice(1).map(b=>b.dataset.format),['formatted','plain','markdown','reddit','youtube','bbcode','mforum']);
+ rewriteRow.children[6].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'bbcode',text:`[quote]\nAlt [b]fett[/b]\n[/quote]\n\nMeine kurze Antwort mit [url]${url}[/url] und @JP.`});
+ assert.equal(element('translation-export').children.at(-1).children.length,8);
+ element('apply-rewrite').onclick();
+ assert.equal(sent.at(-1).action,'applyRewrite');assert.match(sent.at(-1).html,/^<blockquote><p>Alt <strong>fett<\/strong><\/p><\/blockquote><p>Meine kurze Antwort/);
+ // Review leaves the quote, the link text and the mention alone.
+ message({type:'result',captureId:95,original:plain,result:{correctedText:plain.replace('Alt fett','Alt Fett').replace('Meine Antwort','Meine Antworten').replace('DOhAx...','DOhAx…'),findings:[]},canReplace:true,model:'m'});
+ assert.equal(sandbox.revised(),plain.replace('Meine Antwort','Meine Antworten'));
+ // A forum post's title, author and date are shown above the captured text, which holds only the post.
+ message({type:'capture',captureId:96,task:'open',text:'Text.',canReplace:false,readOnly:true,doc:{model:'Text.',quotes:false,ranges:[],items:[],post:'Post by jp, 26.02.2026, 20:12',title:'Titel des Beitrags'}});
+ assert.deepEqual(element('post-info').children.map(c=>[c.className,c.textContent]),[['post-title','Titel des Beitrags'],['post-byline','Post by jp, 26.02.2026, 20:12']]);
+ assert.equal(element('post-info').hidden,false);assert.equal(element('choose-text').textContent,'Text.');
+}
+{
+ // Fact check results copied for the forum: rule, verdict, quoted claim, explanation, source link, correction.
+ const text='Der Preis stieg 2025 um 5 Prozent.';
+ message({type:'capture',captureId:97,task:'factcheck',text,canReplace:false,readOnly:true});
+ message({type:'factCheck',captureId:97,original:text,result:{claims:[{quote:'Der Preis stieg 2025 um 5 Prozent',verdict:'wrong',explanation:'Er stieg um **3 Prozent**.',correction:'Der Preis stieg 2025 um 3 Prozent',question:null,sources:[{title:'Statistik',url:'https://example.org/s'}]}],model:'m',elapsedMs:5}});
+ const out=sandbox.markupExport(sandbox.factResultsBlocks(),'mforum');
+ assert.match(out.html,/<hr><p><strong>✗ Wrong<\/strong><\/p><blockquote><p>Der Preis stieg 2025 um 5 Prozent<\/p><\/blockquote><p>Er stieg um <strong>3 Prozent<\/strong>\.<\/p><p><br><\/p><p>↗ Source: <a href="https:\/\/example\.org\/s">https:\/\/example\.org\/s<\/a><\/p><p><br><\/p><p><strong>→ Correction:<\/strong> Der Preis stieg 2025 um 3 Prozent<\/p>$/);
+ assert.match(out.html,/^<p><strong>1 claim: ✗ 1 wrong\.<\/strong><\/p>/,'the summary line is bold and marks each verdict');
+ const formatted=sandbox.markupExport(sandbox.factResultsBlocks(),'formatted').html;
+ assert.match(formatted,/<\/p><p>↗ Source: <a href="https:\/\/example\.org\/s">Statistik<\/a><\/p>/);assert.doesNotMatch(formatted,/<p><br><\/p>/,'only the forum gets empty lines');
+ assert.match(sandbox.markupExport(sandbox.factResultsBlocks(),'plain').text,/---\n\n✗ Wrong\n\n> Der Preis stieg 2025 um 5 Prozent\n\nEr stieg um 3 Prozent\.\n\n↗ Source: Statistik \(https:\/\/example\.org\/s\)\n\n→ Correction: Der Preis/);
+}
+{
+ // Each target writes line breaks and paragraph spacing itself: the M! Forum editor needs an empty paragraph.
+ const text='Eins\nZwei\n\nDrei\n\n- Punkt\n\nVier';
+ assert.equal(sandbox.markupExport(text,'mforum').html,'<p>Eins</p><p>Zwei</p><p><br></p><p>Drei</p><ul><li>Punkt</li></ul><p>Vier</p>');
+ assert.equal(sandbox.markupExport(text,'formatted').html,'<p>Eins<br>Zwei</p><p>Drei</p><ul><li>Punkt</li></ul><p>Vier</p>');
+ assert.equal(sandbox.markupExport(text,'bbcode').text,'Eins\nZwei\n\nDrei\n\n[list]\n[*]Punkt\n[/list]\n\nVier');
+ assert.equal(sandbox.markupExport(text,'markdown').text,'Eins  \nZwei\n\nDrei\n\n- Punkt\n\nVier');
+}
+console.log('PASS: line breaks and paragraph spacing per export target.');
+console.log('PASS: fact check results copy like the cards: verdict, quoted claim, explanation, source link, correction.');
+console.log('PASS: rich capture results keep quotes, links and mentions; Review leaves them alone.');
 console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, remove and errors.');
 {
  // Open: the task choice appears and nothing runs until a task is chosen.
@@ -712,14 +801,14 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  sandbox.runTask('rewrite','more');sandbox.runTask('summary');
  assert.equal(sent.length,before,'cached summary');
  const exportButtons=element('dialog').children[0].children[1].children[1].children;
- assert.deepEqual(exportButtons.slice(1).map(x=>x.dataset.format),['formatted','plain','markdown','bbcode','mforum']);
+ assert.deepEqual(exportButtons.slice(1).map(x=>x.dataset.format),['formatted','plain','markdown','reddit','youtube','bbcode','mforum']);
  exportButtons[2].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'plain',text:'\u2022 Treffen am Montag'});
  exportButtons[3].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'markdown',text:'- Treffen am Montag'});
  exportButtons[1].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'formatted',text:'\u2022 Treffen am Montag',html:'<ul><li>Treffen am Montag</li></ul>'});
- exportButtons[4].onclick();
+ exportButtons[6].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'bbcode',text:'[list]\n[*]Treffen am Montag\n[/list]'});
  // Follow-up questions carry the conversation; the answer shows its sources; a failed question returns to the input.
  element('dialog-question').value='Stimmt das?';element('dialog-form').onsubmit({preventDefault(){}});

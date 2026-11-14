@@ -109,6 +109,24 @@ internal sealed partial record HtmlClipboard(string Prefix, string Fragment, str
         return (this with { Fragment = fragment.ToString() }).Encode();
     }
 
+    /// <summary>
+    /// The HTML without the texts in front of <paramref name="kept"/>, for a capture whose plain text lost its leading
+    /// part (a forum post header). Tags stay. Null when the HTML text does not end with exactly the kept text.
+    /// </summary>
+    internal HtmlClipboard? WithoutLeadingText(string kept)
+    {
+        List<Unit> units;
+        try { units = ReadTextUnits(Fragment); } catch (InvalidOperationException) { return null; }
+        var letters = kept.Where(c => !char.IsWhiteSpace(c)).ToArray();
+        var positions = Enumerable.Range(0, units.Count).Where(i => !char.IsWhiteSpace(units[i].Character)).ToArray();
+        if (letters.Length == 0 || positions.Length < letters.Length) return null;
+        var skip = positions.Length - letters.Length;
+        for (var i = 0; i < letters.Length; i++) if (units[positions[skip + i]].Character != letters[i]) return null;
+        var fragment = new StringBuilder(Fragment);
+        foreach (var (start, end) in units.Take(positions[skip]).Select(u => (u.Start, u.End)).Distinct().Reverse()) fragment.Remove(start, end - start);
+        return this with { Fragment = fragment.ToString() };
+    }
+
     private static string Normalize(string text) => text.Replace('\u00a0', ' ');
     private static bool Equivalent(char left, char right) => (left == '\u00a0' ? ' ' : left) == (right == '\u00a0' ? ' ' : right);
     private static InvalidOperationException CannotMap() => new("The corrections cannot be mapped safely to the copied formatting. Omit the affected correction, use the Chrome extension, or select the plain-text option for copy or paste.");

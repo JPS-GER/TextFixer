@@ -4,8 +4,8 @@ Research and design notes for how TextFixer recognizes the format of captured te
 
 ## Plan
 
-1. **Copy formats and format display** (step 1, built 2026-11-14): one copy button per export format (Formatted text, Plain text, Markdown, BBCode, M! Forum). Formats that match the captured text are marked. A "Received / Source format" line under the captured text shows measured clipboard facts and format candidates with their evidence.
-2. **Protection during Translate and Rewrite**: code, link targets, mentions, hashtags and unknown objects are replaced by placeholders before the request and restored afterwards. Link targets come from `href`, because sites may show shortened link text (see M! Forum). Links pass through every task unchanged and are restored as the original link elements, silently; a notice appears only if a link cannot be restored, and then Replace refuses instead of pasting dead text. Quotes are context, not the subject: every task works on the user's own text and reads the quotes only to understand it. Review and Rewrite leave quotes unchanged; Fact check checks only the user's claims and uses the quotes to understand what they answer; Summary and Explain use quotes as context; Translate translates them too; every quote level is kept. Chat formats (YouTube, WhatsApp, Slack) and Unicode bold join the export buttons after paste tests. Manual override of the source format.
+1. **Copy formats and format display** (step 1, built 2026-11-14): one copy button per export format (Formatted text, Plain text, Markdown, BBCode, M! Forum). Formats that match the captured text are marked. Every result (Review, fact check, Translate, Rewrite, Summary, Explain, dialog answers) copies through one "Copy as" row; Review and fact check add "Original formatting", the copied HTML with the accepted corrections, and write the other formats of a rich capture from that corrected HTML. A "Received / Source format" line under the captured text shows measured clipboard facts and format candidates with their evidence.
+2. **Protection during Translate and Rewrite** (built 2026-11-14, see "Rich captures"): code, link targets, mentions, hashtags and unknown objects are replaced by placeholders before the request and restored afterwards. Link targets come from `href`, because sites may show shortened link text (see M! Forum). Links pass through every task unchanged and are restored as the original link elements, silently; a notice appears only if a link cannot be restored, and then Replace refuses instead of pasting dead text. Quotes are context, not the subject: every task works on the user's own text and reads the quotes only to understand it. Review and Rewrite leave quotes unchanged; Fact check checks only the user's claims and uses the quotes to understand what they answer; Summary and Explain use quotes as context; Translate translates them too; every quote level is kept. YouTube and Reddit export buttons are built; WhatsApp, Slack and Unicode bold join after paste tests. Still open: hashtags as protected items, manual override of the source format, and paste tests of the YouTube and Reddit output.
 3. **Canonical document model**: one internal format for all tasks (see "Canonical format"), with a source map so Replace patches the original instead of rebuilding it. Decided after a benchmark of a small tag set against extended Markdown on real captures.
 
 ## Principles
@@ -75,6 +75,24 @@ Measured facts ("Received"): clipboard formats, CRLF/LF/CR counts, non-breaking 
 - Old forums may use Latin-1; do not turn emoji into `&#...;` automatically.
 - Length limits count differently per target (Discord 2,000 or 4,000 with Nitro; X weights emoji as 2 and URLs as 23). No verified official limits for YouTube and WhatsApp.
 
+## Rich captures (step 2)
+
+`CaptureReader` reads the CF_HTML fragment with a tokenizer (no DOM, nothing loaded) into three views:
+
+| View | Used by | Content |
+|---|---|---|
+| Model text | Translate, Rewrite | window markup plus placeholders `⟦n⟧` for links, videos, images, mentions, code and polls |
+| Context text | Summary, Explain, dialog | links as "text (full address)", `[Video: title, URL]`, `[Image: URL]`, `@name`, code in backticks, quotes as `> ` lines |
+| Protected ranges | Review, Fact check | quote and element ranges in the captured plain text, found in reading order with whitespace ignored; a passage that cannot be found is skipped |
+
+A forum post copied from the read view starts with its header (`data-testid="post-header"`). The header is forum page detail, not part of the post: its title, author and date are context ("[Post by name, date. Title: ...]" at the start of the context text, the fact-check context, and a block above the captured text); avatar, badges such as "Themenstimmung" and the numbers next to the icons are dropped. Nothing of the header goes into the text that Review, Translate and Rewrite work on. For read-only captures the header is also removed from the captured plain text, so it starts with the post. A selection may start anywhere above or inside the header: the copy holds the same, possibly cut, texts as the header markup, so leading blank lines and header texts are skipped, each as often as the header holds it. Short page parts above the header (up to 200 characters, such as the "Beitrag" divider) count as page details; a longer part, such as an earlier post, stays. An editable selection keeps its exact text so Replace can find it.
+
+Skipped while reading: `svg`, `button`, `style`, ProseMirror widgets, separator images, trailing breaks, image captions (`data-testid="image-card-caption"`), zero-width spaces. The reader only applies when a capture has quotes or protected objects; otherwise every task sends the plain text as before.
+
+The model must return every placeholder exactly once; Replace refuses otherwise and copying still works. Placeholders are restored only from the capture, never from the model: link targets must be http or https, and a mention's original HTML is pasted only into the M! Forum format and only when it is a single `mention-component` without event attributes or nested tags.
+
+Fact check sends the plain capture text (claim quotes must match it character for character) plus `quoted` (passages that quote others, never checked as claims) and `links` (full addresses).
+
 ## Canonical format (step 3 proposal)
 
 A small typed tag set ("TFDoc") rather than extended Markdown: `<doc v="1">` with `p`, `br`, `b`, `i`, `u`, `s`, `spoiler`, `mention ref`, `hashtag`, `a ref`, `code ref`, `pre ref lang`, `quote`, `h level`, `ul`, `ol start`, `li`, `hr`, `table`/`tr`/`th`/`td`, `span fmt` (source-only styling) and `opaque ref`. Every element has a stable id. Protected payloads (code, URLs, mention identities, unknown objects) stay in a local registry and are restored from it, never from the model. Validation compares ids, types, nesting and protected payloads, not just tag counts. Each task keeps its own result shape: Review returns mapped edits, Translate and Rewrite return changed blocks, Summary and Explain a new document.
@@ -98,12 +116,13 @@ Tiptap/ProseMirror editor. Tested 2026-11-14 by pasting prepared clipboard HTML 
 | inline code | not supported, arrives as text | none |
 | link | always shown as the URL without `https://`; labels are dropped (`node-mlink`) | `a` inside the link widget; long URLs are shortened with "..." in the visible text (`www.youtube.com/watch?v=DOhAx...`), the full URL is only in `href`. Plain text carries just the shortened text, so links must be read from the HTML and protected |
 | image link (png on imgur and others) | a normal link, no embedded image in the editor | same as link |
-| links in the read view (outside the editor) | — | the forum renders YouTube links as an embedded player and image links as the image with a caption "Quelle: <shortened link>"; a copy from the read view has no `a` elements: YouTube is an `iframe` (`youtube.com/embed/<id>`, video title in `title`), images are `img` with the full `src`, `alt` "Image: <domain>" and a caption "Quelle:" with the shortened link. Plain text drops the video completely and turns each image into the lines "Image: ...", "Quelle:" and the shortened link. A reader for this site builds the text for the model from the HTML: `[Video: <title> - <watch URL>]`, `[Image: <src>]`, captions removed |
+| links in the read view (outside the editor) | not applicable | the forum renders YouTube links as an embedded player and image links as the image with a caption "Quelle: <shortened link>"; a copy from the read view has no `a` elements: YouTube is an `iframe` (`youtube.com/embed/<id>`, video title in `title`), images are `img` with the full `src`, `alt` "Image: <domain>" and a caption "Quelle:" with the shortened link. Plain text drops the video completely and turns each image into the lines "Image: ...", "Quelle:" and the shortened link. A reader for this site builds the text for the model from the HTML: `[Video: <title> - <watch URL>]`, `[Image: <src>]`, captions removed |
 | heading, horizontal rule, line break | `h2`, `hr`, `br` ✅ | same |
+| paragraphs and empty lines | one `<p>` per line, without spacing; an empty line is an empty paragraph `<p><br></p>` | same |
 | umlauts, €, emoji with skin tone | ✅ | same |
 | poll | embedded object `div data-poll-id`, no text | lost in plain text |
 
-Export profile: Formatted HTML with `<spoiler>` for spoilers, `mention-component` only with a known ID, links as "Label: URL", inline code as plain text. Two kinds of copied HTML occur: clean editor HTML with `data-pm-slice`, and the browser's copy of the rendered editor with inline styles, widgets and a zero-width space before links. The clipboard carries `SourceURL`, which identifies the site.
+Export profile: Formatted HTML with one `<p>` per line and `<p><br></p>` between paragraphs, `<spoiler>` for spoilers, `mention-component` only with a known ID, links as "Label: URL", inline code as plain text. Two kinds of copied HTML occur: clean editor HTML with `data-pm-slice`, and the browser's copy of the rendered editor with inline styles, widgets and a zero-width space before links. The clipboard carries `SourceURL`, which identifies the site.
 
 ## Sources
 

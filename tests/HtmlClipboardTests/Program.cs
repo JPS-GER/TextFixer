@@ -73,4 +73,9 @@ reject = false;
 try { formatted.FixFormatting("word next", [fixes[0].Id], [new EditorEdit(3, 4, "d", "D")]); } catch (InvalidOperationException) { reject = true; }
 Check(reject, "abutting text correction rejected");
 Check(formatted.FixFormatting("word next", [], []).Fragment == formatted.Fragment, "no acceptance means no formatting change");
+var headed = Simple("<div><span>Beitrag</span><div data-testid=\"post-header\"><img alt=\"jp\"><b>jp</b> 26.02.2026</div><p>Der Txt &amp; mehr.</p></div>");
+var post = headed.WithoutLeadingText("Der Txt & mehr.");
+Check(post?.Fragment == "<div><span></span><div data-testid=\"post-header\"><img alt=\"jp\"><b></b></div><p>Der Txt &amp; mehr.</p></div>", "texts in front of the post text removed, tags kept");
+Check(post!.Rewrite("Der Txt & mehr.", [new EditorEdit(4, 7, "Txt", "Text")]).Contains("<p>Der Text &amp; mehr.</p>"), "the post text maps after the header is removed");
+Check(headed.WithoutLeadingText("Anderer Text.") is null, "a text that is not the end of the HTML text is refused");
 Console.WriteLine($"PASS: {count} rich clipboard paragraph, formatting, Unicode, entity, byte-offset and refusal checks.");

@@ -14,6 +14,8 @@ let captureId=0,activeTask='review',taskReady={},taskOption={},readyOption={},re
 let factOriginal='',factClaims=[],factWordings=[],factMeta=null,factContext='',factClarifications=[],factIds=0;
 // Rewrite steps for the current capture (each request changes the latest one) and Summary/Explain answers with their dialogs
 // (turns: alternating user and assistant messages; pending: the question waiting for an answer).
+// A rich capture (quotes, links, mentions, code): its protected items and ranges, and whether results use its markup.
+let captureDoc=null,translationStructured=false,translationIntact=true,rewriteStructured=false,rewriteIntact=true;
 let rewriteSteps=[],rewriteModel='',answers={},writingPrefs={email:'keep',address:'auto',reviewDu:'keep'};
 let shortcutLabels={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''},shortcutDefaults={...shortcutLabels},shortcutRegistered={},shortcutError=null,recordingTask=null,renderingShortcuts=false;
 const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify",needs_context:'Needs context'};
@@ -70,7 +72,7 @@ function focusParts(original){
   for(const focus of focusOrder){
     const r=tabResults[focus];if(!r||focus==='worth')continue;
     // Style corrections of the user's own text come from the Punctuation tab only, so they are not repeated per tab.
-    for(const p of styledParts(original,r.correctedText,r.corrections,focus==='punctuation')){
+    for(const p of protectParts(styledParts(original,r.correctedText,r.corrections,focus==='punctuation'),original)){
       if(!p.changed||duplicate(p))continue;
       if(!kept.some(k=>clash(k,p))){kept.push({...p,category:p.styleOnly?'punctuation':focus});continue;}
       // Same word changed by two tabs (for example "frauen" -> "Frauen" and "frauen" -> "frauen,"): keep the character-level edit when it fits.
@@ -229,8 +231,10 @@ function renderFacts(){
   const claims=factClaims,count=v=>claims.filter(c=>c.verdict===v).length;
   $('fact-count').textContent=claims.length;
   $('fact-meta').textContent=factMeta?`Researched in ${Math.max(1,Math.round(factMeta.ms/1000))} s with ${factMeta.model}`:'';
-  const parts=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"],['needs_context','need context']].filter(([v])=>count(v)).map(([v,t])=>`${count(v)} ${t}`);
-  $('fact-summary').textContent=claims.length?`${claims.length} ${claims.length===1?'claim':'claims'}: ${parts.join(', ')}.`:'No checkable factual claims found in this text.';
+  const kinds=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"],['needs_context','need context']].filter(([v])=>count(v));
+  const summary=list=>claims.length?`${claims.length} ${claims.length===1?'claim':'claims'}: ${list.join(', ')}.`:'No checkable factual claims found in this text.';
+  $('fact-summary').textContent=summary(kinds.map(([v,t])=>`${count(v)} ${t}`));
+  factSummaryCopy=summary(kinds.map(([v,t])=>`${verdictSymbol[v]} ${count(v)} ${t}`));
   const list=$('fact-claims');list.replaceChildren();
   $('fact-export').replaceChildren(...(claims.length?[exportRow(factResultsBlocks,{label:'Copy results as'})]:[]));
   for(const c of claims){
@@ -280,6 +284,8 @@ function renderFacts(){
 }
 function notice(message){$('notice').textContent=message||'Ready';$('notice').hidden=false;}
 function update(){
+  // Copy buttons of answers are built while a request may still be running; they follow the busy state from here.
+  for(const b of document.querySelectorAll?.('.export-button, .msg-foot .use-capture')||[])b.disabled=busy;
   $('count').textContent=`${$('source').value.length.toLocaleString()} / 30,000`;
   $('signin').disabled=busy;$('signout').disabled=busy;$('source').disabled=busy;
   $('cancel').hidden=!busy;
@@ -288,23 +294,21 @@ function update(){
   $('dialog-send').disabled=busy;$('dialog-question').disabled=busy;$('copy-conversation').disabled=busy;
   document.querySelectorAll('#formatting-findings input, #formatting-findings button').forEach(x=>x.disabled=locked()||$('allow-plain-text').checked);
   const formattedPaste=captureMode!=='chrome'&&richClipboard&&!$('allow-plain-text').checked;
-  $('copy').disabled=busy;$('apply').disabled=busy||!canReplace||(captureMode!=='chrome'&&!formattedPaste&&!$('allow-plain-text').checked);
+  $('copy').disabled=busy;$('copy').hidden=!formattedPaste;$('apply').disabled=busy||!canReplace||(captureMode!=='chrome'&&!formattedPaste&&!$('allow-plain-text').checked);
   $('allow-plain-text').disabled=busy;$('plain-text-option').hidden=captureMode==='chrome'||!canReplace;
-  $('apply').hidden=readOnlyCapture;$('copy').classList.toggle('primary',readOnlyCapture);$('readonly-hint').hidden=!readOnlyCapture;
-  $('copy-translation').disabled=busy;$('translation-request').disabled=busy;$('revise-translation-button').disabled=busy;$('apply-translation').disabled=busy||!canReplace;$('apply-translation').hidden=readOnlyCapture;$('copy-translation').classList.toggle('primary',readOnlyCapture);$('translation-readonly').hidden=!readOnlyCapture;
+  $('apply').hidden=readOnlyCapture;$('readonly-hint').hidden=!readOnlyCapture;
+  $('translation-request').disabled=busy;$('revise-translation-button').disabled=busy;$('apply-translation').disabled=busy||!canReplace||!translationIntact;$('apply-translation').textContent=translationStructured?'Replace selection':'Replace as plain text';$('apply-rewrite').textContent=rewriteStructured?'Replace selection':'Replace as plain text';$('rewrite-plain').hidden=rewriteStructured;$('apply-translation').hidden=readOnlyCapture;$('translation-readonly').hidden=!readOnlyCapture;
   const bulkCount=activeTab==='worth'?wordings.filter(w=>w.created&&!w.layoutProtected).length:tabCount(activeTab);
   $('accept-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);$('reject-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);
   document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true'||control.dataset.inactive==='true');
   document.querySelectorAll('#findings button').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true');
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
-  $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
-  $('copy-plain').hidden=!formattedPaste;$('copy-plain').disabled=busy;
   $('route').className='capture-icon';
   const captureLabel=captureMode==='chrome'?'Captured from Chrome':'Captured with '+(shortcutLabels[captureTask]||shortcutLabels.open);
   updateTaskMenu();
   const factFormatted=captureMode!=='chrome'&&richClipboard&&!$('fact-plain').checked;
   const factAccepted=factWordings.some(w=>w.accepted);
-  $('fact-copy').disabled=busy;$('fact-copy').textContent=factFormatted?'Copy with formatting':'Copy plain text';$('fact-copy-plain').hidden=!factFormatted;$('fact-copy-plain').disabled=busy;$('fact-copy').classList.toggle('primary',readOnlyCapture);
+  $('fact-copy').disabled=busy;$('fact-copy').hidden=!factFormatted;
   $('fact-apply').hidden=readOnlyCapture;$('fact-apply').disabled=busy||!canReplace||!factAccepted||(captureMode!=='chrome'&&!factFormatted&&!$('fact-plain').checked);
   $('fact-apply').textContent=captureMode==='chrome'?'Apply in Chrome':factFormatted?'Paste with formatting':'Paste plain text';
   $('fact-plain').disabled=busy;$('fact-plain-option').hidden=captureMode==='chrome'||!canReplace;$('fact-readonly').hidden=!readOnlyCapture;
@@ -470,12 +474,11 @@ $('allow-plain-text').onchange=update;
 document.querySelectorAll('input[data-writing]').forEach(r=>r.onchange=()=>{if(r.checked)post('writing',{[r.dataset.writing]:r.value});});
 renderTaskMenu();
 $('rewrite-form').onsubmit=e=>{e.preventDefault();requestRewrite($('rewrite-request').value.trim());};
-$('copy-rewrite').onclick=()=>post('copyResult',{kind:'rewrite',text:rewriteSteps.at(-1)?.text||''});
 // A result becomes the captured text for the next task.
 function useAsCapture(text){if(busy||!text?.trim())return;post('useAsCapture',{text});}
-$('use-review').onclick=()=>useAsCapture(revised());$('use-translation').onclick=()=>useAsCapture(translationText);
-$('use-fact').onclick=()=>useAsCapture(factRevised());$('use-rewrite').onclick=()=>useAsCapture(rewriteSteps.at(-1)?.text||'');
-$('apply-rewrite').onclick=()=>post('applyRewrite',{text:rewriteSteps.at(-1)?.text||'',original:sourceText});
+$('use-review').onclick=()=>useAsCapture(revised());$('use-translation').onclick=()=>useAsCapture(resultPlain(translationText,translationStructured));
+$('use-fact').onclick=()=>useAsCapture(factRevised());$('use-rewrite').onclick=()=>useAsCapture(resultPlain(rewriteSteps.at(-1)?.text||'',rewriteStructured));
+$('apply-rewrite').onclick=()=>{const text=rewriteSteps.at(-1)?.text||'';if(rewriteStructured)applyStructured('applyRewrite',text,sourceText);else post('applyRewrite',{text,original:sourceText});};
 $('rewrite-reset').onclick=()=>{rewriteSteps=[];renderRewrite();update();notice('Choose a preset or describe the change.');};
 $('dialog-form').onsubmit=e=>{e.preventDefault();askDialog();};
 $('dialog-question').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();askDialog();}};
@@ -483,8 +486,6 @@ $('dialog-question').oninput=sizeQuestion;
 $('copy-conversation').onclick=()=>{const a=answers[answerKey(activeTask)];if(a)post('copyResult',{kind:'conversation',text:conversationText(activeTask,a)});};
 document.querySelectorAll('input[data-style]').forEach(r=>r.onchange=()=>{if(r.checked)post('typography',{style:{[r.dataset.style]:r.value}});});
 $('revise-translation').onsubmit=e=>{e.preventDefault();const request=$('translation-request').value.trim();if(busy||!request||!translationText)return;notice('Revising the translation...');post('reviseTranslation',{text:translationOriginal,translation:translationText,request,captureId});};
-$('copy-plain').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:[],allowPlainText:true});
-$('fact-copy-plain').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:true});
 $('fact-copy').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-apply').onclick=()=>post('apply',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-plain').onchange=update;
@@ -492,7 +493,7 @@ $('fact-start').onclick=()=>startFactCheck($('fact-context').value);
 $('fact-recheck').onclick=()=>startFactCheck($('fact-context-more').value);
 $('fact-context').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context').value);}};
 $('fact-context-more').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context-more').value);}};
-$('copy-translation').onclick=()=>post('copyTranslation',{text:translationText});$('apply-translation').onclick=()=>post('applyTranslation',{text:translationText,original:translationOriginal});
+$('apply-translation').onclick=()=>{if(translationStructured)applyStructured('applyTranslation',translationText,translationOriginal);else post('applyTranslation',{text:translationText,original:translationOriginal});};
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
 document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
@@ -501,7 +502,13 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){formatInfo=detectFormat(m.text||'',m);captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
+  if(m.type==='capture'){formatInfo=detectFormat(m.text||'',m);captureDoc=m.doc&&m.text?{text:m.text,model:m.doc.model||'',title:m.doc.title||'',items:new Map((m.doc.items||[]).map(i=>[String(i.id),i])),ranges:m.doc.ranges||[]}:null;markupSetItems(captureDoc?.items);revisedRows();renderPostInfo(m.text?m.doc:null);translationStructured=false;translationIntact=true;rewriteStructured=false;rewriteIntact=true;captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
+  if(m.type==='revisedExport'){
+    if(!exportFormats.some(([f])=>f===m.format))return;
+    let out;markupSetItems(m.items);
+    try{out=markupExport(m.model||'',m.format);}finally{markupSetItems(captureDoc?.items);}
+    post('copyAs',{format:m.format,text:out.text,...(out.html?{html:out.html}:{})});return;
+  }
   if(m.type==='factCheck'){
     taskReady.factcheck=captureId;readyOption.factcheck='';factSetup=false;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
     const fresh=(m.result.claims||[]).map(c=>factClaim(c,m.original));
@@ -524,7 +531,7 @@ window.chrome.webview.addEventListener('message',event=>{
     if(ask){notice(`Fact check finished. ${ask} ${ask===1?'claim needs':'claims need'} more context: answer the question on the card.`);return;}
     notice(!factClaims.length?'Fact check finished. No checkable factual claims found.':wrong?`Fact check finished. ${wrong} wrong ${wrong===1?'claim':'claims'} found. Review the sources before using a correction.`:'Fact check finished. Review the verdicts and their sources.');
   }
-  if(m.type==='translation'){taskReady.translate=captureId;if(!m.revised)readyOption.translate=m.target&&m.target!=='auto'?m.target:'';$('translation-hint').textContent=readyOption.translate==='de'?'Translated into German.':readyOption.translate==='en'?'Translated into English.':'German text becomes English; text in other languages becomes German.';translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;$('translation-text').textContent=translationText;$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
+  if(m.type==='translation'){taskReady.translate=captureId;if(!m.revised)readyOption.translate=m.target&&m.target!=='auto'?m.target:'';$('translation-hint').textContent=readyOption.translate==='de'?'Translated into German.':readyOption.translate==='en'?'Translated into English.':'German text becomes English; text in other languages becomes German.';translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);translationStructured=!!m.structured;translationIntact=m.intact!==false;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;showResultText('translation-text',translationText,translationStructured);$('translation-export').replaceChildren();$('translation-export').append(exportRow(()=>translationText));$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(!translationIntact?missingNotice('translation'):m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
   if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
   if(m.type==='historyCopied'){copiedId=m.id;copiedPlain=!!m.plain;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
@@ -548,7 +555,7 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='shortcuts'){shortcutLabels={...shortcutLabels,...m.shortcuts};shortcutDefaults={...shortcutDefaults,...m.defaults};shortcutRegistered=m.registered||{};shortcutError=m.error?{task:m.errorTask,message:m.error}:null;recordingTask=null;renderShortcuts();}
   if(m.type==='writing'){
     const text=reviewPlainStyle(m.result,m.original,punctuationStyle);canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
-    if(m.kind==='rewrite'){rewriteSteps.push({text,request:m.request||''});rewriteModel=m.model||'';$('rewrite-request').value='';taskReady.rewrite=captureId;renderRewrite();notice(readOnlyCapture?'Rewrite ready. Copy it, or request another change.':'Rewrite ready. Copy it, replace your selection, or request another change.');}
+    if(m.kind==='rewrite'){rewriteSteps.push({text,request:m.request||''});rewriteStructured=!!m.structured;rewriteIntact=m.intact!==false;rewriteModel=m.model||'';$('rewrite-request').value='';taskReady.rewrite=captureId;renderRewrite();notice(!rewriteIntact?missingNotice('rewrite'):readOnlyCapture?'Rewrite ready. Copy it, or request another change.':'Rewrite ready. Copy it, replace your selection, or request another change.');}
     else{answers[m.kind+':'+(m.variant||'')]={text,model:m.model||'',turns:[],pending:''};taskReady[m.kind]=captureId;notice(m.kind==='summary'?'Summary ready.':'Explanation ready.');}
     showTaskView();
   }
@@ -565,7 +572,7 @@ window.chrome.webview.addEventListener('message',event=>{
     if(m.error){tabState[m.focus]='failed';tabErrors[m.focus]=m.error;}
     else{
       tabState[m.focus]='ready';
-      if(m.focus==='worth'){reviewFindings=styledFindings(m.result.findings);wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);}
+      if(m.focus==='worth'){reviewFindings=styledFindings(m.result.findings);wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(w=>w&&!insideProtected(w,reviewOriginal));}
       else{tabResults[m.focus]=m.result;parts=focusParts(reviewOriginal);}
     }
     if(autoTab)activeTab=reviewTabs.find(([k])=>tabState[k]==='ready'&&tabCount(k)>0)?.[0]||'spelling';
@@ -574,9 +581,9 @@ window.chrome.webview.addEventListener('message',event=>{
   }
   if(m.type==='result'){
     taskReady.review=captureId;readyOption.review=requestedOption.review||'';partialReview=false;tabState={};
-    activeTab='spelling';reviewOriginal=m.original;parts=styledParts(m.original,m.result.correctedText,m.result.corrections);
+    activeTab='spelling';reviewOriginal=m.original;parts=protectParts(styledParts(m.original,m.result.correctedText,m.result.corrections),m.original);
     reviewFindings=styledFindings(m.result.findings);
-    wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(Boolean);
+    wordings=reviewFindings.map((f,i)=>reviewWording(reviewOriginal,f,i)).filter(w=>w&&!insideProtected(w,reviewOriginal));
     captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;showFormatting(m.formattingSuggestions||[]);activeTab=reviewTabs.find(([key])=>tabCount(key)>0)?.[0]||'spelling';showChanges();$('model').textContent=m.model||'';$('results').hidden=false;
     notice(parts.some(p=>p.layoutProtected)?'Review ready. Suggestions that would change line breaks were excluded to preserve your paragraph layout.':(readOnlyCapture?'Review ready. Accept or reject corrections, then copy your text.':'Review ready. Accept or reject corrections, then copy or replace your text.'));
   }
@@ -751,7 +758,7 @@ const textSize=(()=>{
   return {get size(){return size;},step,set,close,isOpen:()=>open};
 })();
 // ---- Source format of the captured text and the export buttons (docs/text-formats.md).
-const siteProfiles={'maniac-forum.de':['mforum','M! Forum']};
+const siteProfiles={'maniac-forum.de':['mforum','M! Forum'],'youtube.com':['youtube','YouTube'],'reddit.com':['reddit','Reddit']};
 let formatInfo={matches:new Set(),source:'',evidence:'',unknown:'',received:''};
 function siteProfile(host){
   const h=(host||'').toLowerCase();
@@ -814,8 +821,44 @@ function renderFormatInfo(){
   $('format-evidence').hidden=!formatInfo.evidence&&!formatInfo.unknown;
   $('format-received').textContent='Received: '+formatInfo.received+'.';
 }
+// Title, author and date of a copied forum post: page details shown above the captured text, not part of it.
+function renderPostInfo(doc){
+  const box=$('post-info');box.replaceChildren();
+  if(doc?.title){const t=document.createElement('strong');t.className='post-title';t.textContent=doc.title;box.append(t);}
+  if(doc?.post){const b=document.createElement('span');b.className='post-byline';b.textContent=doc.post;box.append(b);}
+  box.hidden=!doc?.title&&!doc?.post;
+}
+// Results of a rich capture keep its markup and placeholders: shown formatted, copied and pasted in the capture's
+// format with every link, mention and code restored from the capture.
+const resultFormat=()=>formatInfo.matches.has('mforum')?'mforum':'formatted';
+function resultPlain(text,structured){return structured?markupExport(text,'plain').text:text;}
+// Corrected text in every export format. The corrections of a rich capture go through the window, which edits the
+// copied HTML and reads it again, so links, quotes and mentions stay; Original formatting pastes that HTML as it is.
+function revisedRequest(kind){return kind==='fact'?{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[]}:{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting()};}
+function exportRevised(kind,format){
+  const r=revisedRequest(kind);if(!r.text)return;
+  if(format==='plain'){post('copyAs',{format,text:r.text});return;}
+  if(captureMode!=='chrome'&&richClipboard){post('exportRevised',{...r,format});return;}
+  const out=markupExport(r.text,format);post('copyAs',{format,text:out.text,...(out.html?{html:out.html}:{})});
+}
+function revisedRows(){
+  for(const [id,kind,original] of [['review-export','review','copy'],['fact-revised-export','fact','fact-copy']]){
+    const row=exportRow(null,{onExport:format=>exportRevised(kind,format)});
+    row.children[0].after?.($(original));
+    $(id).replaceChildren();$(id).append(row);
+  }
+}
+function applyStructured(action,text,original){const out=markupExport(text,resultFormat());post(action,{text:out.text,html:out.html,model:text,original});}
+function showResultText(id,text,structured){const el=$(id);if(structured){renderMarkup(el,text);return;}el.classList?.remove?.('md');el.textContent=text;}
+const missingNotice=what=>`Some links or other objects are missing from the ${what}. Try again before replacing your selection, or copy the ${what}.`;
+// Quotes, link texts, mentions and code of a rich capture stay as they are: Review drops suggestions inside them.
+function insideProtected(p,original){
+  if(!captureDoc||original!==captureDoc.text)return false;
+  return captureDoc.ranges.some(([s,e])=>p.start===p.end?s<p.start&&p.start<e:p.start<e&&s<p.end);
+}
+function protectParts(list,original){return list.map(p=>p.changed&&insideProtected(p,original)?{...p,after:p.before,changed:false}:p);}
 // One copy button per export format; a dot marks the formats that match the captured text.
-function exportRow(source,{small=false,label='Copy as'}={}){
+function exportRow(source,{small=false,label='Copy as',onExport=null}={}){
   const row=document.createElement('div');row.className='export-row'+(small?' small':'');
   const title=document.createElement('span');title.className='export-label';title.textContent=label;row.append(title);
   for(const [format,name,tip] of exportFormats){
@@ -825,6 +868,7 @@ function exportRow(source,{small=false,label='Copy as'}={}){
     if(match){const dot=document.createElement('span');dot.className='match-dot';button.append(dot);}
     const text=document.createElement('span');text.textContent=name;button.append(text);
     button.onclick=()=>{
+      if(onExport){if(!busy)onExport(format);return;}
       const content=typeof source==='function'?source():source;
       if(busy||!content||!content.length)return;
       const out=markupExport(content,format);
@@ -834,16 +878,22 @@ function exportRow(source,{small=false,label='Copy as'}={}){
   }
   return row;
 }
-// Fact check results for copying: verdict and claim, correction or question, explanation, sources.
+// Fact check results for copying, laid out like the cards: a rule between claims, the verdict, the claim as a quote,
+// the explanation, the sources as links, then a correction or question.
+// Text symbols mark the verdicts in copied results; they take the text color, so they work where color does not.
+const verdictSymbol={supported:'✓',wrong:'✗',disputed:'◐',needs_context:'?',unverifiable:'○'};
+let factSummaryCopy='';
 function factResultsBlocks(){
-  const blocks=[{type:'p',lines:[{runs:[{text:$('fact-summary').textContent}]}]}];
+  const line=runs=>({type:'p',lines:[{runs}]});
+  const link=x=>({text:'',token:{kind:'link',label:x.title||x.url,url:x.url}});
+  const blocks=[line([{text:factSummaryCopy||$('fact-summary').textContent,bold:true}])];
   for(const c of factClaims){
-    const lines=[{runs:[{text:verdictLabel[c.verdict]+':',bold:true},{text:' "'+c.quote+'"'}]}];
-    if(c.correction)lines.push({runs:[{text:'Correction:',bold:true},{text:' '+c.correction}]});
-    if(c.verdict==='needs_context'&&c.question)lines.push({runs:[{text:'Question:',bold:true},{text:' '+c.question}]});
-    blocks.push({type:'p',lines});
+    blocks.push({type:'hr'},line([{text:`${verdictSymbol[c.verdict]} ${verdictLabel[c.verdict]}`,bold:true}]),{type:'quote',blocks:[line([{text:c.quote}])]});
     if(c.explanation)blocks.push(...markupBlocks(c.explanation));
-    if(c.sources?.length)blocks.push({type:'p',lines:[{runs:[{text:'Sources:'}]}]},{type:'ul',items:c.sources.map(x=>({text:{runs:[{text:`${x.title}: ${x.url}`}]}}))});
+    if(c.sources?.length===1)blocks.push(line([{text:'↗ Source: '},link(c.sources[0])]));
+    else if(c.sources?.length)blocks.push(line([{text:'↗ Sources:'}]),{type:'ul',items:c.sources.map(x=>({text:{runs:[link(x)]}}))});
+    if(c.correction)blocks.push(line([{text:'→ Correction:',bold:true},{text:' '+c.correction}]));
+    if(c.verdict==='needs_context'&&c.question)blocks.push(line([{text:'? Question:',bold:true},{text:' '+c.question}]));
   }
   return blocks;
 }
@@ -900,10 +950,12 @@ function renderRewrite(){
   const last=rewriteSteps.at(-1);
   $('rewrite-empty').hidden=!!last;$('rewrite-result').hidden=!last;
   if(!last)return;
-  $('rewrite-text').textContent=last.text;$('rewrite-model').textContent=rewriteModel;
+  showResultText('rewrite-text',last.text,rewriteStructured);$('rewrite-export').replaceChildren();$('rewrite-export').append(exportRow(()=>rewriteSteps.at(-1)?.text||''));$('rewrite-model').textContent=rewriteModel;
   $('rewrite-steps').textContent='Changes requested: '+rewriteSteps.map(s=>rewritePresets.find(p=>p[1]===s.request)?.[0]||s.request).join(', then ');
   const changes=$('rewrite-changes');changes.replaceChildren();
-  for(const part of textFixerDiff(sourceText,last.text)){
+  // A rich capture compares the plain forms of its marked-up text and the rewrite, so quotes and links line up.
+  const diffFrom=rewriteStructured&&captureDoc?.model?resultPlain(captureDoc.model,true):sourceText;
+  for(const part of textFixerDiff(diffFrom,resultPlain(last.text,rewriteStructured))){
     if(!part.changed){const span=document.createElement('span');span.textContent=part.after;changes.append(span);continue;}
     if(part.before){const del=document.createElement('del');del.textContent=part.before;changes.append(del);}
     if(part.after){const ins=document.createElement('ins');ins.textContent=part.after;changes.append(ins);}

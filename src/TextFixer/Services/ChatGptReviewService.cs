@@ -143,7 +143,8 @@ public sealed class ChatGptReviewService : IReviewService
     /// Translates into <paramref name="target"/>: auto turns German into English and other text into German. Keeps the
     /// leading and trailing whitespace of the selection.
     /// </summary>
-    public async Task<string> TranslateAsync(string text, CancellationToken cancellationToken, string target = ReviewPrompt.TargetAuto)
+    /// <param name="extra">Additional instructions, such as <see cref="ReviewPrompt.MarkupRules"/> for a rich capture.</param>
+    public async Task<string> TranslateAsync(string text, CancellationToken cancellationToken, string target = ReviewPrompt.TargetAuto, string extra = "")
     {
         if (target is not (ReviewPrompt.TargetAuto or ReviewPrompt.TargetGerman or ReviewPrompt.TargetEnglish)) target = ReviewPrompt.TargetAuto;
         ArgumentNullException.ThrowIfNull(text);
@@ -157,7 +158,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, TranslationStyle, target), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRequest(model, text, extra + TranslationStyle, target), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return KeepOuterWhitespace(text, output);
@@ -169,7 +170,7 @@ public sealed class ChatGptReviewService : IReviewService
     /// Rewrite (as <paramref name="request"/> asks), summary or explanation of <paramref name="text"/>, answered as plain
     /// text. A rewrite keeps the leading and trailing whitespace of the selection.
     /// </summary>
-    public async Task<string> WriteAsync(string kind, string text, string? request, CancellationToken cancellationToken, string variant = "")
+    public async Task<string> WriteAsync(string kind, string text, string? request, CancellationToken cancellationToken, string variant = "", string extra = "")
     {
         variant ??= "";
         if (variant.Length > 0 && !(ReviewPrompt.Variants.TryGetValue(kind, out var variants) && variants.Contains(variant))) variant = "";
@@ -185,7 +186,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildWritingRequest(model, kind, text, request, Style, variant), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildWritingRequest(model, kind, text, request, extra + Style, variant), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         if (kind == ReviewPrompt.Rewrite) return KeepOuterWhitespace(text, output);
@@ -201,7 +202,7 @@ public sealed class ChatGptReviewService : IReviewService
     /// search and the fact-check model. <paramref name="turns"/> alternates assistant and user, starting with the first
     /// answer and ending with the new question. An answer without a completed search reports Searches = 0.
     /// </summary>
-    public async Task<DialogAnswer> DiscussAsync(string kind, string text, IReadOnlyList<DialogTurn> turns, CancellationToken cancellationToken)
+    public async Task<DialogAnswer> DiscussAsync(string kind, string text, IReadOnlyList<DialogTurn> turns, CancellationToken cancellationToken, string extra = "")
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(turns);
@@ -225,7 +226,7 @@ public sealed class ChatGptReviewService : IReviewService
         var (response, model) = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.FactCheck).ConfigureAwait(false);
-            return (await _responses.StreamResponseAsync(token, ReviewPrompt.BuildDialogRequest(model, kind, text, turns, Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false), model);
+            return (await _responses.StreamResponseAsync(token, ReviewPrompt.BuildDialogRequest(model, kind, text, turns, extra + Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false), model);
         }, cancellationToken).ConfigureAwait(false);
 
         var (answer, sources) = FactCheckParser.CitedAnswer(response);
@@ -234,7 +235,7 @@ public sealed class ChatGptReviewService : IReviewService
     }
 
     /// <summary>Revises <paramref name="translation"/> of <paramref name="source"/> as the user asks, for example a more formal tone.</summary>
-    public async Task<string> ReviseTranslationAsync(string source, string translation, string request, CancellationToken cancellationToken)
+    public async Task<string> ReviseTranslationAsync(string source, string translation, string request, CancellationToken cancellationToken, string extra = "")
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(translation);
@@ -247,7 +248,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.Translate).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, TranslationStyle), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildTranslationRevisionRequest(model, source, translation.Trim(), request, extra + TranslationStyle), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         return KeepOuterWhitespace(source, output);
@@ -272,7 +273,7 @@ public sealed class ChatGptReviewService : IReviewService
     /// <param name="clarifications">The user's answers to questions of needs_context claims.</param>
     /// <param name="only">Quotes to check again; empty checks the whole text.</param>
     public async Task<FactCheckResult> FactCheckAsync(string text, CancellationToken cancellationToken, string context = "",
-        IReadOnlyList<FactClarification>? clarifications = null, IReadOnlyList<string>? only = null)
+        IReadOnlyList<FactClarification>? clarifications = null, IReadOnlyList<string>? only = null, IReadOnlyList<string>? quoted = null, IReadOnlyList<string>? links = null)
     {
         ArgumentNullException.ThrowIfNull(text);
         context = context?.Trim() ?? "";
@@ -294,7 +295,7 @@ public sealed class ChatGptReviewService : IReviewService
         var (response, model) = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken, ModelTask.FactCheck).ConfigureAwait(false);
-            return (await RequestFactCheckAsync(token, model, text, context, clarifications, only, cancellationToken).ConfigureAwait(false), model);
+            return (await RequestFactCheckAsync(token, model, text, context, clarifications, only, quoted ?? [], links ?? [], cancellationToken).ConfigureAwait(false), model);
         }, cancellationToken).ConfigureAwait(false);
 
         var claims = FactCheckParser.Parse(text, response);
@@ -310,12 +311,12 @@ public sealed class ChatGptReviewService : IReviewService
     }
 
     private async Task<ResponseResult> RequestFactCheckAsync(string token, string model, string text, string context,
-        IReadOnlyList<FactClarification> clarifications, IReadOnlyList<string> only, CancellationToken cancellationToken)
+        IReadOnlyList<FactClarification> clarifications, IReadOnlyList<string> only, IReadOnlyList<string> quoted, IReadOnlyList<string> links, CancellationToken cancellationToken)
     {
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle, context, clarifications, only), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle, context, clarifications, only, quoted, links), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -323,7 +324,7 @@ public sealed class ChatGptReviewService : IReviewService
             && (ex.ApiParam is null || ex.ApiParam.StartsWith("text", StringComparison.Ordinal)))
         {
             _structuredOutputUnsupported = true;
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle, context, clarifications, only), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle, context, clarifications, only, quoted, links), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
     }
 

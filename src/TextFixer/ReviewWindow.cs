@@ -86,7 +86,22 @@ internal sealed class ReviewWindow : Form
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
     /// <param name="task">open shows the task choice; any other task from <see cref="Shortcuts.Tasks"/> starts right away.</param>
-    internal void SetCapture(CapturedText capture, string task = "review") { _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); _dialogSources.Clear(); SendCapture(); }
+    internal void SetCapture(CapturedText capture, string task = "review")
+    {
+        // A read-only copy of a forum post loses its header (avatar name, author, badges, date, title, stats): forum
+        // page detail, not part of the post; author, date and title stay available as context. An editable selection
+        // keeps its exact text, which Replace needs to find again.
+        // Copy with formatting edits the clipboard HTML without the header texts; the reader keeps the full HTML for
+        // author, date and title.
+        string? readerFragment = null;
+        if (capture.Editable == false && capture.Html?.Fragment is { } fragment && CaptureReader.ReadHeader(fragment) is { } postHeader
+            && CaptureReader.WithoutHeader(capture.Text, postHeader) is var postText && postText != capture.Text)
+        {
+            capture = capture with { Text = postText, Html = capture.Html.WithoutLeadingText(postText) ?? capture.Html };
+            readerFragment = fragment;
+        }
+        _readerFragment = readerFragment;
+        _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); _dialogSources.Clear(); SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
     {
@@ -165,7 +180,32 @@ internal sealed class ReviewWindow : Form
     private readonly HashSet<string> _factSources = new(StringComparer.Ordinal);
     /// <summary>Source URLs cited in the Summary and Explain dialogs of the current capture.</summary>
     private readonly HashSet<string> _dialogSources = new(StringComparer.Ordinal);
-    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome", clip = ClipInfo() });
+    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome", clip = ClipInfo(), doc = DocumentInfo() });
+
+    private CapturedText? _documentFor;
+    private CaptureDocument? _document;
+    private string? _readerFragment;
+    /// <summary>
+    /// The rich capture read for the model (quotes, links and other protected objects), or null for plain and Chrome
+    /// captures and for text without quotes or protected objects. Read once per capture.
+    /// </summary>
+    private CaptureDocument? Document()
+    {
+        if (_chromeCapture is not null || _capture?.Html?.Fragment is not { Length: > 0 } fragment) return null;
+        if (!ReferenceEquals(_documentFor, _capture))
+        {
+            _documentFor = _capture;
+            try { _document = CaptureReader.Read(_readerFragment ?? fragment, _capture.Text); }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { _document = null; }
+        }
+        return _document is { Structured: true } ? _document : null;
+    }
+    /// <summary>The window's copy of the document: placeholder items to resolve answers with, and the protected ranges for Review.</summary>
+    private object? DocumentInfo() => Document() is { } document
+        ? new { model = document.ModelText, items = document.Items.Select(i => new { id = i.Id, kind = i.Kind, label = i.Label, url = i.Url, html = i.Kind == "mention" ? i.Html : null }), ranges = document.ProtectedRanges, quotes = document.HasQuotes, post = document.Post?.Byline, title = document.Post?.Title }
+        : null;
+    /// <summary>The document when <paramref name="text"/> is the current capture's text.</summary>
+    private CaptureDocument? DocumentFor(string text) => _capture is not null && _capture.Text == text ? Document() : null;
 
     private static readonly HashSet<string> StandardTags = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -499,6 +539,24 @@ internal sealed class ReviewWindow : Form
                 return;
             }
             if (Busy) return;
+            if (action == "exportRevised")
+            {
+                // The corrected text of a rich capture for Copy as: the copied HTML with the corrections, read again so
+                // links, quotes and mentions stay. The window writes the chosen format from it.
+                try
+                {
+                    var exportText = ReadText(root);
+                    var corrected = PrepareClipboardHtml(root, exportText) is { } encoded ? HtmlClipboard.Parse(encoded)?.Fragment : null;
+                    if (corrected is null) throw new InvalidOperationException("Capture the text again to copy it with links and formatting.");
+                    CaptureDocument? correctedDocument;
+                    try { correctedDocument = CaptureReader.Read(corrected, exportText); }
+                    catch (System.Text.RegularExpressions.RegexMatchTimeoutException) { correctedDocument = null; }
+                    var exportAs = root.TryGetProperty("format", out var exportAsElement) && exportAsElement.ValueKind == JsonValueKind.String ? exportAsElement.GetString() : null;
+                    Send(new { type = "revisedExport", format = exportAs, model = correctedDocument?.ModelText ?? exportText, items = (correctedDocument?.Items ?? []).Select(i => new { id = i.Id, kind = i.Kind, label = i.Label, url = i.Url, html = i.Kind == "mention" ? i.Html : null }) });
+                }
+                catch (InvalidOperationException ex) { Notify(ex.Message); }
+                return;
+            }
             if (action == "chromeStatus") { SendChromeStatus(); SendAutostart(); return; }
             if (action == "registerChrome")
             {
@@ -532,7 +590,7 @@ internal sealed class ReviewWindow : Form
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck" or "write" or "discuss" or "copyResult" or "copyAs" or "applyRewrite")) return;
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "applyTranslation" or "factCheck" or "write" or "discuss" or "copyResult" or "copyAs" or "applyRewrite")) return;
             _replyCaptureId = root.TryGetProperty("captureId", out var requestCapture) && requestCapture.ValueKind == JsonValueKind.Number && requestCapture.TryGetInt32(out var id) ? id : _captureId;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
@@ -564,16 +622,18 @@ internal sealed class ReviewWindow : Form
                         var source = ReadText(root);
                         if (_capture is not null && _capture.Text != source) _capture = null;
                         var target = root.TryGetProperty("target", out var targetElement) && targetElement.ValueKind == JsonValueKind.String ? targetElement.GetString() ?? ReviewPrompt.TargetAuto : ReviewPrompt.TargetAuto;
-                        var translation = await _service.TranslateAsync(source, _operation.Token, target);
-                        Send(new { type = "translation", captureId = _replyCaptureId, original = source, translation, target, canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        var translateDocument = DocumentFor(source);
+                        var translation = await _service.TranslateAsync(translateDocument?.ModelText ?? source, _operation.Token, target, translateDocument is null ? "" : ReviewPrompt.MarkupRules);
+                        Send(new { type = "translation", captureId = _replyCaptureId, original = source, translation, target, structured = translateDocument is not null, intact = translateDocument is null || CaptureReader.Intact(translateDocument, translation), canReplace = _capture is not null && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "reviseTranslation":
                         var revisedFrom = ReadText(root);
                         var current = root.TryGetProperty("translation", out var currentElement) ? currentElement.GetString() ?? "" : "";
                         var wish = root.TryGetProperty("request", out var wishElement) ? wishElement.GetString() ?? "" : "";
                         if (string.IsNullOrWhiteSpace(current)) throw new InvalidOperationException("Translate the text first.");
-                        var revisedTranslation = await _service.ReviseTranslationAsync(revisedFrom, current, wish, _operation.Token);
-                        Send(new { type = "translation", captureId = _replyCaptureId, original = revisedFrom, translation = revisedTranslation, revised = true, canReplace = _capture is not null && _capture.Text == revisedFrom && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        var reviseDocument = DocumentFor(revisedFrom);
+                        var revisedTranslation = await _service.ReviseTranslationAsync(reviseDocument?.ModelText ?? revisedFrom, current, wish, _operation.Token, reviseDocument is null ? "" : ReviewPrompt.MarkupRules);
+                        Send(new { type = "translation", captureId = _replyCaptureId, original = revisedFrom, translation = revisedTranslation, revised = true, structured = reviseDocument is not null, intact = reviseDocument is null || CaptureReader.Intact(reviseDocument, revisedTranslation), canReplace = _capture is not null && _capture.Text == revisedFrom && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "factCheck":
                         var checkedText = ReadText(root);
@@ -593,7 +653,11 @@ internal sealed class ReviewWindow : Form
                         if (root.TryGetProperty("only", out var onlyElement) && onlyElement.ValueKind == JsonValueKind.Array)
                             foreach (var item in onlyElement.EnumerateArray())
                                 if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } quote) only.Add(quote);
-                        var facts = await _service.FactCheckAsync(checkedText, _operation.Token, factContext, clarifications, only);
+                        // Quoted passages are context, not claims; links give the full address behind shortened link texts.
+                        var factDocument = DocumentFor(checkedText);
+                        // Who posted the text and when tells the fact check which time the claims refer to.
+                        if (factDocument?.Post?.ContextLine is { } factAbout) factContext = (factAbout + ".\n" + factContext).Trim();
+                        var facts = await _service.FactCheckAsync(checkedText, _operation.Token, factContext, clarifications, only, factDocument?.Quoted(checkedText), factDocument?.Links);
                         if (_replyCaptureId == _captureId)
                         {
                             if (only.Count == 0) _factSources.Clear();
@@ -609,8 +673,19 @@ internal sealed class ReviewWindow : Form
                         var writeOriginal = root.TryGetProperty("original", out var writeOriginalElement) && writeOriginalElement.ValueKind == JsonValueKind.String ? writeOriginalElement.GetString() ?? writeFrom : writeFrom;
                         var writeRequest = root.TryGetProperty("request", out var writeRequestElement) && writeRequestElement.ValueKind == JsonValueKind.String ? writeRequestElement.GetString() : null;
                         var variant = root.TryGetProperty("variant", out var variantElement) && variantElement.ValueKind == JsonValueKind.String ? variantElement.GetString() ?? "" : "";
-                        var written = await _service.WriteAsync(kind, writeFrom, writeRequest, _operation.Token, variant);
-                        Send(new { type = "writing", captureId = _replyCaptureId, kind, variant, original = writeOriginal, result = written, request = writeRequest, canReplace = _capture is not null && _capture.Text == writeOriginal && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
+                        // A rich capture: Rewrite works on the marked-up text with placeholders (a chained rewrite already has them),
+                        // Summary and Explain read the spelled-out text with quotes as context.
+                        var writeDocument = DocumentFor(writeOriginal);
+                        var writeText = writeFrom; var writeExtra = "";
+                        if (writeDocument is not null && kind == ReviewPrompt.Rewrite)
+                        {
+                            if (writeFrom == writeOriginal) writeText = writeDocument.ModelText;
+                            writeExtra = ReviewPrompt.MarkupRules + (writeDocument.HasQuotes ? ReviewPrompt.QuotesUnchangedRule : "");
+                        }
+                        else if (writeDocument is not null && writeFrom == writeOriginal) { writeText = writeDocument.ContextText; writeExtra = ReviewPrompt.QuotesContextRule; }
+                        var written = await _service.WriteAsync(kind, writeText, writeRequest, _operation.Token, variant, writeExtra);
+                        var structuredRewrite = writeDocument is not null && kind == ReviewPrompt.Rewrite;
+                        Send(new { type = "writing", captureId = _replyCaptureId, kind, variant, original = writeOriginal, result = written, request = writeRequest, structured = structuredRewrite, intact = !structuredRewrite || CaptureReader.Intact(writeDocument!, written), canReplace = _capture is not null && _capture.Text == writeOriginal && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
                     case "discuss":
                         // A follow-up question about a summary or explanation; "text" is the capture, "turns" the conversation so far.
@@ -626,7 +701,8 @@ internal sealed class ReviewWindow : Form
                                 var turnText = turn.TryGetProperty("text", out var turnTextElement) && turnTextElement.ValueKind == JsonValueKind.String ? turnTextElement.GetString() ?? "" : "";
                                 turns.Add(new Contracts.DialogTurn(role, turnText));
                             }
-                        var dialogAnswer = await _service.DiscussAsync(discussKind, discussed, turns, _operation.Token);
+                        var discussDocument = DocumentFor(discussed);
+                        var dialogAnswer = await _service.DiscussAsync(discussKind, discussDocument?.ContextText ?? discussed, turns, _operation.Token, discussDocument is null ? "" : ReviewPrompt.QuotesContextRule);
                         if (_replyCaptureId == _captureId)
                             foreach (var cited in dialogAnswer.Sources) _dialogSources.Add(cited.Url);
                         Send(new { type = "dialog", captureId = _replyCaptureId, kind = discussKind, question = turns[^1].Text, answer = dialogAnswer });
@@ -640,19 +716,16 @@ internal sealed class ReviewWindow : Form
                         // Export formats are written by the window from the answer structure; the HTML fragment is
                         // escaped there and only placed on the clipboard here.
                         var exportFormat = root.TryGetProperty("format", out var exportFormatElement) && exportFormatElement.ValueKind == JsonValueKind.String ? exportFormatElement.GetString() : null;
-                        var exportLabel = exportFormat switch { "formatted" => "formatted text", "plain" => "plain text", "markdown" => "Markdown", "bbcode" => "BBCode", "mforum" => "M! Forum text", _ => throw new InvalidOperationException("Choose a copy format.") };
+                        var exportLabel = exportFormat switch { "formatted" => "formatted text", "plain" => "plain text", "markdown" => "Markdown", "bbcode" => "BBCode", "mforum" => "M! Forum text", "reddit" => "Reddit text", "youtube" => "YouTube text", _ => throw new InvalidOperationException("Choose a copy format.") };
                         var exportHtml = exportFormat is "formatted" or "mforum" && root.TryGetProperty("html", out var exportHtmlElement) && exportHtmlElement.ValueKind == JsonValueKind.String ? exportHtmlElement.GetString() : null;
                         if (exportHtml is { Length: > 1_000_000 }) throw new InvalidOperationException("This result is too long to copy with formatting.");
                         TextTransfer.CopyExport(ReadText(root), exportHtml);
                         Notify($"Copied as {exportLabel}.");
                         break;
-                    case "copyTranslation":
-                        TextTransfer.CopyRevision(ReadText(root));
-                        Notify("Translation copied to the clipboard.");
-                        break;
                     case "applyTranslation":
                     case "applyRewrite":
-                        // Both replace the whole selection with plain text.
+                        // Both replace the whole selection: plain text, or for a rich capture the window's HTML with every
+                        // placeholder resolved. A result that lost a placeholder is never pasted.
                         var translated = ReadText(root);
                         var what = action == "applyRewrite" ? "rewrite" : "translation";
                         if (_capture is null) throw new InvalidOperationException($"Capture a selection with a shortcut first, or copy the {what}.");
@@ -660,11 +733,21 @@ internal sealed class ReviewWindow : Form
                         if (!root.TryGetProperty("original", out var translatedFrom) || translatedFrom.GetString() != _capture.Text)
                             throw new InvalidOperationException($"The {what} no longer matches the captured selection. Capture the text again.");
                         var translateCapture = _capture;
+                        string? resultHtml = null;
+                        if (Document() is { } applyDocument)
+                        {
+                            var tokens = root.TryGetProperty("model", out var modelElement) && modelElement.ValueKind == JsonValueKind.String ? modelElement.GetString() ?? "" : "";
+                            if (!CaptureReader.Intact(applyDocument, tokens))
+                                throw new InvalidOperationException($"Some links or other objects are missing from the {what}. Nothing was replaced. Try again, or copy the {what}.");
+                            var fragment = root.TryGetProperty("html", out var htmlElement) && htmlElement.ValueKind == JsonValueKind.String ? htmlElement.GetString() : null;
+                            if (fragment is { Length: > 1_000_000 }) throw new InvalidOperationException($"This {what} is too long to paste with formatting.");
+                            if (fragment is not null) resultHtml = new HtmlClipboard("<html><body><!--StartFragment-->", fragment, "<!--EndFragment--></body></html>").Encode();
+                        }
                         bool translationConsumed;
                         Hide();
-                        try { translationConsumed = await TextTransfer.ApplyAsync(translateCapture, translated); _capture = null; }
+                        try { translationConsumed = await TextTransfer.ApplyAsync(translateCapture, translated, resultHtml); _capture = null; }
                         catch { Open(); throw; }
-                        Send(new { type = "applied", clipboardRestored = translationConsumed, formatted = false });
+                        Send(new { type = "applied", clipboardRestored = translationConsumed, formatted = resultHtml is not null });
                         if (!translationConsumed) Open();
                         break;
                     case "copy":
