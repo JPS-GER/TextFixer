@@ -4,7 +4,8 @@ using System.Runtime.InteropServices;
 namespace TextFixer.Native;
 
 /// <param name="Editable">True: the focused element accepts typing. False: read-only (offer copy only). Null: unknown.</param>
-internal sealed record CapturedText(nint Window, string Text, bool HasFormatting, HtmlClipboard? Html = null, bool? Editable = null);
+/// <param name="Formats">Clipboard format names the copy published, for the format display.</param>
+internal sealed record CapturedText(nint Window, string Text, bool HasFormatting, HtmlClipboard? Html = null, bool? Editable = null, IReadOnlyList<string>? Formats = null);
 
 internal static class TextTransfer
 {
@@ -126,6 +127,13 @@ internal static class TextTransfer
         data.SetText(html, TextDataFormat.Html); Clipboard.SetDataObject(data, true);
     }
 
+    /// <summary>Copies a result in a chosen export format: plain text only, or an HTML fragment with its plain-text form in one clipboard item.</summary>
+    internal static void CopyExport(string text, string? htmlFragment)
+    {
+        if (htmlFragment is null) { Clipboard.SetText(text); return; }
+        CopyRevision(text, new HtmlClipboard("<html><body><!--StartFragment-->", htmlFragment, "<!--EndFragment--></body></html>").Encode());
+    }
+
     internal static async Task<CapturedText> CaptureAsync(nint target, bool detectEditability = true)
     {
         await WaitForModifiersAsync();
@@ -163,12 +171,13 @@ internal static class TextTransfer
             var hasHtml = Clipboard.ContainsText(TextDataFormat.Html);
             var html = hasHtml ? HtmlClipboard.Parse(Clipboard.GetText(TextDataFormat.Html)) : null;
             var hasFormatting = hasHtml || Clipboard.ContainsText(TextDataFormat.Rtf);
+            var formats = Clipboard.GetDataObject()?.GetFormats(false) ?? [];
             if (GetClipboardOwner() != copyOwner) throw new InvalidOperationException("Another app changed the clipboard during capture. Try again.");
             // Reading a delayed source format can itself increment the sequence number.
             ownedSequence = GetClipboardSequenceNumber();
             if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("The selection contains no text.");
             if (text.Length > 30000) throw new InvalidOperationException("Select at most 30,000 characters for one check.");
-            return new CapturedText(target, text, hasFormatting, html, editable);
+            return new CapturedText(target, text, hasFormatting, html, editable, formats);
         }
         finally
         {

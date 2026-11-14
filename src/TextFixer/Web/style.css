@@ -335,3 +335,16 @@ button.group-head:disabled,button.group-row:disabled { cursor:default; filter:no
 #text-size .step { width:32px; height:32px; padding:0; font:600 19px/1 "Segoe UI",Arial; }
 #text-size-value { min-width:52px; text-align:center; font:600 14px "Segoe UI",Arial; font-variant-numeric:tabular-nums; color:var(--text); }
 #text-size #text-reset { height:32px; padding:0 12px; font:600 14px "Segoe UI",Arial; }
+/* Source format below the captured text, and the export buttons. */
+.format-info { margin:8px 2px 0; }
+.format-info p { margin:2px 0; font-size:calc(12px * var(--text-scale)); color:var(--muted); overflow-wrap:anywhere; }
+.format-info strong { color:var(--text); font-weight:600; }
+.export-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.export-label { color:var(--muted); font-size:calc(12px * var(--text-scale)); margin-right:2px; }
+button.export-button { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:16px; font:600 calc(12px * var(--text-scale)) "Segoe UI",Arial; }
+button.export-button.matches { border-color:var(--accent-edge); }
+.match-dot { flex:none; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+.export-row.small button.export-button { padding:3px 9px; background:transparent; }
+.export-row.small button.export-button:hover { background:var(--room-2); }
+.fact-export { margin:4px 0 16px; }
+.msg-foot { flex-wrap:wrap; row-gap:6px; }

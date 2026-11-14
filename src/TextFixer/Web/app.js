@@ -232,6 +232,7 @@ function renderFacts(){
   const parts=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"],['needs_context','need context']].filter(([v])=>count(v)).map(([v,t])=>`${count(v)} ${t}`);
   $('fact-summary').textContent=claims.length?`${claims.length} ${claims.length===1?'claim':'claims'}: ${parts.join(', ')}.`:'No checkable factual claims found in this text.';
   const list=$('fact-claims');list.replaceChildren();
+  $('fact-export').replaceChildren(...(claims.length?[exportRow(factResultsBlocks,{label:'Copy results as'})]:[]));
   for(const c of claims){
     const card=document.createElement('article');card.className='fact-card verdict-'+c.verdict;
     const badge=document.createElement('span');badge.className='verdict';badge.textContent=verdictLabel[c.verdict];
@@ -297,12 +298,13 @@ function update(){
   document.querySelectorAll('#findings button').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true');
   $('apply').textContent=captureMode==='chrome'?'Apply in Chrome':formattedPaste?'Paste with formatting':'Paste plain text';
   $('copy').textContent=formattedPaste?'Copy with formatting':'Copy plain text';
+  $('copy-plain').hidden=!formattedPaste;$('copy-plain').disabled=busy;
   $('route').className='capture-icon';
   const captureLabel=captureMode==='chrome'?'Captured from Chrome':'Captured with '+(shortcutLabels[captureTask]||shortcutLabels.open);
   updateTaskMenu();
   const factFormatted=captureMode!=='chrome'&&richClipboard&&!$('fact-plain').checked;
   const factAccepted=factWordings.some(w=>w.accepted);
-  $('fact-copy').disabled=busy;$('fact-copy').textContent=factFormatted?'Copy with formatting':'Copy plain text';$('fact-copy').classList.toggle('primary',readOnlyCapture);
+  $('fact-copy').disabled=busy;$('fact-copy').textContent=factFormatted?'Copy with formatting':'Copy plain text';$('fact-copy-plain').hidden=!factFormatted;$('fact-copy-plain').disabled=busy;$('fact-copy').classList.toggle('primary',readOnlyCapture);
   $('fact-apply').hidden=readOnlyCapture;$('fact-apply').disabled=busy||!canReplace||!factAccepted||(captureMode!=='chrome'&&!factFormatted&&!$('fact-plain').checked);
   $('fact-apply').textContent=captureMode==='chrome'?'Apply in Chrome':factFormatted?'Paste with formatting':'Paste plain text';
   $('fact-plain').disabled=busy;$('fact-plain-option').hidden=captureMode==='chrome'||!canReplace;$('fact-readonly').hidden=!readOnlyCapture;
@@ -481,6 +483,8 @@ $('dialog-question').oninput=sizeQuestion;
 $('copy-conversation').onclick=()=>{const a=answers[answerKey(activeTask)];if(a)post('copyResult',{kind:'conversation',text:conversationText(activeTask,a)});};
 document.querySelectorAll('input[data-style]').forEach(r=>r.onchange=()=>{if(r.checked)post('typography',{style:{[r.dataset.style]:r.value}});});
 $('revise-translation').onsubmit=e=>{e.preventDefault();const request=$('translation-request').value.trim();if(busy||!request||!translationText)return;notice('Revising the translation...');post('reviseTranslation',{text:translationOriginal,translation:translationText,request,captureId});};
+$('copy-plain').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:[],allowPlainText:true});
+$('fact-copy-plain').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:true});
 $('fact-copy').onclick=()=>post('copy',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-apply').onclick=()=>post('apply',{text:factRevised(),original:factOriginal,edits:factEdits(),formattingIds:[],allowPlainText:$('fact-plain').checked});
 $('fact-plain').onchange=update;
@@ -497,7 +501,7 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
+  if(m.type==='capture'){formatInfo=detectFormat(m.text||'',m);captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
   if(m.type==='factCheck'){
     taskReady.factcheck=captureId;readyOption.factcheck='';factSetup=false;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
     const fresh=(m.result.claims||[]).map(c=>factClaim(c,m.original));
@@ -746,6 +750,103 @@ const textSize=(()=>{
   apply();render();
   return {get size(){return size;},step,set,close,isOpen:()=>open};
 })();
+// ---- Source format of the captured text and the export buttons (docs/text-formats.md).
+const siteProfiles={'maniac-forum.de':['mforum','M! Forum']};
+let formatInfo={matches:new Set(),source:'',evidence:'',unknown:'',received:''};
+function siteProfile(host){
+  const h=(host||'').toLowerCase();
+  for(const [site,profile] of Object.entries(siteProfiles))if(h===site||h.endsWith('.'+site))return profile;
+  return null;
+}
+// Measured facts about the text itself: line ends and characters that are easy to miss.
+function textFacts(text){
+  const count=re=>(text.match(re)||[]).length,facts=[],add=(n,one,many)=>{if(n)facts.push(`${n} ${n===1?one:many}`);};
+  add(count(/\r\n/g),'CRLF line end','CRLF line ends');add(count(/(?<!\r)\n/g),'LF line end','LF line ends');add(count(/\r(?!\n)/g),'CR line end','CR line ends');
+  add(count(/\u00a0/g),'non-breaking space','non-breaking spaces');add(count(/\t/g),'tab','tabs');
+  add(count(/[\u200b-\u200d\u2060\ufeff]/g),'zero-width character','zero-width characters');add(count(/\p{Extended_Pictographic}/gu),'emoji','emoji');
+  return facts;
+}
+// Candidates with evidence, never a guess: plain prose shows "No distinguishing markup", and markers that
+// mean different things in different formats are reported as ambiguous.
+function detectFormat(text,m){
+  const clip=m.clip||null;
+  const received=m.mode==='chrome'?'Chrome page, edited directly':m.reused?'Result of a TextFixer task':clip?.formats?.length?clip.formats.join(' + '):'Plain text';
+  const info={received:[received,...textFacts(text)].join('; '),matches:new Set(),source:'',evidence:'',unknown:''};
+  if(clip?.formats?.some(f=>f==='HTML'||f==='RTF')){
+    const site=siteProfile(clip.host),editor=clip.found?.includes('rich editor');
+    info.matches.add('formatted');if(site)info.matches.add(site[0]);
+    info.source=site?`${site[1]}, strong evidence: copied from ${clip.host}`:`Rich text${editor?' from a rich text editor':''}${clip.host?`, copied from ${clip.host}`:''}`;
+    const elements=(clip.found||[]).filter(f=>f!=='rich editor');
+    if(elements.length)info.evidence='Found: '+elements.join(', ')+'.';
+    if(clip.unknown?.length)info.unknown='Site-specific elements: '+clip.unknown.join(', ')+'.';
+    return info;
+  }
+  // Code is left out, so examples inside code do not count.
+  const s=text.replace(/```[\s\S]*?```/g,' ').replace(/`[^`\n]+`/g,' ');
+  const strong=[],shared=[],ambiguous=[];
+  const markdown=()=>info.matches.add('markdown');
+  if(/\[(b|i|u|s|quote|url|list|code|img|size|color|spoiler)(=[^\]\n]*)?\][\s\S]*?\[\/\1\]/i.test(s)){strong.push('BBCode tags');info.matches.add('bbcode');}
+  if(/>![^\n]+?!</.test(s)){strong.push('Reddit spoiler >!x!<');markdown();}
+  if(/<@!?\d+>/.test(s)){strong.push('Discord mention <@id>');markdown();}
+  if(/\|\|[^|\n]+\|\|/.test(s)){shared.push('spoiler ||x|| (Discord, Telegram)');markdown();}
+  if(/```/.test(text)){shared.push('code fence');markdown();}
+  if(/~~[^~\n]+~~/.test(s)){shared.push('~~strikethrough~~');markdown();}
+  if(/\*\*[^*\n]+\*\*/.test(s)){shared.push('**bold**');markdown();}
+  if(/\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)/.test(s)){shared.push('[label](link)');markdown();}
+  if(/^#{1,6} \S/m.test(s)){shared.push('# heading');markdown();}
+  if(/(^|[^*\w])\*[^*\s][^*\n]*?\*(?![*\w])/m.test(s.replace(/\*\*[^*\n]+\*\*/g,' '))){ambiguous.push('*x* (italic in Markdown, bold in WhatsApp, Slack and YouTube)');markdown();}
+  if(/(^|\W)_[^_\s][^_\n]*?_(?!\w)/m.test(s)){ambiguous.push('_x_ (italic in most formats)');markdown();}
+  const all=[...strong,...shared,...ambiguous];
+  if(!all.length){
+    info.matches.add('plain');
+    info.source=/^[ \t]*([-*\u2022]|\d+[.)]) \S/m.test(s)?'No distinguishing markup, plain lists':'No distinguishing markup';
+    return info;
+  }
+  const names=[info.matches.has('markdown')&&'Markdown family',info.matches.has('bbcode')&&'BBCode'].filter(Boolean).join(' or ');
+  info.source=`${names}, ${strong.length?'strong evidence':shared.length?'shared markers only':'ambiguous'}`;
+  info.evidence='Found: '+all.join(', ')+'.';
+  return info;
+}
+function renderFormatInfo(){
+  $('format-info').hidden=!sourceText.trim();
+  $('format-source').textContent=formatInfo.source;
+  $('format-evidence').textContent=[formatInfo.evidence,formatInfo.unknown].filter(Boolean).join(' ');
+  $('format-evidence').hidden=!formatInfo.evidence&&!formatInfo.unknown;
+  $('format-received').textContent='Received: '+formatInfo.received+'.';
+}
+// One copy button per export format; a dot marks the formats that match the captured text.
+function exportRow(source,{small=false,label='Copy as'}={}){
+  const row=document.createElement('div');row.className='export-row'+(small?' small':'');
+  const title=document.createElement('span');title.className='export-label';title.textContent=label;row.append(title);
+  for(const [format,name,tip] of exportFormats){
+    const match=formatInfo.matches.has(format);
+    const button=document.createElement('button');button.type='button';button.className='export-button'+(match?' matches':'');button.dataset.format=format;
+    button.title=tip+(match?' Matches the captured text.':'');button.disabled=busy;
+    if(match){const dot=document.createElement('span');dot.className='match-dot';button.append(dot);}
+    const text=document.createElement('span');text.textContent=name;button.append(text);
+    button.onclick=()=>{
+      const content=typeof source==='function'?source():source;
+      if(busy||!content||!content.length)return;
+      const out=markupExport(content,format);
+      post('copyAs',{format,text:out.text,...(out.html?{html:out.html}:{})});
+    };
+    row.append(button);
+  }
+  return row;
+}
+// Fact check results for copying: verdict and claim, correction or question, explanation, sources.
+function factResultsBlocks(){
+  const blocks=[{type:'p',lines:[{runs:[{text:$('fact-summary').textContent}]}]}];
+  for(const c of factClaims){
+    const lines=[{runs:[{text:verdictLabel[c.verdict]+':',bold:true},{text:' "'+c.quote+'"'}]}];
+    if(c.correction)lines.push({runs:[{text:'Correction:',bold:true},{text:' '+c.correction}]});
+    if(c.verdict==='needs_context'&&c.question)lines.push({runs:[{text:'Question:',bold:true},{text:' '+c.question}]});
+    blocks.push({type:'p',lines});
+    if(c.explanation)blocks.push(...markupBlocks(c.explanation));
+    if(c.sources?.length)blocks.push({type:'p',lines:[{runs:[{text:'Sources:'}]}]},{type:'ul',items:c.sources.map(x=>({text:{runs:[{text:`${x.title}: ${x.url}`}]}}))});
+  }
+  return blocks;
+}
 const maxDialogQuestions=20;
 // One message of the Summary/Explain dialog; answers get their sources, a note and a Copy button.
 function dialogMessage(role,text,extra={}){
@@ -766,17 +867,14 @@ function dialogMessage(role,text,extra={}){
   }
   const foot=document.createElement('div');foot.className='msg-foot';
   const note=document.createElement('span');note.className='hint';note.textContent=extra.note||'';
-  const copy=document.createElement('button');copy.type='button';copy.className='link';copy.textContent=extra.copyLabel||'Copy answer';
-  copy.onclick=()=>post('copyResult',{kind:extra.copyKind||'answer',text:markupPlain(text)});
   const use=document.createElement('button');use.type='button';use.className='link use-capture';use.textContent='Use as captured text';use.disabled=busy;use.onclick=()=>useAsCapture(markupPlain(text));
-  foot.append(note,copy,use);box.append(foot);
+  foot.append(note,exportRow(text,{small:true}),use);box.append(foot);
   return box;
 }
 function renderDialog(){
   const a=answers[answerKey(activeTask)],list=$('dialog');list.replaceChildren();
   if(!a)return;
-  const summary=activeTask==='summary';
-  list.append(dialogMessage('assistant',a.text,{copyKind:activeTask,copyLabel:summary?'Copy summary':'Copy explanation'}));
+  list.append(dialogMessage('assistant',a.text));
   for(const t of a.turns)list.append(t.role==='user'?dialogMessage('user',t.text):dialogMessage('assistant',t.text,{sources:t.sources,note:!t.searches?'Answered without web search':t.sources?.length?'':'Searched the web, no source cited'}));
   if(a.pending)list.append(dialogMessage('user',a.pending),dialogMessage('assistant','Searching the web and writing an answer...',{pending:true}));
   const full=a.turns.length/2+(a.pending?1:0)>=maxDialogQuestions;

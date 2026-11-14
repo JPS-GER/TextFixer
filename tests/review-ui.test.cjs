@@ -645,6 +645,26 @@ console.log('PASS: Markdown subset rendering and plain text.');
  element('open-text-size').onclick();assert.equal(element('text-size').hidden,true);
 }
 console.log('PASS: text size steps, limits and reset.');
+{
+ // Source format: clipboard facts and syntax candidates; matching export formats get a dot.
+ message({type:'capture',captureId:90,task:'open',text:'Hallo **Welt** und *du*.\r\nZweite\u00a0Zeile',canReplace:false,readOnly:true});
+ assert.equal(element('format-source').textContent,'Markdown family, shared markers only');
+ assert.match(element('format-evidence').textContent,/\*\*bold\*\*.*\*x\* \(italic in Markdown, bold in WhatsApp/);
+ assert.equal(element('format-received').textContent,'Received: Plain text; 1 CRLF line end; 1 non-breaking space.');
+ message({type:'capture',captureId:91,task:'open',text:'Nur Text.',canReplace:false,readOnly:true});
+ assert.equal(element('format-source').textContent,'No distinguishing markup');
+ message({type:'capture',captureId:92,task:'open',text:'[b]fett[/b] hier',canReplace:false,readOnly:true});
+ assert.equal(element('format-source').textContent,'BBCode, strong evidence');
+ message({type:'capture',captureId:93,task:'open',text:'Hallo @JPPapin',canReplace:false,readOnly:true,clip:{formats:['Plain text','HTML'],host:'remix.maniac-forum.de',found:['rich editor','mention','spoiler'],unknown:['mention-component']}});
+ assert.equal(element('format-source').textContent,'M! Forum, strong evidence: copied from remix.maniac-forum.de');
+ assert.equal(element('format-evidence').textContent,'Found: mention, spoiler. Site-specific elements: mention-component.');
+ assert.equal(element('format-received').textContent,'Received: Plain text + HTML.');
+ const row=sandbox.exportRow('x');
+ assert.deepEqual(row.children.slice(1).filter(b=>b.className.includes('matches')).map(b=>b.dataset.format),['formatted','mforum']);
+ message({type:'capture',captureId:94,task:'open',text:'reused',canReplace:false,readOnly:true,reused:true});
+ assert.equal(element('format-received').textContent,'Received: Result of a TextFixer task.');
+}
+console.log('PASS: source format display and matching export buttons.');
 console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, remove and errors.');
 {
  // Open: the task choice appears and nothing runs until a task is chosen.
@@ -691,8 +711,16 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  const before=sent.length;
  sandbox.runTask('rewrite','more');sandbox.runTask('summary');
  assert.equal(sent.length,before,'cached summary');
- element('dialog').children[0].children[1].children[1].onclick();
- assert.deepEqual({...sent.at(-1)},{action:'copyResult',kind:'summary',text:'\u2022 Treffen am Montag'});
+ const exportButtons=element('dialog').children[0].children[1].children[1].children;
+ assert.deepEqual(exportButtons.slice(1).map(x=>x.dataset.format),['formatted','plain','markdown','bbcode','mforum']);
+ exportButtons[2].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'plain',text:'\u2022 Treffen am Montag'});
+ exportButtons[3].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'markdown',text:'- Treffen am Montag'});
+ exportButtons[1].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'formatted',text:'\u2022 Treffen am Montag',html:'<ul><li>Treffen am Montag</li></ul>'});
+ exportButtons[4].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'bbcode',text:'[list]\n[*]Treffen am Montag\n[/list]'});
  // Follow-up questions carry the conversation; the answer shows its sources; a failed question returns to the input.
  element('dialog-question').value='Stimmt das?';element('dialog-form').onsubmit({preventDefault(){}});
  assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'discuss',kind:'summary',text,turns:[{role:'assistant',text:'- Treffen am Montag'},{role:'user',text:'Stimmt das?'}],captureId:40});

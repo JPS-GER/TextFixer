@@ -165,7 +165,43 @@ internal sealed class ReviewWindow : Form
     private readonly HashSet<string> _factSources = new(StringComparer.Ordinal);
     /// <summary>Source URLs cited in the Summary and Explain dialogs of the current capture.</summary>
     private readonly HashSet<string> _dialogSources = new(StringComparer.Ordinal);
-    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
+    private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome", clip = ClipInfo() });
+
+    private static readonly HashSet<string> StandardTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "html", "head", "body", "meta", "style", "title", "p", "br", "div", "span", "b", "strong", "i", "em", "u", "s", "strike", "del", "ins", "sub", "sup",
+        "small", "mark", "font", "a", "img", "ul", "ol", "li", "dl", "dt", "dd", "blockquote", "q", "cite", "pre", "code", "kbd", "samp", "h1", "h2", "h3", "h4", "h5", "h6",
+        "hr", "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col", "figure", "figcaption", "section", "article", "header", "footer", "nav",
+        "aside", "main", "button", "svg", "path", "circle", "rect", "g", "line", "polyline", "polygon", "details", "summary", "label", "input", "abbr", "time", "wbr",
+        "o:p", "picture", "source", "video", "audio", "iframe",
+    };
+
+    /// <summary>
+    /// Clipboard facts for the format display: format names, the source site, recognized elements and tags outside
+    /// standard HTML. Read from the captured payload only; nothing is executed.
+    /// </summary>
+    private object? ClipInfo()
+    {
+        if (_chromeCapture is not null || _capture is null) return null;
+        var formats = (_capture.Formats ?? []).Select(f => f switch { "HTML Format" => "HTML", "Rich Text Format" => "RTF", "UnicodeText" => "Plain text", _ => null })
+            .OfType<string>().Distinct().ToArray();
+        string? host = null;
+        if (_capture.Html?.SourceUrl is { } url && Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http") host = uri.Host;
+        var fragment = _capture.Html?.Fragment ?? "";
+        var found = new List<string>();
+        void Find(string name, string pattern)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(fragment, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(200))) found.Add(name);
+        }
+        Find("rich editor", @"data-pm-slice|ProseMirror");
+        Find("bold", @"<(b|strong)\b"); Find("italic", @"<(i|em)\b"); Find("underline", @"<u\b"); Find("strikethrough", @"<(s|strike|del)\b");
+        Find("heading", @"<h[1-6]\b"); Find("quote", @"<blockquote\b"); Find("spoiler", @"data-spoiler|<spoiler\b");
+        Find("mention", @"<mention-component\b|data-mention"); Find("link", @"<a\s[^>]*href"); Find("list", @"<(ul|ol)\b");
+        Find("code", @"<(pre|code)\b"); Find("table", @"<table\b"); Find("image", @"<img\b(?![^>]*ProseMirror-separator)"); Find("poll", @"data-poll-id"); Find("embedded video", @"<iframe|<video");
+        var unknown = System.Text.RegularExpressions.Regex.Matches(fragment, @"<([a-zA-Z][\w:-]*)", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200))
+            .Select(m => m.Groups[1].Value.ToLowerInvariant()).Where(t => !StandardTags.Contains(t)).Distinct().Take(8).ToArray();
+        return new { formats, host, found, unknown };
+    }
     /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives. <paramref name="only"/> limits the tabs.</summary>
     private async Task CheckByTabAsync(string original, CancellationToken cancellationToken, IReadOnlyList<string>? only = null)
     {
@@ -496,7 +532,7 @@ internal sealed class ReviewWindow : Form
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck" or "write" or "discuss" or "copyResult" or "applyRewrite")) return;
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck" or "write" or "discuss" or "copyResult" or "copyAs" or "applyRewrite")) return;
             _replyCaptureId = root.TryGetProperty("captureId", out var requestCapture) && requestCapture.ValueKind == JsonValueKind.Number && requestCapture.TryGetInt32(out var id) ? id : _captureId;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
@@ -599,6 +635,16 @@ internal sealed class ReviewWindow : Form
                         TextTransfer.CopyRevision(ReadText(root));
                         var copiedKind = root.TryGetProperty("kind", out var copiedKindElement) && copiedKindElement.ValueKind == JsonValueKind.String ? copiedKindElement.GetString() : null;
                         Notify(copiedKind switch { ReviewPrompt.Summary => "Summary", ReviewPrompt.Explain => "Explanation", "answer" => "Answer", "conversation" => "Conversation", _ => "Rewrite" } + " copied to the clipboard.");
+                        break;
+                    case "copyAs":
+                        // Export formats are written by the window from the answer structure; the HTML fragment is
+                        // escaped there and only placed on the clipboard here.
+                        var exportFormat = root.TryGetProperty("format", out var exportFormatElement) && exportFormatElement.ValueKind == JsonValueKind.String ? exportFormatElement.GetString() : null;
+                        var exportLabel = exportFormat switch { "formatted" => "formatted text", "plain" => "plain text", "markdown" => "Markdown", "bbcode" => "BBCode", "mforum" => "M! Forum text", _ => throw new InvalidOperationException("Choose a copy format.") };
+                        var exportHtml = exportFormat is "formatted" or "mforum" && root.TryGetProperty("html", out var exportHtmlElement) && exportHtmlElement.ValueKind == JsonValueKind.String ? exportHtmlElement.GetString() : null;
+                        if (exportHtml is { Length: > 1_000_000 }) throw new InvalidOperationException("This result is too long to copy with formatting.");
+                        TextTransfer.CopyExport(ReadText(root), exportHtml);
+                        Notify($"Copied as {exportLabel}.");
                         break;
                     case "copyTranslation":
                         TextTransfer.CopyRevision(ReadText(root));
