@@ -7,7 +7,7 @@ internal sealed class RunningNotice : Form
 {
     private readonly Icon _icon = Branding.CreateWindowIcon();
 
-    internal RunningNotice(string shortcut)
+    internal RunningNotice(string shortcut, bool german = false)
     {
         Text = "TextFixer";
         Icon = _icon;
@@ -34,7 +34,7 @@ internal sealed class RunningNotice : Form
         var message = new Label
         {
             Dock = DockStyle.Fill,
-            Text = $"TextFixer is already running.\nUse {shortcut} or its tray icon.",
+            Text = german ? $"TextFixer läuft bereits.\nNutze {shortcut} oder das Symbol im Infobereich." : $"TextFixer is already running.\nUse {shortcut} or its tray icon.",
             UseMnemonic = false,
             TextAlign = ContentAlignment.MiddleLeft,
             Margin = new Padding(0, 0, 0, 14)

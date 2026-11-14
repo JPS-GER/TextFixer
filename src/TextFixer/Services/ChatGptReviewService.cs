@@ -44,6 +44,8 @@ public sealed class ChatGptReviewService : IReviewService
 
     /// <summary>Spelling of "E-Mail" for all tasks and the form of address for translations (<see cref="WritingPreferences"/>).</summary>
     public string EmailSpelling { get; set; } = WritingPreferences.Keep;
+    /// <summary>Language of the words the model writes itself: text (the language of the text), en or de.</summary>
+    public string ResultLanguage { get; set; } = ReviewPrompt.LanguageOfText;
     public string AddressForm { get; set; } = WritingPreferences.Auto;
     public string ReviewDu { get; set; } = WritingPreferences.Keep;
 
@@ -186,7 +188,7 @@ public sealed class ChatGptReviewService : IReviewService
         var output = await WithAccessTokenAsync(async token =>
         {
             var model = await ResolveModelAsync(token, cancellationToken).ConfigureAwait(false);
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildWritingRequest(model, kind, text, request, extra + Style, variant), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.InLanguage(ReviewPrompt.BuildWritingRequest(model, kind, text, request, extra + Style, variant), kind == ReviewPrompt.Rewrite ? ReviewPrompt.LanguageOfText : ResultLanguage), cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
 
         if (kind == ReviewPrompt.Rewrite) return KeepOuterWhitespace(text, output);
@@ -316,7 +318,7 @@ public sealed class ChatGptReviewService : IReviewService
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle, context, clarifications, only, quoted, links), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.InLanguage(ReviewPrompt.BuildFactCheckRequest(model, text, structured, ReviewStyle, context, clarifications, only, quoted, links), ResultLanguage), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -324,7 +326,7 @@ public sealed class ChatGptReviewService : IReviewService
             && (ex.ApiParam is null || ex.ApiParam.StartsWith("text", StringComparison.Ordinal)))
         {
             _structuredOutputUnsupported = true;
-            return await _responses.StreamResponseAsync(token, ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle, context, clarifications, only, quoted, links), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamResponseAsync(token, ReviewPrompt.InLanguage(ReviewPrompt.BuildFactCheckRequest(model, text, structured: false, ReviewStyle, context, clarifications, only, quoted, links), ResultLanguage), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -333,7 +335,7 @@ public sealed class ChatGptReviewService : IReviewService
         var structured = !_structuredOutputUnsupported;
         try
         {
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured, focus, ReviewStyle), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.InLanguage(ReviewPrompt.BuildRequest(model, text, structured, focus, ReviewStyle), ResultLanguage), cancellationToken).ConfigureAwait(false);
         }
         catch (ChatGptServiceException ex) when (
             structured
@@ -342,7 +344,7 @@ public sealed class ChatGptReviewService : IReviewService
         {
             // text.format isn't documented for plan usage. Without it, the parser validates the JSON alone.
             _structuredOutputUnsupported = true;
-            return await _responses.StreamTextAsync(token, ReviewPrompt.BuildRequest(model, text, structured: false, focus, ReviewStyle), cancellationToken).ConfigureAwait(false);
+            return await _responses.StreamTextAsync(token, ReviewPrompt.InLanguage(ReviewPrompt.BuildRequest(model, text, structured: false, focus, ReviewStyle), ResultLanguage), cancellationToken).ConfigureAwait(false);
         }
     }
 

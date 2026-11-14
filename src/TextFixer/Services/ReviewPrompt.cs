@@ -425,6 +425,27 @@ internal static class ReviewPrompt
     /// <param name="structured">Request JSON-schema structured output (text.format); otherwise ask for JSON in the instructions.</param>
     /// <param name="focus">Null for the full review, otherwise one of <see cref="ReviewFocus.All"/>.</param>
     /// <param name="style">Punctuation style rules from <see cref="Punctuation.PromptRules"/>.</param>
+    public const string LanguageOfText = "text", English = "en", German = "de";
+    internal static bool IsLanguage(string? value) => value is LanguageOfText or English or German;
+    internal static bool IsAppLanguage(string? value) => value is English or German;
+
+    /// <summary>
+    /// The request with the words the model writes itself (explanations, summaries, explanations of texts, action items)
+    /// in <paramref name="language"/>; corrections, rewrites and quotes keep the language of the text.
+    /// </summary>
+    internal static JsonObject InLanguage(JsonObject request, string language)
+    {
+        if (language is not (English or German) || request["instructions"]?.GetValue<string>() is not { } instructions) return request;
+        var name = language == German ? "German" : "English";
+        request["instructions"] = instructions
+            .Replace("sentences in the language of the text", "sentences in " + name, StringComparison.Ordinal)
+            .Replace("summary in the language of the text", "summary in " + name, StringComparison.Ordinal)
+            .Replace("In the language of the text, explain", "In " + name + ", explain", StringComparison.Ordinal)
+            .Replace("one sentence in the language of the text saying", "one sentence in " + name + " saying", StringComparison.Ordinal)
+            .Replace("list only the action items the text states explicitly", "list, in " + name + ", only the action items the text states explicitly", StringComparison.Ordinal);
+        return request;
+    }
+
     public static JsonObject BuildRequest(string model, string text, bool structured, string? focus = null, string style = "")
     {
         var instructions = (focus is null ? Instructions : FocusedInstructions(focus)) + style;

@@ -125,5 +125,18 @@ string Span(string text, ReviewCorrection c) => text[c.Start..c.End];
     Check(JsonNode.Parse(serialized)!["corrections"] is JsonArray, "serializes as a camelCase corrections array");
 }
 
+{
+    // Words the model adds follow the result language; corrections and quotes keep the language of the text.
+    string Instructions(System.Text.Json.Nodes.JsonObject r) => r["instructions"]!.GetValue<string>();
+    var review = Instructions(ReviewPrompt.InLanguage(ReviewPrompt.BuildRequest("m", "t", true), ReviewPrompt.German));
+    Check(review.Contains("sentences in German") && !review.Contains("sentences in the language of the text"), "review explanations in German");
+    Check(review.Contains("Keep the language"), "corrections keep the language of the text");
+    var fact = Instructions(ReviewPrompt.InLanguage(ReviewPrompt.BuildFactCheckRequest("m", "t", true), ReviewPrompt.English));
+    Check(fact.Contains("sentences in English") && fact.Contains("question in the language of the text"), "fact explanations in English, the question to the author in the text language");
+    var summary = Instructions(ReviewPrompt.InLanguage(ReviewPrompt.BuildWritingRequest("m", ReviewPrompt.Summary, "t", "", "", "actions"), ReviewPrompt.German));
+    Check(summary.Contains("summary in German") && summary.Contains("list, in German, only the action items"), "summary and action items in German");
+    var same = Instructions(ReviewPrompt.InLanguage(ReviewPrompt.BuildRequest("m", "t", true), ReviewPrompt.LanguageOfText));
+    Check(same == Instructions(ReviewPrompt.BuildRequest("m", "t", true)), "same as the text leaves the request unchanged");
+}
 Console.WriteLine(failures == 0 ? "RESULT all passed" : $"RESULT {failures} failed");
 return failures;

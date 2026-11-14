@@ -35,6 +35,12 @@ internal sealed class AppSettings
     /// <summary>Form of address in translations into German: auto, du, Du or Sie.</summary>
     public string AddressForm { get; set; } = WritingPreferences.Auto;
 
+    /// <summary>Language of the app window: en or de.</summary>
+    public string AppLanguage { get; set; } = ReviewPrompt.English;
+
+    /// <summary>Language of words added to results (explanations, summaries, copied labels): text, en or de.</summary>
+    public string ResultLanguage { get; set; } = ReviewPrompt.LanguageOfText;
+
     /// <summary>Global shortcut per task (<see cref="Shortcuts.Tasks"/>), stored as text such as "Alt+Q".</summary>
     public Dictionary<string, Shortcut?> Shortcuts { get; } = Services.Shortcuts.Defaults();
 
@@ -66,6 +72,10 @@ internal sealed class AppSettings
                 settings.AddressForm = address.GetString()!;
             if (document.RootElement.TryGetProperty("reviewDu", out var reviewDu) && reviewDu.ValueKind == JsonValueKind.String && WritingPreferences.IsReviewDu(reviewDu.GetString()))
                 settings.ReviewDu = reviewDu.GetString()!;
+            if (document.RootElement.TryGetProperty("appLanguage", out var appLanguage) && appLanguage.ValueKind == JsonValueKind.String && ReviewPrompt.IsAppLanguage(appLanguage.GetString()))
+                settings.AppLanguage = appLanguage.GetString()!;
+            if (document.RootElement.TryGetProperty("resultLanguage", out var resultLanguage) && resultLanguage.ValueKind == JsonValueKind.String && ReviewPrompt.IsLanguage(resultLanguage.GetString()))
+                settings.ResultLanguage = resultLanguage.GetString()!;
             if (document.RootElement.TryGetProperty("shortcuts", out var shortcuts) && shortcuts.ValueKind == JsonValueKind.Object)
                 settings.SetShortcuts(shortcuts);
         }
@@ -105,7 +115,7 @@ internal sealed class AppSettings
     {
         var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, emailSpelling = EmailSpelling, addressForm = AddressForm, reviewDu = ReviewDu, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value?.ToString()) }, Options));
+        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, emailSpelling = EmailSpelling, addressForm = AddressForm, reviewDu = ReviewDu, appLanguage = AppLanguage, resultLanguage = ResultLanguage, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value?.ToString()) }, Options));
         File.Move(temp, _path, overwrite: true);
     }
 }

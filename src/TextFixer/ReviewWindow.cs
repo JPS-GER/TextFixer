@@ -113,6 +113,7 @@ internal sealed class ReviewWindow : Form
         _service.EmailSpelling = settings.EmailSpelling;
         _service.AddressForm = settings.AddressForm;
         _service.ReviewDu = settings.ReviewDu;
+        _service.ResultLanguage = settings.ResultLanguage;
         history.Changed += (_, _) => SendHistory();
     }
     internal void ConfigureShortcuts(HotkeyManager hotkeys)
@@ -307,7 +308,7 @@ internal sealed class ReviewWindow : Form
         }
     }
 
-    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, punctuationStyle = _settings?.PunctuationStyle ?? Punctuation.Defaults(), emailSpelling = _settings?.EmailSpelling ?? WritingPreferences.Keep, addressForm = _settings?.AddressForm ?? WritingPreferences.Auto, reviewDu = _settings?.ReviewDu ?? WritingPreferences.Keep });
+    private void SendReviewMode() => Send(new { type = "reviewMode", mode = _settings?.ReviewMode ?? AppSettings.SingleReview, punctuationStyle = _settings?.PunctuationStyle ?? Punctuation.Defaults(), emailSpelling = _settings?.EmailSpelling ?? WritingPreferences.Keep, appLanguage = _settings?.AppLanguage ?? ReviewPrompt.English, resultLanguage = _settings?.ResultLanguage ?? ReviewPrompt.LanguageOfText, addressForm = _settings?.AddressForm ?? WritingPreferences.Auto, reviewDu = _settings?.ReviewDu ?? WritingPreferences.Keep });
 
     private void SendHistory()
     {
@@ -512,6 +513,9 @@ internal sealed class ReviewWindow : Form
                 if (root.TryGetProperty("email", out var email) && email.ValueKind == JsonValueKind.String && WritingPreferences.IsEmail(email.GetString())) _settings.EmailSpelling = email.GetString()!;
                 if (root.TryGetProperty("address", out var address) && address.ValueKind == JsonValueKind.String && WritingPreferences.IsAddress(address.GetString())) _settings.AddressForm = address.GetString()!;
                 if (root.TryGetProperty("reviewDu", out var reviewDu) && reviewDu.ValueKind == JsonValueKind.String && WritingPreferences.IsReviewDu(reviewDu.GetString())) _settings.ReviewDu = reviewDu.GetString()!;
+                if (root.TryGetProperty("appLanguage", out var appLanguage) && appLanguage.ValueKind == JsonValueKind.String && ReviewPrompt.IsAppLanguage(appLanguage.GetString())) _settings.AppLanguage = appLanguage.GetString()!;
+                if (root.TryGetProperty("resultLanguage", out var resultLanguage) && resultLanguage.ValueKind == JsonValueKind.String && ReviewPrompt.IsLanguage(resultLanguage.GetString())) _settings.ResultLanguage = resultLanguage.GetString()!;
+                _service.ResultLanguage = _settings.ResultLanguage;
                 _service.EmailSpelling = _settings.EmailSpelling;
                 _service.AddressForm = _settings.AddressForm;
                 _service.ReviewDu = _settings.ReviewDu;

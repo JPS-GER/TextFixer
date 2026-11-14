@@ -18,7 +18,7 @@ static class Program
         {
             var shortcut = Services.AppSettings.Load().Shortcuts[Services.Shortcuts.Open]
                 ?? Services.Shortcuts.Default(Services.Shortcuts.Open)!.Value;
-            using var notice = new RunningNotice(shortcut.ToString());
+            using var notice = new RunningNotice(shortcut.ToString(), Services.AppSettings.Load().AppLanguage == Services.ReviewPrompt.German);
             notice.ShowDialog();
             return 0;
         }

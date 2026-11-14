@@ -28,9 +28,16 @@ internal sealed class TrayApplication : ApplicationContext
             BackColor = PetrolMenuColors.Background,
             Renderer = new PetrolMenuRenderer()
         };
-        menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
+        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitThread());
+        var exit = menu.Items.Add("Exit", null, (_, _) => ExitThread());
+        // The menu follows the app language from Settings each time it opens.
+        menu.Opening += (_, _) =>
+        {
+            var german = _settings.AppLanguage == ReviewPrompt.German;
+            open.Text = german ? "TextFixer öffnen" : "Open TextFixer";
+            exit.Text = german ? "Beenden" : "Exit";
+        };
         _tray = new NotifyIcon { Text = "TextFixer", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => _review.Open();
         _hotkey.Pressed += async (_, task) => await CaptureAsync(task);

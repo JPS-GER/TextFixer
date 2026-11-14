@@ -16,7 +16,7 @@ let factOriginal='',factClaims=[],factWordings=[],factMeta=null,factContext='',f
 // (turns: alternating user and assistant messages; pending: the question waiting for an answer).
 // A rich capture (quotes, links, mentions, code): its protected items and ranges, and whether results use its markup.
 let captureDoc=null,translationStructured=false,translationIntact=true,rewriteStructured=false,rewriteIntact=true;
-let rewriteSteps=[],rewriteModel='',answers={},writingPrefs={email:'keep',address:'auto',reviewDu:'keep'};
+let rewriteSteps=[],rewriteModel='',answers={},writingPrefs={email:'keep',address:'auto',reviewDu:'keep',appLanguage:'en',resultLanguage:'text'};
 let shortcutLabels={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''},shortcutDefaults={...shortcutLabels},shortcutRegistered={},shortcutError=null,recordingTask=null,renderingShortcuts=false;
 const verdictLabel={supported:'Supported by the sources found',wrong:'Wrong',disputed:'Disputed',unverifiable:"Can't verify",needs_context:'Needs context'};
 // Settings > Punctuation style.
@@ -234,7 +234,7 @@ function renderFacts(){
   const kinds=[['supported','supported by the sources found'],['wrong','wrong'],['disputed','disputed'],['unverifiable',"can't verify"],['needs_context','need context']].filter(([v])=>count(v));
   const summary=list=>claims.length?`${claims.length} ${claims.length===1?'claim':'claims'}: ${list.join(', ')}.`:'No checkable factual claims found in this text.';
   $('fact-summary').textContent=summary(kinds.map(([v,t])=>`${count(v)} ${t}`));
-  factSummaryCopy=summary(kinds.map(([v,t])=>`${verdictSymbol[v]} ${count(v)} ${t}`));
+  factKinds=kinds.map(([v,t])=>[v,t,count(v)]);
   const list=$('fact-claims');list.replaceChildren();
   $('fact-export').replaceChildren(...(claims.length?[exportRow(factResultsBlocks,{label:'Copy results as'})]:[]));
   for(const c of claims){
@@ -559,7 +559,7 @@ window.chrome.webview.addEventListener('message',event=>{
     else{answers[m.kind+':'+(m.variant||'')]={text,model:m.model||'',turns:[],pending:''};taskReady[m.kind]=captureId;notice(m.kind==='summary'?'Summary ready.':'Explanation ready.');}
     showTaskView();
   }
-  if(m.type==='reviewMode'){if(m.emailSpelling)writingPrefs.email=m.emailSpelling;if(m.addressForm)writingPrefs.address=m.addressForm;if(m.reviewDu)writingPrefs.reviewDu=m.reviewDu;for(const r of document.querySelectorAll?.('input[data-writing]')||[])r.checked=r.value===writingPrefs[r.dataset.writing];}
+  if(m.type==='reviewMode'){if(m.appLanguage){writingPrefs.appLanguage=m.appLanguage;setAppLanguage(m.appLanguage);}if(m.resultLanguage){writingPrefs.resultLanguage=m.resultLanguage;resultLanguage=m.resultLanguage;}if(m.emailSpelling)writingPrefs.email=m.emailSpelling;if(m.addressForm)writingPrefs.address=m.addressForm;if(m.reviewDu)writingPrefs.reviewDu=m.reviewDu;for(const r of document.querySelectorAll?.('input[data-writing]')||[])r.checked=r.value===writingPrefs[r.dataset.writing];}
   if(m.type==='reviewMode'){reviewMode=m.mode;for(const r of document.querySelectorAll?.('input[name=review-mode]')||[])r.checked=r.value===reviewMode;if(m.punctuationStyle)punctuationStyle={...punctuationStyle,...m.punctuationStyle};for(const r of document.querySelectorAll?.('input[data-style]')||[])r.checked=r.value===(punctuationStyle[r.dataset.style]||'keep');}
   if(m.type==='tabProgress'){taskReady.review=captureId;readyOption.review=requestedOption.review||'';
     if(!partialReview){partialReview=true;tabState={};tabResults={};tabErrors={};autoTab=true;reviewOriginal=m.original;parts=focusParts(m.original);reviewFindings=[];wordings=[];activeTab='spelling';$('results').hidden=false;}
@@ -882,18 +882,21 @@ function exportRow(source,{small=false,label='Copy as',onExport=null}={}){
 // the explanation, the sources as links, then a correction or question.
 // Text symbols mark the verdicts in copied results; they take the text color, so they work where color does not.
 const verdictSymbol={supported:'✓',wrong:'✗',disputed:'◐',needs_context:'?',unverifiable:'○'};
-let factSummaryCopy='';
+let factKinds=[];
 function factResultsBlocks(){
   const line=runs=>({type:'p',lines:[{runs}]});
   const link=x=>({text:'',token:{kind:'link',label:x.title||x.url,url:x.url}});
-  const blocks=[line([{text:factSummaryCopy||$('fact-summary').textContent,bold:true}])];
+  // Added words follow the result language (Settings); "Same as the text" reads the checked text.
+  const w=s=>resultWord(s,factOriginal),n=factClaims.length;
+  const summary=n?`${n} ${w(n===1?'claim':'claims')}: ${factKinds.map(([v,t,k])=>`${verdictSymbol[v]} ${k} ${w(t)}`).join(', ')}.`:w('No checkable factual claims found in this text.');
+  const blocks=[line([{text:summary,bold:true}])];
   for(const c of factClaims){
-    blocks.push({type:'hr'},line([{text:`${verdictSymbol[c.verdict]} ${verdictLabel[c.verdict]}`,bold:true}]),{type:'quote',blocks:[line([{text:c.quote}])]});
+    blocks.push({type:'hr'},line([{text:`${verdictSymbol[c.verdict]} ${w(verdictLabel[c.verdict])}`,bold:true}]),{type:'quote',blocks:[line([{text:c.quote}])]});
     if(c.explanation)blocks.push(...markupBlocks(c.explanation));
-    if(c.sources?.length===1)blocks.push(line([{text:'↗ Source: '},link(c.sources[0])]));
-    else if(c.sources?.length)blocks.push(line([{text:'↗ Sources:'}]),{type:'ul',items:c.sources.map(x=>({text:{runs:[link(x)]}}))});
-    if(c.correction)blocks.push(line([{text:'→ Correction:',bold:true},{text:' '+c.correction}]));
-    if(c.verdict==='needs_context'&&c.question)blocks.push(line([{text:'? Question:',bold:true},{text:' '+c.question}]));
+    if(c.sources?.length===1)blocks.push(line([{text:`↗ ${w('Source:')} `},link(c.sources[0])]));
+    else if(c.sources?.length)blocks.push(line([{text:`↗ ${w('Sources:')}`}]),{type:'ul',items:c.sources.map(x=>({text:{runs:[link(x)]}}))});
+    if(c.correction)blocks.push(line([{text:`→ ${w('Correction:')}`,bold:true},{text:' '+c.correction}]));
+    if(c.verdict==='needs_context'&&c.question)blocks.push(line([{text:`? ${w('Question:')}`,bold:true},{text:' '+c.question}]));
   }
   return blocks;
 }

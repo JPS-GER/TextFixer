@@ -18,7 +18,7 @@ const element=id=>{if(!elements.has(id))elements.set(id,new Element());return el
 let receive;
 const sandbox={document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
 vm.createContext(sandbox);
-for(const file of ['diff.js','review-model.js','markup.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
+for(const file of ['diff.js','review-model.js','markup.js','i18n-de.js','i18n.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
 const message=m=>receive({data:m});
 const selectTab=key=>element('review-tabs').children.find(b=>b.dataset.category===key)?.onclick();
 assert.equal(sent[0].action,'ready');
@@ -733,6 +733,7 @@ console.log('PASS: source format display and matching export buttons.');
 }
 {
  // Fact check results copied for the forum: rule, verdict, quoted claim, explanation, source link, correction.
+ message({type:'reviewMode',resultLanguage:'en'});
  const text='Der Preis stieg 2025 um 5 Prozent.';
  message({type:'capture',captureId:97,task:'factcheck',text,canReplace:false,readOnly:true});
  message({type:'factCheck',captureId:97,original:text,result:{claims:[{quote:'Der Preis stieg 2025 um 5 Prozent',verdict:'wrong',explanation:'Er stieg um **3 Prozent**.',correction:'Der Preis stieg 2025 um 3 Prozent',question:null,sources:[{title:'Statistik',url:'https://example.org/s'}]}],model:'m',elapsedMs:5}});
@@ -752,6 +753,21 @@ console.log('PASS: source format display and matching export buttons.');
  assert.equal(sandbox.markupExport(text,'markdown').text,'Eins  \nZwei\n\nDrei\n\n- Punkt\n\nVier');
 }
 console.log('PASS: line breaks and paragraph spacing per export target.');
+{
+ // Words added to copied fact checks follow the result language; "Same as the text" reads the checked text.
+ const german='Der Preis stieg 2025 um 5 Prozent und das ist nicht wenig.';
+ const claim={quote:'Der Preis stieg 2025 um 5 Prozent',verdict:'wrong',explanation:'Er stieg um 3 Prozent.',correction:'Der Preis stieg 2025 um 3 Prozent',question:null,sources:[{title:'Statistik',url:'https://example.org/s'}]};
+ const check=(text,lang)=>{message({type:'reviewMode',resultLanguage:lang});message({type:'capture',captureId:98,task:'factcheck',text,canReplace:false,readOnly:true});message({type:'factCheck',captureId:98,original:text,result:{claims:[{...claim}],model:'m',elapsedMs:5}});return sandbox.markupExport(sandbox.factResultsBlocks(),'plain').text;};
+ const de=check(german,'text');
+ assert.match(de,/^1 Behauptung: ✗ 1 falsch\./);assert.match(de,/✗ Falsch/);assert.match(de,/↗ Quelle: Statistik/);assert.match(de,/→ Korrektur: Der Preis/);
+ assert.match(check('The price rose by 5 percent in 2025, and that is not a small amount.','text'),/✗ Wrong[\s\S]*↗ Source: Statistik/);
+ assert.match(check(german,'en'),/^1 claim: ✗ 1 wrong\.[\s\S]*→ Correction:/);
+ assert.match(check('The price rose by 5 percent in 2025, and that is not a small amount.','de'),/✗ Falsch/);
+ message({type:'reviewMode',resultLanguage:'text'});
+}
+console.log('PASS: copied fact check words follow the result language.');
+
+ message({type:'reviewMode',resultLanguage:'text'});
 console.log('PASS: fact check results copy like the cards: verdict, quoted claim, explanation, source link, correction.');
 console.log('PASS: rich capture results keep quotes, links and mentions; Review leaves them alone.');
 console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, remove and errors.');
@@ -851,3 +867,10 @@ console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, ta
  assert.deepEqual(buttons(1).map(b=>b.textContent),['Copy plain','Copied'],'only the used button confirms');
 }
 console.log('PASS: history cards copy only through plain or formatted copy buttons.');
+{
+ // Composed headings and text field placeholders are translated; text field content is not.
+ assert.equal(sandbox.tr('Summary: Key points','de'),'Zusammenfassung: Kernpunkte');
+ assert.equal(sandbox.tr('Explanation: For beginners','de'),'Erklärung: Für Einsteiger');
+ assert.equal(sandbox.tr('Ask a follow-up question or object to something','de'),'Stelle eine Rückfrage oder widersprich');
+}
+console.log('PASS: composed headings and placeholders in German.');

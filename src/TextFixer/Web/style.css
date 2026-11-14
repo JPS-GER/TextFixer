@@ -172,6 +172,7 @@ button.shortcut-reset { justify-self:start; }
 .punctuation-style > .hint { margin:0 0 6px; }
 .style-option { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:16px; padding:10px 0; border-top:1px solid var(--edge); }
 .style-option p { margin:2px 0 0; }
+.punctuation-style > .style-option:first-child { border-top:0; padding-top:0; }
 .style-choices { display:flex; gap:16px; flex-wrap:wrap; }
 .style-choices label { display:flex; align-items:center; gap:6px; white-space:nowrap; font-size:calc(13px * var(--text-scale)); color:var(--text); cursor:pointer; }
 .style-choices input { accent-color:var(--accent); margin:0; }
