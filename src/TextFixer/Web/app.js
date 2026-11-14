@@ -237,7 +237,7 @@ function renderFacts(){
     const badge=document.createElement('span');badge.className='verdict';badge.textContent=verdictLabel[c.verdict];
     const quote=document.createElement('blockquote');quote.textContent=c.quote;
     card.append(badge,quote);
-    if(c.explanation){const p=document.createElement('p');p.textContent=c.explanation;card.append(p);}
+    if(c.explanation){const p=document.createElement('div');p.className='fact-explanation';renderMarkup(p,c.explanation);card.append(p);}
     const given=factClarifications.find(x=>x.quote===c.quote);
     if(given&&c.verdict!=='needs_context'){const p=document.createElement('p');p.className='hint';p.textContent='Your answer: '+given.answer;card.append(p);}
     if(c.verdict==='needs_context'){
@@ -710,11 +710,49 @@ function requestRewrite(request){
   notice('Rewriting your text...');
   post('write',{kind:'rewrite',text:rewriteSteps.at(-1)?.text??sourceText,original:sourceText,request,captureId});
 }
+// Text size for the whole window, kept in this WebView profile. Sizes are the body text in px; every font scales with it.
+const textSize=(()=>{
+  const DEFAULT=16,MIN=12,MAX=24,BASE=14;
+  let size=DEFAULT,open=false;
+  try{const saved=Number(localStorage.getItem('textSize'));if(saved)size=saved;}catch{}
+  const clamp=v=>Math.min(MAX,Math.max(MIN,Math.round(v)));
+  size=clamp(size);
+  const apply=()=>document.documentElement?.style?.setProperty('--text-scale',String(size/BASE));
+  const render=()=>{
+    $('open-text-size').title=`Text size ${size} px (click to change, or turn the wheel)`;
+    $('open-text-size').toggleAttribute?.('data-open',open);
+    $('text-size').hidden=!open;
+    $('text-size-value').textContent=`${size} px`;
+    $('text-smaller').disabled=size<=MIN;$('text-larger').disabled=size>=MAX;$('text-reset').disabled=size===DEFAULT;
+    $('text-reset').title=`Back to ${DEFAULT} px`;
+  };
+  const place=()=>{
+    const popup=$('text-size'),box=$('open-text-size').getBoundingClientRect?.();if(!box||!popup.style)return;
+    popup.style.setProperty('left',`${Math.max(8,Math.min(box.right-popup.offsetWidth,innerWidth-popup.offsetWidth-8))}px`);
+    popup.style.setProperty('top',`${box.bottom+6}px`);
+  };
+  const set=v=>{size=clamp(v);try{localStorage.setItem('textSize',String(size));}catch{}apply();render();if(open)place();sizeQuestion();};
+  const step=by=>set(size+by);
+  const toggle=()=>{open=!open;render();if(open)place();};
+  const close=()=>{if(!open)return;open=false;render();};
+  const wheel=e=>{e.preventDefault();step(e.deltaY<0?1:-1);};
+  $('open-text-size').onclick=toggle;
+  $('open-text-size').addEventListener('wheel',wheel,{passive:false});
+  $('text-size').addEventListener('wheel',wheel,{passive:false});
+  $('text-smaller').onclick=()=>step(-1);$('text-larger').onclick=()=>step(1);$('text-reset').onclick=()=>set(DEFAULT);
+  document.addEventListener?.('pointerdown',e=>{if(open&&!e.target.closest?.('#text-size,#open-text-size'))close();});
+  document.addEventListener?.('keydown',e=>{if(open&&e.key==='Escape')close();});
+  window.addEventListener?.('resize',()=>{if(open)place();});
+  apply();render();
+  return {get size(){return size;},step,set,close,isOpen:()=>open};
+})();
 const maxDialogQuestions=20;
 // One message of the Summary/Explain dialog; answers get their sources, a note and a Copy button.
 function dialogMessage(role,text,extra={}){
   const box=document.createElement('div');box.className='msg '+(role==='user'?'msg-question':'msg-answer')+(extra.pending?' msg-pending':'');
-  const body=document.createElement('div');body.className='msg-text';body.textContent=text;box.append(body);
+  const body=document.createElement('div');body.className='msg-text';box.append(body);
+  // Answers use the Markdown subset of the prompt; questions and the waiting line stay as typed.
+  if(role==='user'||extra.pending)body.textContent=text;else renderMarkup(body,text);
   if(role==='user'||extra.pending)return box;
   if(extra.sources?.length){
     const sources=document.createElement('ul');sources.className='fact-sources';
@@ -729,8 +767,8 @@ function dialogMessage(role,text,extra={}){
   const foot=document.createElement('div');foot.className='msg-foot';
   const note=document.createElement('span');note.className='hint';note.textContent=extra.note||'';
   const copy=document.createElement('button');copy.type='button';copy.className='link';copy.textContent=extra.copyLabel||'Copy answer';
-  copy.onclick=()=>post('copyResult',{kind:extra.copyKind||'answer',text});
-  const use=document.createElement('button');use.type='button';use.className='link use-capture';use.textContent='Use as captured text';use.disabled=busy;use.onclick=()=>useAsCapture(text);
+  copy.onclick=()=>post('copyResult',{kind:extra.copyKind||'answer',text:markupPlain(text)});
+  const use=document.createElement('button');use.type='button';use.className='link use-capture';use.textContent='Use as captured text';use.disabled=busy;use.onclick=()=>useAsCapture(markupPlain(text));
   foot.append(note,copy,use);box.append(foot);
   return box;
 }
@@ -754,8 +792,8 @@ function askDialog(){
 }
 function sizeQuestion(){const q=$('dialog-question');if(!q.style)return;q.style.height='auto';q.style.height=Math.min(q.scrollHeight+2,160)+'px';}
 function conversationText(kind,a){
-  const lines=[(kind==='summary'?'Summary':'Explanation')+':',a.text];
-  for(const t of a.turns){lines.push('',(t.role==='user'?'You: ':'TextFixer: ')+t.text);if(t.sources?.length)lines.push('Sources:',...t.sources.map(s=>`- ${s.title}: ${s.url}`));}
+  const lines=[(kind==='summary'?'Summary':'Explanation')+':',markupPlain(a.text)];
+  for(const t of a.turns){lines.push('',t.role==='user'?'You: '+t.text:'TextFixer:\n'+markupPlain(t.text));if(t.sources?.length)lines.push('Sources:',...t.sources.map(s=>`- ${s.title}: ${s.url}`));}
   return lines.join('\n');
 }
 function renderRewrite(){

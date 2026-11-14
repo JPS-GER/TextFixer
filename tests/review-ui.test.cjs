@@ -18,7 +18,7 @@ const element=id=>{if(!elements.has(id))elements.set(id,new Element());return el
 let receive;
 const sandbox={document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
 vm.createContext(sandbox);
-for(const file of ['diff.js','review-model.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
+for(const file of ['diff.js','review-model.js','markup.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
 const message=m=>receive({data:m});
 const selectTab=key=>element('review-tabs').children.find(b=>b.dataset.category===key)?.onclick();
 assert.equal(sent[0].action,'ready');
@@ -187,7 +187,7 @@ const previewCss=fs.readFileSync('src/TextFixer/Web/style.css','utf8');
 assert.match(previewCss,/\.format-space\s*\{\s*display:inline;\s*white-space:pre;/,'space stays in parent decoration flow');
 assert.ok(!/\.format-space\s*\{[^}]*inline-block/.test(previewCss),'space marker is not an atomic inline');
 
-assert.match(previewCss,/\.inline-text\s*\{[^}]*font:15px\/23\.8px/, 'correction preview uses original-text line step with larger 15px font');
+assert.match(previewCss,/\.inline-text\s*\{[^}]*font:calc\(15px \* var\(--text-scale\)\)\/calc\(23\.8px \* var\(--text-scale\)\)/, 'correction preview uses original-text line step with larger 15px font');
 assert.match(previewCss,/\.inline-correction\s*\{[^}]*line-height:inherit/, 'correction chips inherit preview line spacing');
 
 
@@ -624,6 +624,27 @@ console.log('PASS: a result can become the captured text.');
  element('settings').listeners.close?.();
  message({type:'shortcuts',shortcuts:defaults,defaults,registered:{}});
 }
+{
+ // Markdown subset: paragraphs, lists, one nesting level, bold and italic; everything else stays text.
+ const md='Intro mit **fett** und *kursiv*.\nZweite Zeile.\n\n- **Stufen:** Booster\n  - Unterpunkt\n- <b>kein HTML</b>\n\n1. Erst\n2. Dann\n\n## Titel\n5 * 3 = 15';
+ assert.equal(sandbox.markupPlain(md),'Intro mit fett und kursiv.\nZweite Zeile.\n\n\u2022 Stufen: Booster\n   \u2022 Unterpunkt\n\u2022 <b>kein HTML</b>\n\n1. Erst\n2. Dann\n\nTitel\n\n5 * 3 = 15');
+ const box=sandbox.document.createElement('div');sandbox.renderMarkup(box,md);
+ assert.deepEqual(box.children.map(c=>c.tag),['p','ul','ol','p','p']);
+ assert.deepEqual(box.children[0].children.map(c=>c.tag),['span','strong','span','em','span','br','span']);
+ const first=box.children[1].children[0];assert.equal(first.children[0].tag,'strong');assert.equal(first.children[0].textContent,'Stufen:');assert.equal(first.children[2].tag,'ul');
+ assert.equal(box.children[1].children[1].children[0].textContent,'<b>kein HTML</b>','HTML stays text');
+ assert.equal(box.children[4].children[0].textContent,'5 * 3 = 15','a lone asterisk stays text');
+}
+console.log('PASS: Markdown subset rendering and plain text.');
+{
+ // Text size: 16 px by default, steps of 1 px between 12 and 24, Reset goes back to 16.
+ element('open-text-size').onclick();assert.equal(element('text-size').hidden,false);assert.equal(element('text-size-value').textContent,'16 px');assert.equal(element('text-reset').disabled,true);
+ element('text-larger').onclick();assert.equal(element('text-size-value').textContent,'17 px');assert.equal(element('text-reset').disabled,false);
+ for(let i=0;i<20;i++)element('text-smaller').onclick();assert.equal(element('text-size-value').textContent,'12 px');assert.equal(element('text-smaller').disabled,true);
+ element('text-reset').onclick();assert.equal(element('text-size-value').textContent,'16 px');
+ element('open-text-size').onclick();assert.equal(element('text-size').hidden,true);
+}
+console.log('PASS: text size steps, limits and reset.');
 console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, remove and errors.');
 {
  // Open: the task choice appears and nothing runs until a task is chosen.
@@ -666,19 +687,19 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  message({type:'writing',captureId:39,kind:'summary',original:text,result:'old',canReplace:true,readOnly:false,model:'m'});
  assert.equal(element('answer-view').hidden,true);
  message({type:'writing',captureId:40,kind:'summary',original:text,result:'- Treffen am Montag',canReplace:true,readOnly:false,model:'m'});
- assert.equal(element('answer-title').textContent,'Summary');assert.equal(element('dialog').children[0].children[0].textContent,'- Treffen am Montag');
+ assert.equal(element('answer-title').textContent,'Summary');const list=element('dialog').children[0].children[0].children[0];assert.equal(list.tag,'ul');assert.equal(list.children[0].children[0].textContent,'Treffen am Montag','the summary renders as a list');
  const before=sent.length;
  sandbox.runTask('rewrite','more');sandbox.runTask('summary');
  assert.equal(sent.length,before,'cached summary');
  element('dialog').children[0].children[1].children[1].onclick();
- assert.deepEqual({...sent.at(-1)},{action:'copyResult',kind:'summary',text:'- Treffen am Montag'});
+ assert.deepEqual({...sent.at(-1)},{action:'copyResult',kind:'summary',text:'\u2022 Treffen am Montag'});
  // Follow-up questions carry the conversation; the answer shows its sources; a failed question returns to the input.
  element('dialog-question').value='Stimmt das?';element('dialog-form').onsubmit({preventDefault(){}});
  assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'discuss',kind:'summary',text,turns:[{role:'assistant',text:'- Treffen am Montag'},{role:'user',text:'Stimmt das?'}],captureId:40});
  assert.equal(element('dialog').children.length,3);
  message({type:'dialog',captureId:40,kind:'summary',question:'Stimmt das?',answer:{text:'Ja.',sources:[{url:'https://a.example/x',title:'A',domain:'a.example'}],searches:1,model:'m'}});
  message({type:'busy',busy:false});
- assert.equal(element('dialog').children.length,3);assert.equal(element('dialog').children[2].children[0].textContent,'Ja.');
+ assert.equal(element('dialog').children.length,3);assert.equal(element('dialog').children[2].children[0].children[0].children[0].textContent,'Ja.');
  element('dialog').children[2].children[1].children[0].children[0].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'openSource',url:'https://a.example/x'});
  element('dialog-question').value='Und warum?';element('dialog-form').onsubmit({preventDefault(){}});
@@ -686,7 +707,7 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  message({type:'busy',busy:false});
  assert.equal(element('dialog-question').value,'Und warum?');assert.equal(element('dialog').children.length,3);
  element('copy-conversation').onclick();
- assert.equal(sent.at(-1).text,'Summary:\n- Treffen am Montag\n\nYou: Stimmt das?\n\nTextFixer: Ja.\nSources:\n- A: https://a.example/x');
+ assert.equal(sent.at(-1).text,'Summary:\n\u2022 Treffen am Montag\n\nYou: Stimmt das?\n\nTextFixer:\nJa.\nSources:\n- A: https://a.example/x');
  element('dialog-question').value='';
  // A capture from a task shortcut starts that task.
  message({type:'capture',captureId:41,task:'explain',text:'API',canReplace:false,readOnly:true});

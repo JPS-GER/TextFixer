@@ -35,7 +35,7 @@ internal sealed class ReviewWindow : Form
     internal ReviewWindow(ChatGptReviewService service)
     {
         _service = service;
-        Text = "TextFixer";
+        Text = "TextFixer by JPS";
         BackColor = Color.FromArgb(0x0a, 0x25, 0x32);
         ForeColor = Color.FromArgb(0xe8, 0xee, 0xf1);
         Icon = _windowIcon;
