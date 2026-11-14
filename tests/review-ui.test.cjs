@@ -564,20 +564,36 @@ console.log('PASS: fact-check context, questions on claims and single-claim re-c
  message({type:'writing',captureId:50,kind:'summary',variant:'actions',original:text,result:'- Bericht bis Freitag schicken',canReplace:false,readOnly:true,model:'m'});
  message({type:'busy',busy:false});
  assert.equal(element('answer-title').textContent,'Summary: Action items');
- const option=element('task-choices').children[4].children[1].children[2];assert.equal(option.className,'task-option selected');
+ const option=element('task-choices').children[3].children[3];assert.equal(option.className,'group-row selected');assert.equal(element('task-choices').children[3].children[0].className,'group-head');
  sandbox.runTask('summary','');assert.equal(element('answer-view').hidden,true);assert.equal(sent.at(-1).variant,undefined);
  message({type:'busy',busy:false});
- sandbox.runTask('review','spelling');
- assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'check',text,captureId:50,focus:['spelling','grammar']});
+ sandbox.runTask('review','errors');
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'check',text,captureId:50,scope:'basics'});
+ message({type:'result',captureId:50,original:text,result:{correctedText:text,findings:[],corrections:[]},canReplace:false,readOnly:true,model:'m',mode:'clipboard'});
+ const tab=key=>element('review-tabs').children.find(b=>b.dataset.category===key);
+ assert.equal(tab('wording').children[1].textContent,'Not checked');assert.equal(tab('worth').children[1].textContent,'Not checked');assert.equal(tab('spelling').children[1].textContent,0);
 }
 console.log('PASS: task menu options, per-option results and selection.');
+{
+ // A result becomes the captured text; the window starts over with the task choice.
+ message({type:'busy',busy:false});
+ message({type:'capture',captureId:60,task:'translate',text:'Hallo Welt.',canReplace:true,readOnly:false});
+ message({type:'translation',captureId:60,original:'Hallo Welt.',translation:'Hello world.',target:'auto',canReplace:true,readOnly:false,model:'m'});
+ message({type:'busy',busy:false});
+ element('use-translation').onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'useAsCapture',text:'Hello world.'});
+ message({type:'capture',captureId:61,task:'open',text:'Hello world.',canReplace:true,readOnly:false,hasFormatting:false,canPreserveFormatting:false,mode:'clipboard',reused:true});
+ assert.equal(element('choose-text').textContent,'Hello world.');assert.equal(element('translation-view').hidden,true);
+ assert.equal(element('notice').textContent,'The result is the captured text. Choose what TextFixer should do with it.');
+}
+console.log('PASS: a result can become the captured text.');
 {
  // Settings > Shortcuts: Open required, optional task shortcuts, recording, key mapping, cancel, reset/remove and errors.
  const defaults={open:'Alt+E',review:'Alt+Q',translate:'',factcheck:'',rewrite:'',summary:'',explain:''};
  message({type:'shortcuts',shortcuts:{...defaults,translate:'Ctrl+Alt+T'},defaults,registered:{open:true,review:true,translate:true,factcheck:true,rewrite:true,summary:true,explain:true}});
  const rows=()=>element('shortcut-list').children;
  const keys=i=>rows()[i].children[1];
- assert.deepEqual(rows().map(r=>r.children[0].textContent),['Open','Review','Translate','Fact check','Rewrite','Summary','Explain']);
+ assert.deepEqual(rows().map(r=>r.children[0].textContent),['Open','Review','Translate','Fact check','Summary','Explain','Rewrite']);
  assert.deepEqual(keys(2).children.map(k=>k.textContent),['Ctrl','Alt','T']);
  assert.equal(keys(3).children[0].textContent,'Not set');
  assert.equal(rows()[0].children[2].hidden,true,'Open cannot be removed');
@@ -586,14 +602,14 @@ console.log('PASS: task menu options, per-option results and selection.');
  sent.length=0;
  rows()[2].children[2].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'translate',keys:''},'Remove clears an optional shortcut');
- keys(5).onclick();
+ keys(4).onclick();
  assert.deepEqual({...sent.at(-1)},{action:'shortcutRecording',active:true});
- assert.equal(keys(5).children[0].textContent,'Press the new keys');
+ assert.equal(keys(4).children[0].textContent,'Press the new keys');
  const press=(i,props)=>{let prevented=false;keys(i).onkeydown({ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,preventDefault(){prevented=true;},stopPropagation(){},...props});return prevented;};
  const count=sent.length;
- assert.equal(press(5,{key:'Control',code:'ControlLeft',ctrlKey:true}),true);
+ assert.equal(press(4,{key:'Control',code:'ControlLeft',ctrlKey:true}),true);
  assert.equal(sent.length,count,'a modifier alone keeps recording');
- press(5,{key:'s',code:'KeyS',ctrlKey:true,altKey:true});
+ press(4,{key:'s',code:'KeyS',ctrlKey:true,altKey:true});
  assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'summary',keys:'Ctrl+Alt+S'});
  keys(0).onclick();press(0,{key:'F5',code:'F5',altKey:true,shiftKey:true});
  assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'open',keys:'Alt+Shift+F5'});
@@ -604,7 +620,7 @@ console.log('PASS: task menu options, per-option results and selection.');
  rows()[0].children[2].onclick();assert.deepEqual({...sent.at(-1)},{action:'shortcut',task:'open',keys:'Alt+E'});
  assert.equal(rows()[1].children[2].textContent,'Reset to Alt+Q');
  assert.equal(rows()[0].children[3].textContent,'Another app uses this shortcut, so it does not work. Choose another one.');
- assert.equal(rows()[5].children[3].className,'shortcut-message error');
+ assert.equal(rows()[4].children[3].className,'shortcut-message error');
  element('settings').listeners.close?.();
  message({type:'shortcuts',shortcuts:defaults,defaults,registered:{}});
 }
@@ -617,16 +633,16 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  const text='Wir treffen uns am Montag. Bitte schick mir die E-Mail.';
  message({type:'capture',captureId:40,task:'open',text,canReplace:true,readOnly:false,canPreserveFormatting:true});
  assert.equal(sent.filter(m=>['check','translate','factCheck','write'].includes(m.action)).length,0,'Open makes no request');
- assert.equal(element('choose-view').hidden,false);assert.equal(element('task-menu').hidden,false);assert.equal(element('task-menu-title').hidden,false);
- assert.deepEqual(element('task-choices').children.map(c=>c.dataset.task),['review','translate','factcheck','rewrite','summary','explain']);
+ assert.equal(element('choose-view').hidden,false);
+ assert.deepEqual(element('task-choices').children.map(c=>c.dataset.task),['review','translate','factcheck','summary','explain','rewrite']);
  assert.equal(element('choose-text').textContent,text);
  // The Rewrite card improves the text right away; More... opens all presets; a preset sends one.
  sandbox.runTask('rewrite');
  assert.equal(sent.at(-1).request,'Improve: clearer and smoother wording; keep the meaning, tone, form of address and length');
- assert.equal(element('task-menu').hidden,false,'the task menu stays visible');assert.equal(element('task-menu-title').hidden,true);
+ assert.equal(element('task-choices').children[5].className,'task-group active','the sidebar marks the running task');assert.equal(element('task-choices').children[5].children[0].className,'group-head selected');
  message({type:'busy',busy:false});
  sandbox.runTask('rewrite','more');
- assert.equal(element('rewrite-view').hidden,false);assert.equal(element('choose-view').hidden,true);
+ assert.equal(element('rewrite-view').hidden,false);assert.equal(element('choose-view').hidden,false,'the captured text stays at the top');
  const presets=element('rewrite-presets').children;
  assert.deepEqual(presets.map(b=>b.textContent),['Improve','More formal','Friendlier','Shorter','Simpler','Clearer structure']);
  presets[3].onclick();

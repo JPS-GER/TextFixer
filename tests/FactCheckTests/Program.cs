@@ -269,5 +269,10 @@ const string Original = "Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Berl
         && !Instructions(ReviewPrompt.BuildWritingRequest("m", "summary", "x")).Contains("Instead of"), "summary and explain variants");
 }
 
+{
+    var basics = ReviewPrompt.BuildRequest("m", "x", structured: true, focus: ReviewFocus.Basics)["instructions"]!.GetValue<string>();
+    Check(basics.Contains("spelling mistakes") && basics.Contains("grammar mistakes") && basics.Contains("punctuation mistakes") && basics.Contains("findings: always an empty list"), "basics prompt covers three categories without findings");
+}
+
 Console.WriteLine(failures == 0 ? "All fact-check tests passed." : $"{failures} fact-check test(s) failed.");
 return failures == 0 ? 0 : 1;

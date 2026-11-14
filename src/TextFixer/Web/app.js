@@ -7,6 +7,7 @@ let captureTask='review',translationOriginal='',translationText='';
 // Task menu: activeTask is the visible task; taskReady[task] holds the captureId its result belongs to.
 // taskOption[task] is the chosen card option ('' = the card's main action); readyOption[task] is the option of the shown result.
 // captureId increases with every capture; answers for an older capture are dropped.
+let historyShown=false;
 let captureId=0,activeTask='review',taskReady={},taskOption={},readyOption={},requestedOption={},factSetup=false,dialogKey='',menuButtons=[];
 // Fact check: claims with their correction wordings (exact quote replacements, applied like review edits).
 // factContext and factClarifications (answers to the questions of needs_context claims) belong to the current capture.
@@ -42,6 +43,8 @@ function renderTabs(){
     const name=document.createElement('span');name.textContent=title;
     const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);
     if(state&&state!=='ready'){count.className='tab-state';count.textContent=state==='failed'?'!':state==='stopped'?'-':'';button.title=tabStateTitle[state];}
+    // Basics only skips these checks; "Not checked" keeps that apart from "nothing found".
+    if(readyOption.review==='errors'&&(key==='wording'||key==='worth')){count.className='not-checked';count.textContent='Not checked';button.title='Basics only skips this check. Run the full review to include it.';button.disabled=true;}
     button.append(name,count);
     button.onclick=()=>{if(button.disabled)return;autoTab=false;activeTab=key;showChanges();$('tab-'+key)?.focus();};
     button.onkeydown=e=>{
@@ -102,39 +105,47 @@ function startCapturedReview(){
   pendingAutoCheck=false;
   runTask(activeTask);
 }
-// Cards of the task menu: [task, title, description, options]. The card runs the main action; option buttons run a variant.
+// Task groups of the sidebar: [task, title, tooltip, options, color]. The colored bar runs the main action; each option
+// row runs a variant. Option kind: go (starts right away, the default) or ask (asks for something first); an optional tooltip follows.
 const taskCards=[
-  ['review','Review','Spelling, grammar, punctuation, wording and points worth checking.',[['spelling','Spelling & grammar']]],
-  ['translate','Translate','German into English, other languages into German.',[['de','To German'],['en','To English']]],
-  ['factcheck','Fact check','Researches the claims on the web and cites sources.',[['context','Add context...']]],
-  ['rewrite','Rewrite','Improves wording and flow and keeps the meaning.',[['formal','More formal'],['friendly','Friendlier'],['short','Shorter'],['more','More...']]],
-  ['summary','Summary','The main points in a few lines.',[['sentence','One sentence'],['points','Key points'],['actions','Action items']]],
-  ['explain','Explain','What the text means, in plain language.',[['beginner','For beginners'],['technical','Technical detail']]],
+  ['review','Review','Spelling, grammar, punctuation, wording and points worth checking.',[['errors','Basics only','go','Checks spelling, grammar and punctuation only. No wording suggestions and no points worth checking.']],'#1a7fa0'],
+  ['translate','Translate','German into English, other languages into German.',[['de','To German'],['en','To English']],'#2f5fd0'],
+  ['factcheck','Fact check','Researches the claims on the web and cites sources.',[['context','Add context','ask']],'#b83555'],
+  ['summary','Summary','The main points in a few lines.',[['sentence','One sentence'],['points','Key points'],['actions','Action items']],'#138d75'],
+  ['explain','Explain','What the text means, in plain language.',[['beginner','For beginners'],['technical','Technical detail']],'#d35400'],
+  ['rewrite','Rewrite','Improves wording and flow and keeps the meaning.',[['formal','More formal'],['friendly','Friendlier'],['short','Shorter'],['more','Own request','ask']],'#5b3fc4'],
 ];
 const optionLabel=(task,option)=>taskCards.find(c=>c[0]===task)?.[3].find(o=>o[0]===option)?.[1]||'';
 const answerKey=task=>task+':'+(taskOption[task]||'');
+// Line end icons: go (play) starts right away, ask (?) asks for something first, more (dots) opens a view.
+function menuIcon(kind){const i=document.createElement('span');i.className='menu-icon icon-'+kind;i.setAttribute('aria-hidden','true');if(kind==='ask')i.textContent='?';if(kind==='more')i.textContent='•••';return i;}
+function menuDot(){const d=document.createElement('span');d.className='menu-dot';d.setAttribute('aria-hidden','true');return d;}
 function renderTaskMenu(){
   const list=$('task-choices');list.replaceChildren();menuButtons=[];
-  for(const [task,title,description,options] of taskCards){
-    const card=document.createElement('div');card.className='task-card';card.dataset.task=task;
-    const main=document.createElement('button');main.type='button';main.className='task-main';main.dataset.task=task;
-    const name=document.createElement('strong');name.textContent=title;const text=document.createElement('span');text.textContent=description;
-    main.append(name,text);main.onclick=()=>runTask(task,'');
-    const row=document.createElement('div');row.className='task-options';
-    for(const [option,label] of options){
-      const b=document.createElement('button');b.type='button';b.className='task-option';b.dataset.task=task;b.dataset.option=option;b.textContent=label;
-      b.onclick=()=>runTask(task,option);row.append(b);menuButtons.push({button:b,task,option,card:null});
+  for(const [task,title,tooltip,options,color] of taskCards){
+    const group=document.createElement('div');group.className='task-group';group.dataset.task=task;group.style?.setProperty('--group',color);
+    const head=document.createElement('button');head.type='button';head.className='group-head';head.dataset.task=task;head.title=tooltip;
+    const name=document.createElement('strong');name.textContent=title;
+    head.append(menuDot(),name,menuIcon('go'));head.onclick=()=>runTask(task,'');
+    group.append(head);menuButtons.push({button:head,task,option:'',group});
+    for(const [option,label,kind,tip] of options){
+      const row=document.createElement('button');row.type='button';row.className='group-row';row.dataset.task=task;row.dataset.option=option;if(tip)row.title=tip;
+      const text=document.createElement('span');text.className='row-label';text.textContent=label;
+      row.append(menuDot(),text,menuIcon(kind||'go'));row.onclick=()=>runTask(task,option);
+      group.append(row);menuButtons.push({button:row,task,option,group:null});
     }
-    card.append(main,row);list.append(card);menuButtons.push({button:main,task,option:'',card});
+    list.append(group);
   }
 }
-// Highlights the active card and option; the menu stays visible for every captured text.
+// Marks the active task and its chosen line; the tasks work once text is captured.
 function updateTaskMenu(){
-  $('task-menu').hidden=!sourceText.trim();$('task-menu-title').hidden=!!activeTask;
+  const noText=!sourceText.trim();
   for(const m of menuButtons){
-    m.button.disabled=busy;
-    if(m.card)m.card.className='task-card'+(activeTask===m.task?' active':'');
-    else{const selected=activeTask===m.task&&(m.option==='context'?factSetup:(taskOption[m.task]||'')===m.option);m.button.className='task-option'+(selected?' selected':'');}
+    m.button.disabled=busy||noText;
+    const here=!noText&&!historyShown&&activeTask===m.task,chosen=taskOption[m.task]||'';
+    const selected=here&&(m.option==='context'?factSetup:m.option===''?chosen===''&&!(m.task==='factcheck'&&factSetup):chosen===m.option);
+    if(m.group){m.group.className='task-group'+(here?' active':'')+(noText?' idle':'');m.button.className='group-head'+(selected?' selected':'');}
+    else m.button.className='group-row'+(selected?' selected':'');
   }
 }
 // Whether the active option's result for this capture is ready to show.
@@ -150,7 +161,7 @@ function showTaskView(){
   $('factcheck-view').hidden=activeTask!=='factcheck'||!ready('factcheck');
   $('factcheck-setup').hidden=activeTask!=='factcheck'||ready('factcheck')||!factSetup;
   $('rewrite-view').hidden=activeTask!=='rewrite'||!ready('rewrite');
-  $('choose-view').hidden=!!activeTask||!sourceText.trim();
+  $('choose-view').hidden=!sourceText.trim();$('empty-view').hidden=!!sourceText.trim();$('main').classList.toggle('task-active',!!activeTask);
   $('choose-text').textContent=sourceText;
   const answer=['summary','explain'].includes(activeTask)?answers[answerKey(activeTask)]:null;
   $('answer-view').hidden=!answer;
@@ -163,6 +174,7 @@ const rewriteCardRequests={'':'Improve: clearer and smoother wording; keep the m
 // Runs a task option on the captured text, or shows its cached result for this capture.
 function runTask(task,option=''){
   if(busy||!sourceText.trim())return;
+  if(historyShown)showHistory(false);
   activeTask=task;
   if(task==='factcheck'&&option==='context'){
     factSetup=true;showTaskView();
@@ -185,7 +197,7 @@ function runTask(task,option=''){
   if(task==='translate'){notice('Translating your text...');post('translate',{text:sourceText,captureId,...(option?{target:option}:{})});}
   else if(task==='summary'||task==='explain'){notice(task==='summary'?'Summarizing your text...':'Explaining your text...');post('write',{kind:task,text:sourceText,original:sourceText,captureId,...(option?{variant:option}:{})});}
   else if(task==='factcheck')startFactCheck('');
-  else{notice('Checking your text...');post('check',{text:sourceText,captureId,...(option==='spelling'?{focus:['spelling','grammar']}:{})});}
+  else{notice('Checking your text...');post('check',{text:sourceText,captureId,...(option==='errors'?{scope:'basics'}:{})});}
   update();
 }
 // Starts a fact check of the whole text; context and earlier answers go along.
@@ -270,6 +282,7 @@ function update(){
   $('count').textContent=`${$('source').value.length.toLocaleString()} / 30,000`;
   $('signin').disabled=busy;$('signout').disabled=busy;$('source').disabled=busy;
   $('cancel').hidden=!busy;
+  for(const id of ['use-review','use-translation','use-fact','use-rewrite'])$(id).disabled=busy;
   for(const id of ['fact-start','fact-recheck','fact-context','fact-context-more'])$(id).disabled=busy;
   $('dialog-send').disabled=busy;$('dialog-question').disabled=busy;$('copy-conversation').disabled=busy;
   document.querySelectorAll('#formatting-findings input, #formatting-findings button').forEach(x=>x.disabled=locked()||$('allow-plain-text').checked);
@@ -456,6 +469,10 @@ document.querySelectorAll('input[data-writing]').forEach(r=>r.onchange=()=>{if(r
 renderTaskMenu();
 $('rewrite-form').onsubmit=e=>{e.preventDefault();requestRewrite($('rewrite-request').value.trim());};
 $('copy-rewrite').onclick=()=>post('copyResult',{kind:'rewrite',text:rewriteSteps.at(-1)?.text||''});
+// A result becomes the captured text for the next task.
+function useAsCapture(text){if(busy||!text?.trim())return;post('useAsCapture',{text});}
+$('use-review').onclick=()=>useAsCapture(revised());$('use-translation').onclick=()=>useAsCapture(translationText);
+$('use-fact').onclick=()=>useAsCapture(factRevised());$('use-rewrite').onclick=()=>useAsCapture(rewriteSteps.at(-1)?.text||'');
 $('apply-rewrite').onclick=()=>post('applyRewrite',{text:rewriteSteps.at(-1)?.text||'',original:sourceText});
 $('rewrite-reset').onclick=()=>{rewriteSteps=[];renderRewrite();update();notice('Choose a preset or describe the change.');};
 $('dialog-form').onsubmit=e=>{e.preventDefault();askDialog();};
@@ -480,7 +497,7 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();}
+  if(m.type==='capture'){captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
   if(m.type==='factCheck'){
     taskReady.factcheck=captureId;readyOption.factcheck='';factSetup=false;factOriginal=m.original;captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;
     const fresh=(m.result.claims||[]).map(c=>factClaim(c,m.original));
@@ -595,13 +612,12 @@ function renderModels(m){
   render($('translation-model-list'),'translation-model','translate',listed(m.translationSelected),['Same as review','Uses '+reviewName]);
   render($('fact-model-list'),'fact-model','factcheck',listed(m.factCheckSelected),['Same as review','Uses '+reviewName]);
 }
-update();post('ready');
+showTaskView();update();post('ready');
 
 // Clipboard history view
 let historyEntries=[],historyEnabled=true,copiedId=null,copiedPlain=false,copiedTimer=0,historyClock=0;
-let historyShown=false;
 function historyVisible(){return historyShown;}
-function showHistory(on){historyShown=on;$('main').classList.toggle('show-history',on);$('open-history').classList.toggle('active',on);if(on){post('historyList');renderHistory();historyClock=historyClock||setInterval(()=>{if(historyVisible())renderHistory();},30000);}}
+function showHistory(on){historyShown=on;$('main').classList.toggle('show-history',on);$('open-history').classList.toggle('active',on);updateTaskMenu();if(on){post('historyList');renderHistory();historyClock=historyClock||setInterval(()=>{if(historyVisible())renderHistory();},30000);}}
 function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return'Just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const d=Math.round(h/24);return d+(d===1?' day ago':' days ago');}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
 function renderHistory(){
@@ -629,7 +645,7 @@ meta.append(actions);card.append(top,body,meta);list.append(card);
 
 // Settings > Shortcuts. The window records a combination; C# validates, registers and saves it, then sends 'shortcuts'.
 // While recording, C# suspends the global shortcuts so the pressed keys reach this window.
-const shortcutTasks=[['open','Open'],['review','Review'],['translate','Translate'],['factcheck','Fact check'],['rewrite','Rewrite'],['summary','Summary'],['explain','Explain']];
+const shortcutTasks=[['open','Open'],['review','Review'],['translate','Translate'],['factcheck','Fact check'],['summary','Summary'],['explain','Explain'],['rewrite','Rewrite']];
 function shortcutKeys(e){
   const key=/^Key([A-Z])$/.exec(e.code)?.[1]??/^Digit(\d)$/.exec(e.code)?.[1]??/^(F\d{1,2})$/.exec(e.code)?.[1]??e.code;
   return [e.ctrlKey&&'Ctrl',e.altKey&&'Alt',e.shiftKey&&'Shift',key].filter(Boolean).join('+');
@@ -714,7 +730,8 @@ function dialogMessage(role,text,extra={}){
   const note=document.createElement('span');note.className='hint';note.textContent=extra.note||'';
   const copy=document.createElement('button');copy.type='button';copy.className='link';copy.textContent=extra.copyLabel||'Copy answer';
   copy.onclick=()=>post('copyResult',{kind:extra.copyKind||'answer',text});
-  foot.append(note,copy);box.append(foot);
+  const use=document.createElement('button');use.type='button';use.className='link use-capture';use.textContent='Use as captured text';use.disabled=busy;use.onclick=()=>useAsCapture(text);
+  foot.append(note,copy,use);box.append(foot);
   return box;
 }
 function renderDialog(){

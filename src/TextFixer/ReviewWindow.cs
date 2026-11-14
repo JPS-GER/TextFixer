@@ -475,6 +475,19 @@ internal sealed class ReviewWindow : Form
                 var folder = ChromeSetup.ExtensionFolder ?? throw new InvalidOperationException("The chrome-extension folder was not found alongside this build.");
                 Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); return;
             }
+            if (action == "useAsCapture")
+            {
+                // A result becomes the captured text. An editable selection stays the paste target (plain text only);
+                // a Chrome or read-only capture continues as read-only text.
+                var reused = ReadText(root);
+                if (string.IsNullOrWhiteSpace(reused) || _operation is not null) return;
+                var target = _chromeCapture is null && _capture is { Editable: not false } ? _capture : null;
+                _chromeCapture = null;
+                _capture = target is not null ? new CapturedText(target.Window, reused, false, null, target.Editable) : new CapturedText(0, reused, false, null, Editable: false);
+                _task = Shortcuts.Open; _captureId++; _factSources.Clear(); _dialogSources.Clear();
+                Send(new { type = "capture", captureId = _captureId, task = _task, text = reused, canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = false, canPreserveFormatting = false, mode = "clipboard", reused = true });
+                return;
+            }
             if (action == "openSource")
             {
                 // Only exact https URLs cited for the current capture; the WebView itself never navigates.
@@ -501,16 +514,14 @@ internal sealed class ReviewWindow : Form
                         var original = ReadText(root);
                         if (_capture is not null && _capture.Text != original) _capture = null;
                         if (_chromeCapture is not null && _chromeCapture.Text != original) _chromeCapture = null;
-                        // "focus" (for example spelling and grammar only) runs just those review tabs.
-                        var focusTabs = root.TryGetProperty("focus", out var focusElement) && focusElement.ValueKind == JsonValueKind.Array
-                            ? focusElement.EnumerateArray().Where(f => f.ValueKind == JsonValueKind.String).Select(f => f.GetString()!).Where(ReviewFocus.All.Contains).Distinct().ToList()
-                            : [];
-                        if (focusTabs.Count > 0 || _settings?.ReviewMode == AppSettings.FocusedReview)
+                        // scope "basics" checks spelling, grammar and punctuation: one request, or one per tab in per-tab mode.
+                        var basics = root.TryGetProperty("scope", out var scopeElement) && scopeElement.ValueKind == JsonValueKind.String && scopeElement.GetString() == ReviewFocus.Basics;
+                        if (_settings?.ReviewMode == AppSettings.FocusedReview)
                         {
-                            await CheckByTabAsync(original, _operation.Token, focusTabs);
+                            await CheckByTabAsync(original, _operation.Token, basics ? ReviewFocus.BasicsTabs : null);
                             break;
                         }
-                        var result = await _service.CheckAsync(original, _operation.Token);
+                        var result = await _service.CheckAsync(original, basics ? ReviewFocus.Basics : null, _operation.Token);
                         Send(new { type = "result", captureId = _replyCaptureId, original, result, formattingSuggestions = _capture?.Html?.FindFormatting(original) ?? [], canReplace = CanReplace, readOnly = ReadOnlyCapture, canPreserveFormatting = _capture?.Html is not null, model = _service.ActiveModel, mode = _chromeCapture is null ? "clipboard" : "chrome" });
                         break;
                     case "translate":

@@ -114,22 +114,7 @@ dialog .chrome-setup { margin-bottom:0; }
 #translation-view pre { max-height:480px; font-size:15px; }
 #translation-view details { margin-top:12px; }
 /* Open shortcut: choose a task for the captured text. */
-.task-menu { margin:0 0 18px; }
-.task-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-/* A card: the main button runs the default; the option buttons below it run variants. */
-.task-card { display:flex; flex-direction:column; background:var(--room-2); border:1px solid var(--edge); border-radius:10px; overflow:hidden; }
-.task-card:hover { border-color:var(--edge-strong); }
-.task-card.active { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
-button.task-main { flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; padding:13px 16px 10px; background:transparent; border:0; border-radius:0; }
-button.task-main:hover { background:var(--room-3); }
-button.task-main strong { font-size:14px; color:var(--text); }
-.task-card.active button.task-main strong { color:var(--accent); }
-button.task-main span { font:400 12px/1.4 "Segoe UI",Arial; color:var(--muted); }
-.task-options { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 12px; }
-button.task-option { padding:4px 10px; font:600 12px "Segoe UI",Arial; border-radius:999px; background:var(--room-1); border-color:var(--edge); color:var(--text); }
-button.task-option:hover { background:var(--control-hover); border-color:var(--accent-edge); }
-button.task-option.selected { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
-button.task-main:disabled,button.task-option:disabled { cursor:default; opacity:.6; }
+.task-choices { display:flex; flex-direction:column; gap:8px; }
 .rewrite-presets { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
 button.preset { padding:6px 12px; border-radius:16px; font-weight:600; }
 .diff-view { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; padding:10px 0; }
@@ -283,3 +268,48 @@ body { padding-bottom:48px; }
 .review-tab.state-failed .tab-state { background:var(--bad-bg); color:var(--bad); border:1px solid var(--bad); }
 .review-tab.state-stopped .tab-state { color:var(--muted); }
 @keyframes tab-spin { to { transform:rotate(360deg); } }
+
+/* App frame: header on top, the task sidebar on the left, the main area scrolls on its own. */
+html,body { height:100%; }
+body { display:flex; flex-direction:column; height:100vh; overflow:hidden; padding-bottom:0; }
+header { flex:none; padding:16px 24px; }
+.mark { width:40px; height:40px; }
+header h1 { font-size:22px; }
+.app-body { flex:1; min-height:0; display:flex; padding-bottom:41px; }
+.sidebar { width:300px; flex:none; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px 12px 12px 14px; background:var(--room-1); border-right:1px solid var(--edge); }
+.main-scroll { flex:1; min-width:0; overflow-y:auto; }
+main { max-width:1100px; margin:0 auto; }
+.icon-button { width:40px; height:40px; padding:0 !important; display:inline-grid; place-items:center; border-radius:9px; color:var(--muted); }
+.icon-button:hover { color:var(--text); }
+#choose-view { margin-bottom:18px; }
+#choose-view details { margin-top:0; }
+main.task-active #choose-text { max-height:180px; }
+@media(max-width:900px) { .sidebar { width:236px; } }
+.empty-view { max-width:520px; margin:48px auto 0; text-align:center; }
+.empty-view h2 { font-size:18px; margin:0 0 10px; }
+.empty-view p { color:var(--muted); line-height:1.7; margin:0; }
+.empty-view .key { font-size:12px; border:1px solid var(--edge); border-bottom-width:3px; padding:2px 8px; border-radius:6px; color:var(--text); white-space:nowrap; }
+/* Sidebar task groups: a colored bar for the main action, option lines below; a dot marks the chosen line. */
+.task-group { --group:#757575; display:flex; flex-direction:column; }
+.task-group.idle { opacity:.5; }
+.history-group { margin-top:auto; padding-top:4px; }
+button.group-head { display:flex; align-items:center; gap:10px; width:100%; min-height:38px; padding:4px 6px 4px 11px; border:0; border-radius:10px; background:var(--group); color:#fff; text-align:left; }
+button.group-head:hover { background:var(--group); filter:brightness(1.12); }
+button.group-head strong { flex:1; min-width:0; font:700 16px "Segoe UI",Arial; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+button.group-row { display:flex; align-items:center; gap:10px; width:100%; min-height:27px; padding:2px 9px 2px 15px; border:0; border-radius:7px; background:transparent; color:var(--text); font:500 13px "Segoe UI",Arial; text-align:left; }
+button.group-row:hover { background:var(--room-2); }
+button.group-row.selected { background:var(--room-3); }
+.row-label { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.menu-dot { flex:none; width:11px; height:11px; border-radius:50%; border:1.5px solid var(--dim); box-sizing:border-box; }
+button.group-row.selected .menu-dot { background:var(--text); border-color:var(--text); box-shadow:0 0 0 2px var(--room-3),0 0 0 3.5px var(--text); width:9px; height:9px; margin:1px; }
+button.group-head .menu-dot { width:18px; height:18px; border:2px solid rgba(255,255,255,.95); }
+button.group-head.selected .menu-dot,#open-history.active .menu-dot { background:#e8eef1; box-shadow:inset 0 0 0 3px var(--group); }
+.menu-icon { flex:none; display:inline-grid; place-items:center; width:24px; height:22px; font:800 13px/1 "Segoe UI",Arial; color:color-mix(in srgb,var(--group) 55%,#fff); }
+button.group-head .menu-icon { width:28px; height:28px; border:1.5px solid rgba(255,255,255,.85); border-radius:8px; color:#fff; }
+.menu-icon.icon-go::before { content:""; width:9px; height:10px; background:currentColor; clip-path:polygon(0 0,100% 50%,0 100%); margin-left:2px; }
+.menu-icon.icon-more { font-size:9px; letter-spacing:1px; }
+button.group-head:disabled,button.group-row:disabled { cursor:default; filter:none; }
+.task-group.idle button.group-head:hover { filter:none; }
+.task-group.idle button.group-row:hover { background:transparent; }
+.msg-foot { gap:4px; } .msg-foot .hint { flex:1; }
+.review-tab .not-checked { margin-left:4px; font:500 11px "Segoe UI",Arial; color:var(--dim); }

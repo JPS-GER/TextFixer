@@ -104,12 +104,12 @@ public sealed class ChatGptReviewService : IReviewService
         return models;
     }
 
-    /// <param name="focus">Null for the full review in one request, otherwise one review tab (<see cref="ReviewFocus.All"/>).</param>
+    /// <param name="focus">Null for the full review in one request, <see cref="ReviewFocus.Basics"/> for spelling, grammar and punctuation in one request, otherwise one review tab (<see cref="ReviewFocus.All"/>).</param>
     public Task<ReviewResult> CheckAsync(string text, CancellationToken cancellationToken = default) => CheckAsync(text, null, cancellationToken);
 
     public async Task<ReviewResult> CheckAsync(string text, string? focus, CancellationToken cancellationToken)
     {
-        if (focus is not null && !ReviewFocus.All.Contains(focus)) throw new ArgumentOutOfRangeException(nameof(focus));
+        if (focus is not null && focus != ReviewFocus.Basics && !ReviewFocus.All.Contains(focus)) throw new ArgumentOutOfRangeException(nameof(focus));
         ArgumentNullException.ThrowIfNull(text);
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -130,6 +130,9 @@ public sealed class ChatGptReviewService : IReviewService
 
         var result = ReviewResultParser.Parse(text, output);
         if (focus is null) return result;
+        // Basics: no findings; a change outside the three categories counts as grammar, since nothing else was checked.
+        if (focus == ReviewFocus.Basics)
+            return result with { Findings = [], Corrections = [.. result.Corrections.Select(c => ReviewFocus.BasicsTabs.Contains(c.Category) ? c : c with { Category = ReviewCorrectionCategories.Grammar })] };
         // A focused answer contributes only its own tab: corrections of that category, or findings for Worth checking.
         return focus == ReviewFocus.Worth
             ? result with { CorrectedText = text, Corrections = [] }

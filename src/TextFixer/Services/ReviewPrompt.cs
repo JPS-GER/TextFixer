@@ -31,6 +31,13 @@ public static class ReviewFocus
 {
     public const string Worth = "worth";
 
+    /// <summary>Spelling, grammar and punctuation in one request ("Basics only"); not a tab of its own.</summary>
+    public const string Basics = "basics";
+
+    /// <summary>The tabs a basics review covers.</summary>
+    public static readonly IReadOnlyList<string> BasicsTabs =
+        [ReviewCorrectionCategories.Spelling, ReviewCorrectionCategories.Grammar, ReviewCorrectionCategories.Punctuation];
+
     /// <summary>Request order: the review tabs from left to right.</summary>
     public static readonly IReadOnlyList<string> All =
         [ReviewCorrectionCategories.Spelling, ReviewCorrectionCategories.Grammar, ReviewCorrectionCategories.Punctuation, ReviewCorrectionCategories.Wording, Worth];
@@ -122,8 +129,27 @@ internal static class ReviewPrompt
         _ => throw new ArgumentOutOfRangeException(nameof(focus)),
     };
 
-    /// <summary>Instructions for one review tab. The answer uses the same JSON shape as the full review.</summary>
-    internal static string FocusedInstructions(string focus) => focus == ReviewFocus.Worth
+    /// <summary>Instructions for one review tab, or for the basics. The answer uses the same JSON shape as the full review.</summary>
+    internal static string FocusedInstructions(string focus) => focus == ReviewFocus.Basics
+        ? FocusedHeader + $"""
+            Check the text only for {FocusDescription(ReviewCorrectionCategories.Spelling)}; {FocusDescription(ReviewCorrectionCategories.Grammar)}; and {FocusDescription(ReviewCorrectionCategories.Punctuation)}.
+            Ignore every other kind of problem, including wording and style, and leave it exactly as it is. Produce three things:
+
+            1. corrected_text: the complete text with only these mistakes fixed.
+            {KeepRules}
+               If there is nothing to fix, return the text unchanged.
+
+            2. findings: always an empty list.
+
+            3. corrections: one entry for every change you made in corrected_text, in text order:
+               - before: the exact, verbatim original wording that you changed. Always include each whole word
+                 that the change touches. For a punctuation mark added or removed between words, include the
+                 word directly before it. Never overlap two entries; merge adjacent changes into one entry.
+               - after: what that wording became in corrected_text.
+               - category: "spelling", "grammar" or "punctuation".
+               Return an empty corrections list when corrected_text is unchanged.
+            """
+        : focus == ReviewFocus.Worth
         ? FocusedHeader + """
             Do not correct anything. Produce three things:
 
