@@ -225,5 +225,23 @@ const string Original = "Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Berl
     Check(tooLarge, "final-only text is size-limited");
 }
 
+{
+    // Dialog answers: citation markers go, line breaks stay, sources only from annotations.
+    var output = "Die Aussage stimmt nicht. ([who.int](https://www.who.int/x))\n- Erster Punkt ([bund.de](https://www.bund.de/y))\n- Zweiter Punkt, siehe [Quelle](https://evil.example/z)";
+    var m1 = "([who.int](https://www.who.int/x))";
+    var r1 = Range(output, m1);
+    var m2 = "([bund.de](https://www.bund.de/y))";
+    var r2 = Range(output, m2);
+    var response = new ResponseResult(output, [new ResponseCitation(r1.Start, r1.End, "https://www.who.int/x", "WHO"), new ResponseCitation(r2.Start, r2.End, "https://www.bund.de/y", null), new ResponseCitation(r2.Start, r2.End, "http://insecure.example/", "x")], ["completed"]);
+    var (answer, sources) = FactCheckParser.CitedAnswer(response);
+    Check(answer == "Die Aussage stimmt nicht.\n- Erster Punkt\n- Zweiter Punkt, siehe Quelle", "dialog answer drops citation markers and keeps line breaks");
+    Check(sources.Length == 2 && sources[0].Title == "WHO" && sources[1].Title == "bund.de" && sources.All(x => x.Url.StartsWith("https://")), "dialog sources come from https annotations only");
+    var request = ReviewPrompt.BuildDialogRequest("m", ReviewPrompt.Explain, "API", [new DialogTurn("assistant", "Eine Schnittstelle."), new DialogTurn("user", "Stimmt das?")]);
+    var input = request["input"]!.AsArray();
+    Check(input.Count == 3 && input[0]!["role"]!.GetValue<string>() == "user" && input[0]!["content"]!.GetValue<string>().Contains("\"task\":\"explanation\"")
+        && input[1]!["role"]!.GetValue<string>() == "assistant" && input[2]!["content"]!.GetValue<string>() == "Stimmt das?", "dialog request carries the text and the conversation");
+    Check(request["tools"]![0]!["type"]!.GetValue<string>() == "web_search" && request["store"]!.GetValue<bool>() == false, "dialog request uses web search and is not stored");
+}
+
 Console.WriteLine(failures == 0 ? "All fact-check tests passed." : $"{failures} fact-check test(s) failed.");
 return failures == 0 ? 0 : 1;

@@ -592,12 +592,28 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  message({type:'writing',captureId:39,kind:'summary',original:text,result:'old',canReplace:true,readOnly:false,model:'m'});
  assert.equal(element('answer-view').hidden,true);
  message({type:'writing',captureId:40,kind:'summary',original:text,result:'- Treffen am Montag',canReplace:true,readOnly:false,model:'m'});
- assert.equal(element('answer-title').textContent,'Summary');assert.equal(element('answer-text').textContent,'- Treffen am Montag');
+ assert.equal(element('answer-title').textContent,'Summary');assert.equal(element('dialog').children[0].children[0].textContent,'- Treffen am Montag');
  const before=sent.length;
  sandbox.runTask('rewrite');sandbox.runTask('summary');
  assert.equal(sent.length,before,'cached summary');
- element('copy-answer').onclick();
+ element('dialog').children[0].children[1].children[1].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyResult',kind:'summary',text:'- Treffen am Montag'});
+ // Follow-up questions carry the conversation; the answer shows its sources; a failed question returns to the input.
+ element('dialog-question').value='Stimmt das?';element('dialog-form').onsubmit({preventDefault(){}});
+ assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'discuss',kind:'summary',text,turns:[{role:'assistant',text:'- Treffen am Montag'},{role:'user',text:'Stimmt das?'}],captureId:40});
+ assert.equal(element('dialog').children.length,3);
+ message({type:'dialog',captureId:40,kind:'summary',question:'Stimmt das?',answer:{text:'Ja.',sources:[{url:'https://a.example/x',title:'A',domain:'a.example'}],searches:1,model:'m'}});
+ message({type:'busy',busy:false});
+ assert.equal(element('dialog').children.length,3);assert.equal(element('dialog').children[2].children[0].textContent,'Ja.');
+ element('dialog').children[2].children[1].children[0].children[0].onclick();
+ assert.deepEqual({...sent.at(-1)},{action:'openSource',url:'https://a.example/x'});
+ element('dialog-question').value='Und warum?';element('dialog-form').onsubmit({preventDefault(){}});
+ assert.equal(JSON.parse(JSON.stringify(sent.at(-1))).turns.length,4);
+ message({type:'busy',busy:false});
+ assert.equal(element('dialog-question').value,'Und warum?');assert.equal(element('dialog').children.length,3);
+ element('copy-conversation').onclick();
+ assert.equal(sent.at(-1).text,'Summary:\n- Treffen am Montag\n\nYou: Stimmt das?\n\nTextFixer: Ja.\nSources:\n- A: https://a.example/x');
+ element('dialog-question').value='';
  // A capture from a task shortcut starts that task.
  message({type:'capture',captureId:41,task:'explain',text:'API',canReplace:false,readOnly:true});
  assert.deepEqual({...sent.at(-1)},{action:'write',kind:'explain',text:'API',original:'API',captureId:41});

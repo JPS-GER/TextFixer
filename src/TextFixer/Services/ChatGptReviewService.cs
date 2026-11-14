@@ -185,6 +185,45 @@ public sealed class ChatGptReviewService : IReviewService
         return output;
     }
 
+    public const int MaxQuestionLength = 1000, MaxDialogQuestions = 20;
+
+    /// <summary>
+    /// Answers a follow-up question or objection about a summary or explanation of <paramref name="text"/>, with web
+    /// search and the fact-check model. <paramref name="turns"/> alternates assistant and user, starting with the first
+    /// answer and ending with the new question. An answer without a completed search reports Searches = 0.
+    /// </summary>
+    public async Task<DialogAnswer> DiscussAsync(string kind, string text, IReadOnlyList<DialogTurn> turns, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(turns);
+        if (kind is not (ReviewPrompt.Summary or ReviewPrompt.Explain)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (string.IsNullOrWhiteSpace(text)) throw new ChatGptServiceException("empty_text", "Select some text first.");
+        if (text.Length > MaxTextLength * 2)
+            throw new ChatGptServiceException("text_too_long", $"The selected text is too long (maximum {MaxTextLength:N0} characters).");
+        if (turns.Count < 2 || turns.Count % 2 != 0 || turns.Count > MaxDialogQuestions * 2)
+            throw new ChatGptServiceException("dialog_too_long", $"A conversation holds up to {MaxDialogQuestions} questions. Capture the text again to start a new one.");
+        for (var i = 0; i < turns.Count; i++)
+        {
+            var turn = turns[i];
+            if (turn.Role != (i % 2 == 0 ? "assistant" : "user") || string.IsNullOrWhiteSpace(turn.Text))
+                throw new ChatGptServiceException("invalid_dialog", "The conversation could not be read. Capture the text again.");
+            if (turn.Role == "user" && turn.Text.Length > MaxQuestionLength)
+                throw new ChatGptServiceException("question_too_long", $"Keep the question under {MaxQuestionLength:N0} characters.");
+            if (turn.Text.Length > MaxTextLength)
+                throw new ChatGptServiceException("invalid_dialog", "The conversation could not be read. Capture the text again.");
+        }
+
+        var (response, model) = await WithAccessTokenAsync(async token =>
+        {
+            var model = await ResolveModelAsync(token, cancellationToken, ModelTask.FactCheck).ConfigureAwait(false);
+            return (await _responses.StreamResponseAsync(token, ReviewPrompt.BuildDialogRequest(model, kind, text, turns, Style), ChatGptProtocol.FactCheckTimeout, cancellationToken).ConfigureAwait(false), model);
+        }, cancellationToken).ConfigureAwait(false);
+
+        var (answer, sources) = FactCheckParser.CitedAnswer(response);
+        if (answer.Length == 0) throw new ChatGptServiceException("empty_answer", "ChatGPT returned no answer. Try again.");
+        return new DialogAnswer(answer, sources, response.SearchCalls.Count(s => s == "completed"), model);
+    }
+
     /// <summary>Revises <paramref name="translation"/> of <paramref name="source"/> as the user asks, for example a more formal tone.</summary>
     public async Task<string> ReviseTranslationAsync(string source, string translation, string request, CancellationToken cancellationToken)
     {

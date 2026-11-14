@@ -86,7 +86,7 @@ internal sealed class ReviewWindow : Form
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
     /// <param name="task">open shows the task choice; any other task from <see cref="Shortcuts.Tasks"/> starts right away.</param>
-    internal void SetCapture(CapturedText capture, string task = "review") { _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); SendCapture(); }
+    internal void SetCapture(CapturedText capture, string task = "review") { _chromeCapture = null; _capture = capture; _task = task; _captureId++; _factSources.Clear(); _dialogSources.Clear(); SendCapture(); }
     internal void ConfigureChrome(ChromeBridgeServer chrome) => _chrome = chrome;
     internal void ConfigureHistory(ClipboardHistory history, ClipboardMonitor monitor, AppSettings settings)
     {
@@ -129,7 +129,7 @@ internal sealed class ReviewWindow : Form
                 var text = message.GetProperty("text").GetString();
                 if (!Guid.TryParse(captureId, out _) || string.IsNullOrWhiteSpace(text) || text.Length > 30000) return;
                 _chromeCapture = new ChromeCapture(sessionId, captureId!, text, message.TryGetProperty("hasFormatting", out var formatting) && formatting.ValueKind == JsonValueKind.True);
-                _capture = null; _task = "review"; _captureId++; _factSources.Clear(); SendCapture(); Open();
+                _capture = null; _task = "review"; _captureId++; _factSources.Clear(); _dialogSources.Clear(); SendCapture(); Open();
             }
             else if (kind == "applyResult" && _applyingChromeCapture is { } applying
                 && sessionId == applying.SessionId && message.GetProperty("captureId").GetString() == applying.CaptureId)
@@ -163,6 +163,8 @@ internal sealed class ReviewWindow : Form
     private int _captureId, _replyCaptureId;
     /// <summary>Source URLs of the last fact check for the current capture; openSource opens only these.</summary>
     private readonly HashSet<string> _factSources = new(StringComparer.Ordinal);
+    /// <summary>Source URLs cited in the Summary and Explain dialogs of the current capture.</summary>
+    private readonly HashSet<string> _dialogSources = new(StringComparer.Ordinal);
     private void SendCapture() => Send(new { type = "capture", captureId = _captureId, task = _task, text = _chromeCapture?.Text ?? _capture?.Text ?? "", canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = _chromeCapture?.HasFormatting ?? _capture?.HasFormatting ?? false, canPreserveFormatting = _capture?.Html is not null, mode = _chromeCapture is null ? "clipboard" : "chrome" });
     /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives.</summary>
     private async Task CheckByTabAsync(string original, CancellationToken cancellationToken)
@@ -475,13 +477,13 @@ internal sealed class ReviewWindow : Form
             }
             if (action == "openSource")
             {
-                // Only exact https URLs cited by the current fact check; the WebView itself never navigates.
+                // Only exact https URLs cited for the current capture; the WebView itself never navigates.
                 var url = root.TryGetProperty("url", out var urlElement) && urlElement.ValueKind == JsonValueKind.String ? urlElement.GetString() : null;
-                if (url is null || !_factSources.Contains(url) || FactCheckParser.ValidUrl(url) is null) return;
+                if (url is null || !(_factSources.Contains(url) || _dialogSources.Contains(url)) || FactCheckParser.ValidUrl(url) is null) return;
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 return;
             }
-            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck" or "write" or "copyResult" or "applyRewrite")) return;
+            if (action is not ("signin" or "signout" or "check" or "copy" or "apply" or "translate" or "reviseTranslation" or "copyTranslation" or "applyTranslation" or "factCheck" or "write" or "discuss" or "copyResult" or "applyRewrite")) return;
             _replyCaptureId = root.TryGetProperty("captureId", out var requestCapture) && requestCapture.ValueKind == JsonValueKind.Number && requestCapture.TryGetInt32(out var id) ? id : _captureId;
             _operation = new CancellationTokenSource();
             Send(new { type = "busy", busy = true, action });
@@ -543,10 +545,29 @@ internal sealed class ReviewWindow : Form
                         var written = await _service.WriteAsync(kind, writeFrom, writeRequest, _operation.Token);
                         Send(new { type = "writing", captureId = _replyCaptureId, kind, original = writeOriginal, result = written, request = writeRequest, canReplace = _capture is not null && _capture.Text == writeOriginal && !ReadOnlyCapture, readOnly = ReadOnlyCapture, model = _service.ActiveModel });
                         break;
+                    case "discuss":
+                        // A follow-up question about a summary or explanation; "text" is the capture, "turns" the conversation so far.
+                        var discussKind = root.TryGetProperty("kind", out var discussKindElement) && discussKindElement.ValueKind == JsonValueKind.String ? discussKindElement.GetString() : null;
+                        if (discussKind is not (ReviewPrompt.Summary or ReviewPrompt.Explain)) break;
+                        var discussed = ReadText(root);
+                        var turns = new List<Contracts.DialogTurn>();
+                        if (root.TryGetProperty("turns", out var turnsElement) && turnsElement.ValueKind == JsonValueKind.Array)
+                            foreach (var turn in turnsElement.EnumerateArray())
+                            {
+                                if (turn.ValueKind != JsonValueKind.Object) continue;
+                                var role = turn.TryGetProperty("role", out var roleElement) && roleElement.ValueKind == JsonValueKind.String ? roleElement.GetString() ?? "" : "";
+                                var turnText = turn.TryGetProperty("text", out var turnTextElement) && turnTextElement.ValueKind == JsonValueKind.String ? turnTextElement.GetString() ?? "" : "";
+                                turns.Add(new Contracts.DialogTurn(role, turnText));
+                            }
+                        var dialogAnswer = await _service.DiscussAsync(discussKind, discussed, turns, _operation.Token);
+                        if (_replyCaptureId == _captureId)
+                            foreach (var cited in dialogAnswer.Sources) _dialogSources.Add(cited.Url);
+                        Send(new { type = "dialog", captureId = _replyCaptureId, kind = discussKind, question = turns[^1].Text, answer = dialogAnswer });
+                        break;
                     case "copyResult":
                         TextTransfer.CopyRevision(ReadText(root));
                         var copiedKind = root.TryGetProperty("kind", out var copiedKindElement) && copiedKindElement.ValueKind == JsonValueKind.String ? copiedKindElement.GetString() : null;
-                        Notify(copiedKind switch { ReviewPrompt.Summary => "Summary", ReviewPrompt.Explain => "Explanation", _ => "Rewrite" } + " copied to the clipboard.");
+                        Notify(copiedKind switch { ReviewPrompt.Summary => "Summary", ReviewPrompt.Explain => "Explanation", "answer" => "Answer", "conversation" => "Conversation", _ => "Rewrite" } + " copied to the clipboard.");
                         break;
                     case "copyTranslation":
                         TextTransfer.CopyRevision(ReadText(root));

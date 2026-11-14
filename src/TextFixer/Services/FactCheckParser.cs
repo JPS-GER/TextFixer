@@ -148,6 +148,31 @@ internal static partial class FactCheckParser
         return explanation.Trim();
     }
 
+    internal const int MaxDialogSources = 8;
+
+    /// <summary>
+    /// A dialog answer without citation markers, and its sources from url_citation annotations only. Line breaks stay.
+    /// </summary>
+    public static (string Text, FactSource[] Sources) CitedAnswer(ResponseResult response)
+    {
+        var text = response.Text;
+        var cited = response.Citations.Where(c => c.Start >= 0 && c.Start < c.End && c.End <= text.Length).OrderByDescending(c => c.Start).ToList();
+        var removeFrom = text.Length;
+        foreach (var c in cited)
+        {
+            if (c.End > removeFrom) continue; // overlaps a range already removed
+            text = text[..c.Start] + text[c.End..];
+            removeFrom = c.Start;
+        }
+        text = MarkdownCitation().Replace(text, "");
+        text = MarkdownLink().Replace(text, "$1");
+        text = Spaces().Replace(text, " ");
+        text = InlineSpaceBeforePunctuation().Replace(text, "$1");
+        text = string.Join("\n", text.Replace("\r\n", "\n").Split('\n').Select(line => line.TrimEnd()));
+        var sources = response.Citations.Select(ToSource).OfType<FactSource>().DistinctBy(s => DedupKey(s.Url)).Take(MaxDialogSources).ToArray();
+        return (text.Trim(), sources);
+    }
+
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 
     private static ChatGptServiceException Invalid() =>
@@ -157,5 +182,6 @@ internal static partial class FactCheckParser
     [GeneratedRegex(@"\[([^\]]*)\]\(https?://[^)\s]*\)")] private static partial Regex MarkdownLink();
     [GeneratedRegex(@"[ \t]{2,}")] private static partial Regex Spaces();
     [GeneratedRegex(@"\s+([.,;:!?])")] private static partial Regex SpaceBeforePunctuation();
+    [GeneratedRegex(@"[ \t]+([.,;:!?])")] private static partial Regex InlineSpaceBeforePunctuation();
     [GeneratedRegex(@"(?<=[?&])utm_[^&]*&?")] private static partial Regex TrackingParameter();
 }

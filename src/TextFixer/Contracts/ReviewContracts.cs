@@ -16,6 +16,10 @@ public sealed record FactSource(string Url, string Title, string Domain);
 public sealed record FactClaim(string Quote, string Verdict, string Explanation, string? Correction, FactSource[] Sources, bool NoSource);
 /// <summary>Empty Claims means no checkable claims. Searches counts completed web searches.</summary>
 public sealed record FactCheckResult(FactClaim[] Claims, string Model, long ElapsedMs, int Searches);
+/// <summary>One message in a Summary or Explain dialog. Role: user or assistant.</summary>
+public sealed record DialogTurn(string Role, string Text);
+/// <summary>An answer in a Summary or Explain dialog. Sources come only from url_citation annotations; Searches counts completed web searches.</summary>
+public sealed record DialogAnswer(string Text, FactSource[] Sources, int Searches, string Model);
 
 public interface IReviewService
 {

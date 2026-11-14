@@ -179,6 +179,20 @@ button.shortcut-reset { justify-self:start; }
 .revise-translation { display:flex; gap:10px; margin-top:12px; }
 .revise-translation input { flex:1; min-width:0; border:1px solid var(--edge); border-radius:7px; padding:9px 12px; background:var(--room-1); font:14px "Segoe UI",Arial; color:var(--text); caret-color:var(--accent); }
 .revise-translation input::placeholder { color:var(--muted); }
+/* Summary and Explain dialog: answers on the left, the user's questions on the right. */
+.dialog { display:flex; flex-direction:column; gap:14px; margin-top:4px; }
+.msg { min-width:0; }
+.msg-answer { align-self:stretch; background:var(--room-1); border:1px solid var(--edge); border-radius:4px 12px 12px 12px; padding:15px 18px 10px; }
+.msg-question { align-self:flex-end; max-width:78%; background:var(--room-3); border:1px solid var(--accent-edge); border-radius:12px 4px 12px 12px; padding:10px 15px; }
+.msg-text { white-space:pre-wrap; overflow-wrap:anywhere; font:14px/1.7 "Segoe UI",Arial; }
+.msg-pending { padding-bottom:15px; }
+.msg-pending .msg-text { color:var(--muted); font-style:italic; }
+.msg .fact-sources { margin-top:10px; padding-top:8px; border-top:1px solid var(--edge); }
+.msg-foot { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:4px; min-height:28px; }
+.msg-foot button.link { margin-right:-6px; }
+.dialog-form { display:flex; gap:10px; align-items:flex-end; margin-top:16px; }
+.dialog-form textarea { flex:1; min-width:0; height:42px; min-height:42px; max-height:160px; resize:none; padding:10px 12px; border-radius:7px; font:14px/1.5 "Segoe UI",Arial; }
+#dialog-keys,#dialog-full { margin:6px 0 0; }
 #history-view { display:none; }
 main.show-history > :not(#history-view) { display:none !important; }
 main.show-history > #history-view { display:block; }

@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\TextFixer\Services\ChatGptResponsesClient.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\FactCheckParser.cs" Link="Services\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TextFixer\Services\ReviewPrompt.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\ChatGptHttp.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\ChatGptProtocol.cs" Link="Services\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TextFixer\Services\ChatGptServiceException.cs" Link="Services\%(Filename)%(Extension)" />
