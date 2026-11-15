@@ -283,8 +283,6 @@ header h1 { font-size:calc(22px * var(--text-scale)); }
 main { max-width:1100px; margin:0 auto; }
 .icon-button { width:40px; height:40px; padding:0 !important; display:inline-grid; place-items:center; border-radius:9px; color:var(--muted); }
 .icon-button:hover { color:var(--text); }
-#choose-view { margin-bottom:18px; }
-#choose-view details { margin-top:0; }
 main.task-active #choose-text { max-height:180px; }
 @media(max-width:900px) { .sidebar { width:min(calc(206px * var(--text-scale)), 40vw); } }
 .empty-view { max-width:520px; margin:48px auto 0; text-align:center; }
@@ -295,6 +293,7 @@ main.task-active #choose-text { max-height:180px; }
 .task-group { --group:#757575; display:flex; flex-direction:column; }
 .task-group.idle { opacity:.5; }
 .history-group { margin-top:auto; padding-top:4px; }
+.source-group { --group:#264859; margin-bottom:10px; }
 button.group-head { display:flex; align-items:center; gap:10px; width:100%; min-height:38px; padding:4px 6px 4px 11px; border:0; border-radius:10px; background:var(--group); color:#fff; text-align:left; }
 button.group-head:hover { background:var(--group); filter:brightness(1.12); }
 button.group-head strong { flex:1; min-width:0; font:700 calc(16px * var(--text-scale)) "Segoe UI",Arial; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -364,3 +363,47 @@ button.export-button.matches { border-color:var(--accent-edge); }
 .export-row.small button.export-button:hover { background:var(--room-2); }
 .fact-export { margin:4px 0 16px; }
 .msg-foot { flex-wrap:wrap; row-gap:6px; }
+
+/* Task band: task name in the task's color, the chosen option, and the button that opens the captured text. */
+.task-band { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; padding:16px 18px 16px 24px; border-radius:12px; background:var(--band,#264859); color:#fff; }
+.band-title { display:flex; align-items:center; gap:10px; min-width:0; }
+.task-band h2 { margin:0; color:#fff; font-size:calc(20px * var(--text-scale)); font-weight:650; }
+.band-pill { padding:3px 10px; border-radius:12px; background:#ffffff2e; font-size:calc(12px * var(--text-scale)); font-weight:600; white-space:nowrap; }
+.source-button { display:flex; align-items:center; gap:8px; min-width:0; max-width:55%; padding:7px 12px; border:1px solid #ffffff4d; border-radius:9px; background:#00000026; color:#fff; font-size:calc(12.5px * var(--text-scale)); }
+/* Model and notes appear in the band (model) and its tooltip (notes). */
+#model, #translation-model, #rewrite-model, #answer-model, #answer-hint, #translation-hint, #fact-meta, #dialog-keys { display:none; }
+.band-model { color:#ffffffb3; font-size:calc(12.5px * var(--text-scale)); white-space:nowrap; }
+#source-summary { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-icon { flex:none; width:12px; height:14px; border:1.5px solid currentColor; border-radius:2px; box-shadow:inset 0 3px 0 -1.5px transparent; background:linear-gradient(currentColor,currentColor) 2px 4px/6px 1.5px no-repeat,linear-gradient(currentColor,currentColor) 2px 7px/6px 1.5px no-repeat; }
+
+/* The band and the result form one card; below the result, Pass on lists every way to use it. */
+.task-band.joined { margin-bottom:0; border-radius:12px 12px 0 0; }
+.result-layout { display:flex; flex-direction:column; border:1px solid var(--edge); border-top:0; border-radius:0 0 12px 12px; overflow:clip; }
+.result-main { min-width:0; padding:22px 24px; }
+.result-aside { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; padding:16px 24px 22px; border-top:2px solid var(--band,#264859); background:var(--room-1); }
+.aside-head { grid-column:1/-1; margin:0 0 2px; font-size:calc(15px * var(--text-scale)); font-weight:650; }
+.aside-group, .aside-group > div, .result-aside .export-row { display:contents; }
+.result-aside .aside-group[hidden], .aside-label, .result-aside .export-label, .result-aside .match-dot { display:none; }
+.result-aside .export-button, .result-aside .aside-group > button { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:2px; width:100%; min-height:58px; margin:0; padding:9px 14px; border:1px solid var(--edge); border-radius:9px; background:var(--room-2); color:var(--text); font:600 calc(13.5px * var(--text-scale)) "Segoe UI",Arial; text-align:left; }
+.result-aside .export-button:hover, .result-aside .aside-group > button:hover:not(:disabled) { background:var(--room-3); border-color:var(--edge-strong); }
+.result-aside [data-sub]::after { content:attr(data-sub); color:var(--muted); font-weight:400; font-size:calc(12px * var(--text-scale)); }
+.result-aside .export-button.matches { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.result-aside .hint, .result-aside label, .result-aside .fact-export { grid-column:1/-1; margin:0; }
+#answer-title, #rewrite-view > .section-heading, #rewrite-steps { display:none; }
+#rewrite-presets { display:none; }
+#rewrite-result #rewrite-form { margin-top:20px; }
+#rewrite-result #rewrite-text { margin-top:0; }
+
+@media (max-width:700px) { .task-band { flex-wrap:wrap; } .source-button { max-width:100%; } }
+#choose-preview pre { max-height:none; margin:0; }
+/* Facts under the captured text, separated by a line in the band color. */
+.preview-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:16px 24px 22px; border-top:2px solid var(--accent); background:var(--room-1); }
+.fact-tile { display:flex; flex-direction:column; gap:3px; min-width:0; padding:10px 14px; border:1px solid var(--edge); border-radius:9px; background:var(--room-2); }
+.fact-tile.wide { grid-column:span 2; }
+.fact-label { color:var(--muted); font-size:calc(12px * var(--text-scale)); }
+.fact-value { font-size:calc(15px * var(--text-scale)); font-weight:600; overflow-wrap:anywhere; }
+.fact-tile.ok-tone .fact-value { color:#8fd9a8; }
+.fact-tile.muted-tone .fact-value { color:var(--accent); }
+@media (max-width:700px) { .preview-facts { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+#rewrite-form[hidden] { display:none; }
+#rewrite-result.original-only .result-aside, #rewrite-result.original-only .correction-details, #rewrite-result.original-only .hint { display:none; }

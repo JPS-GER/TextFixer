@@ -277,6 +277,8 @@ const exportFormats=[
   ['bbcode','BBCode','For classic forums: [b], [i], [quote], [url], [list].'],
   ['mforum','M! Forum','For the post editor on maniac-forum.de. Pastes as formatted text the forum editor accepts, with spoilers and mentions.'],
 ];
+// Short line under each format in the Pass on area.
+const exportSubs={formatted:'Word, Outlook, Teams',plain:'No formatting',markdown:'GitHub, Discord',reddit:'Spoilers as >!text!<',youtube:'Comments',bbcode:'Classic forums',mforum:'maniac-forum.de'};
 // Text and, for rich formats, an HTML fragment for the clipboard. Source: markup text or blocks.
 function markupExport(source,format){
   const blocks=typeof source==='string'?markupBlocks(source):source;

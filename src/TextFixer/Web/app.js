@@ -8,6 +8,7 @@ let captureTask='review',translationOriginal='',translationText='';
 // taskOption[task] is the chosen card option ('' = the card's main action); readyOption[task] is the option of the shown result.
 // captureId increases with every capture; answers for an older capture are dropped.
 let historyShown=false;
+let captureClip=null;
 let captureId=0,activeTask='review',taskReady={},taskOption={},readyOption={},requestedOption={},factSetup=false,dialogKey='',menuButtons=[];
 // Fact check: claims with their correction wordings (exact quote replacements, applied like review edits).
 // factContext and factClarifications (answers to the questions of needs_context claims) belong to the current capture.
@@ -164,7 +165,7 @@ function showTaskView(){
   $('factcheck-setup').hidden=activeTask!=='factcheck'||ready('factcheck')||!factSetup;
   $('rewrite-view').hidden=activeTask!=='rewrite'||!ready('rewrite');
   $('choose-view').hidden=!sourceText.trim();$('empty-view').hidden=!!sourceText.trim();$('main').classList.toggle('task-active',!!activeTask);
-  $('choose-text').textContent=sourceText;
+  $('choose-text').textContent=sourceText;renderBand();
   const answer=['summary','explain'].includes(activeTask)?answers[answerKey(activeTask)]:null;
   $('answer-view').hidden=!answer;
   if(answer){const summary=activeTask==='summary',variant=optionLabel(activeTask,taskOption[activeTask]||'');$('answer-title').textContent=(summary?'Summary':'Explanation')+(variant?': '+variant:'');
@@ -184,7 +185,8 @@ function runTask(task,option=''){
     else{$('fact-context').focus?.();notice('Add context, then start the fact check.');}
     update();return;
   }
-  if(task==='rewrite'&&option==='more'){taskOption.rewrite='more';taskReady.rewrite=captureId;showTaskView();renderRewrite();notice('Choose a preset or describe the change.');update();return;}
+  // Own request starts from the original like the other options; only the field under a result builds on it.
+  if(task==='rewrite'&&option==='more'){taskOption.rewrite='more';taskReady.rewrite=captureId;rewriteSteps=[];showTaskView();renderRewrite();notice('Describe the change.');update();return;}
   if(task==='factcheck')factSetup=false;
   taskOption[task]=option;showTaskView();
   if(task==='rewrite'){
@@ -284,8 +286,9 @@ function renderFacts(){
 }
 function notice(message){$('notice').textContent=message||'Ready';$('notice').hidden=false;}
 function update(){
+  syncAsides();
   // Copy buttons of answers are built while a request may still be running; they follow the busy state from here.
-  for(const b of document.querySelectorAll?.('.export-button, .msg-foot .use-capture')||[])b.disabled=busy;
+  for(const b of document.querySelectorAll?.('.export-button, .msg-foot .use-capture, #use-answer')||[])b.disabled=busy;
   $('count').textContent=`${$('source').value.length.toLocaleString()} / 30,000`;
   $('signin').disabled=busy;$('signout').disabled=busy;$('source').disabled=busy;
   $('cancel').hidden=!busy;
@@ -479,7 +482,7 @@ function useAsCapture(text){if(busy||!text?.trim())return;post('useAsCapture',{t
 $('use-review').onclick=()=>useAsCapture(revised());$('use-translation').onclick=()=>useAsCapture(resultPlain(translationText,translationStructured));
 $('use-fact').onclick=()=>useAsCapture(factRevised());$('use-rewrite').onclick=()=>useAsCapture(resultPlain(rewriteSteps.at(-1)?.text||'',rewriteStructured));
 $('apply-rewrite').onclick=()=>{const text=rewriteSteps.at(-1)?.text||'';if(rewriteStructured)applyStructured('applyRewrite',text,sourceText);else post('applyRewrite',{text,original:sourceText});};
-$('rewrite-reset').onclick=()=>{rewriteSteps=[];renderRewrite();update();notice('Choose a preset or describe the change.');};
+$('rewrite-reset').onclick=()=>{rewriteSteps=[];renderRewrite();update();notice('Describe the change.');};
 $('dialog-form').onsubmit=e=>{e.preventDefault();askDialog();};
 $('dialog-question').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();askDialog();}};
 $('dialog-question').oninput=sizeQuestion;
@@ -494,6 +497,7 @@ $('fact-recheck').onclick=()=>startFactCheck($('fact-context-more').value);
 $('fact-context').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context').value);}};
 $('fact-context-more').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context-more').value);}};
 $('apply-translation').onclick=()=>{if(translationStructured)applyStructured('applyTranslation',translationText,translationOriginal);else post('applyTranslation',{text:translationText,original:translationOriginal});};
+$('open-source').onclick=()=>{if(!sourceText)return;if(historyVisible())showHistory(false);activeTask='';showTaskView();update();};
 $('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
 document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
@@ -502,7 +506,7 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){formatInfo=detectFormat(m.text||'',m);captureDoc=m.doc&&m.text?{text:m.text,model:m.doc.model||'',title:m.doc.title||'',items:new Map((m.doc.items||[]).map(i=>[String(i.id),i])),ranges:m.doc.ranges||[]}:null;markupSetItems(captureDoc?.items);revisedRows();renderPostInfo(m.text?m.doc:null);translationStructured=false;translationIntact=true;rewriteStructured=false;rewriteIntact=true;captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
+  if(m.type==='capture'){captureClip=m.clip||null;formatInfo=detectFormat(m.text||'',m);captureDoc=m.doc&&m.text?{text:m.text,model:m.doc.model||'',title:m.doc.title||'',items:new Map((m.doc.items||[]).map(i=>[String(i.id),i])),ranges:m.doc.ranges||[]}:null;markupSetItems(captureDoc?.items);revisedRows();renderPostInfo(m.text?m.doc:null);translationStructured=false;translationIntact=true;rewriteStructured=false;rewriteIntact=true;captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
   if(m.type==='revisedExport'){
     if(!exportFormats.some(([f])=>f===m.format))return;
     let out;markupSetItems(m.items);
@@ -865,7 +869,7 @@ function exportRow(source,{small=false,label='Copy as',onExport=null}={}){
   const title=document.createElement('span');title.className='export-label';title.textContent=label;row.append(title);
   for(const [format,name,tip] of exportFormats){
     const match=formatInfo.matches.has(format);
-    const button=document.createElement('button');button.type='button';button.className='export-button'+(match?' matches':'');button.dataset.format=format;
+    const button=document.createElement('button');button.type='button';button.className='export-button'+(match?' matches':'');button.dataset.format=format;button.dataset.sub=exportSubs[format]||'';
     button.title=tip+(match?' Matches the captured text.':'');button.disabled=busy;
     if(match){const dot=document.createElement('span');dot.className='match-dot';button.append(dot);}
     const text=document.createElement('span');text.textContent=name;button.append(text);
@@ -910,6 +914,7 @@ function dialogMessage(role,text,extra={}){
   // Answers use the Markdown subset of the prompt; questions and the waiting line stay as typed.
   if(role==='user'||extra.pending)body.textContent=text;else renderMarkup(body,text);
   if(role==='user'||extra.pending)return box;
+  const main=extra.main;
   if(extra.sources?.length){
     const sources=document.createElement('ul');sources.className='fact-sources';
     for(const s of extra.sources){
@@ -923,13 +928,16 @@ function dialogMessage(role,text,extra={}){
   const foot=document.createElement('div');foot.className='msg-foot';
   const note=document.createElement('span');note.className='hint';note.textContent=extra.note||'';
   const use=document.createElement('button');use.type='button';use.className='link use-capture';use.textContent='Use as captured text';use.disabled=busy;use.onclick=()=>useAsCapture(markupPlain(text));
-  foot.append(note,exportRow(text,{small:true}),use);box.append(foot);
+  // The first answer copies from the column next to the dialog; follow-up answers keep their own row.
+  if(main){$('answer-export').replaceChildren();$('answer-export').append(exportRow(text));$('use-answer').disabled=busy;$('use-answer').onclick=()=>useAsCapture(markupPlain(text));foot.append(note);}
+  else foot.append(note,exportRow(text,{small:true}),use);
+  box.append(foot);
   return box;
 }
 function renderDialog(){
   const a=answers[answerKey(activeTask)],list=$('dialog');list.replaceChildren();
   if(!a)return;
-  list.append(dialogMessage('assistant',a.text));
+  list.append(dialogMessage('assistant',a.text,{main:true}));
   for(const t of a.turns)list.append(t.role==='user'?dialogMessage('user',t.text):dialogMessage('assistant',t.text,{sources:t.sources,note:!t.searches?'Answered without web search':t.sources?.length?'':'Searched the web, no source cited'}));
   if(a.pending)list.append(dialogMessage('user',a.pending),dialogMessage('assistant','Searching the web and writing an answer...',{pending:true}));
   const full=a.turns.length/2+(a.pending?1:0)>=maxDialogQuestions;
@@ -953,7 +961,12 @@ function renderRewrite(){
   const presets=$('rewrite-presets');presets.replaceChildren();
   for(const [label,request] of rewritePresets){const b=document.createElement('button');b.type='button';b.className='preset';b.textContent=label;b.title=request;b.disabled=busy;b.onclick=()=>requestRewrite(request);presets.append(b);}
   const last=rewriteSteps.at(-1);
-  $('rewrite-empty').hidden=!!last;$('rewrite-result').hidden=!last;
+  // Without a result the request field shows only for Own request; a preset that is running shows nothing yet.
+  // Own request without a result shows the original text in the result card, with the request field below it.
+  const own=!last&&taskOption.rewrite==='more';
+  $('rewrite-empty').hidden=true;$('rewrite-result').hidden=!last&&!own;$('rewrite-form').hidden=!last&&!own;
+  $('rewrite-result').classList?.toggle?.('original-only',own);
+  if(own)showResultText('rewrite-text',sourceText,false);
   if(!last)return;
   showResultText('rewrite-text',last.text,rewriteStructured);$('rewrite-export').replaceChildren();$('rewrite-export').append(exportRow(()=>rewriteSteps.at(-1)?.text||''));$('rewrite-model').textContent=rewriteModel;
   $('rewrite-steps').textContent='Changes requested: '+rewriteSteps.map(s=>rewritePresets.find(p=>p[1]===s.request)?.[0]||s.request).join(', then ');
@@ -966,3 +979,100 @@ function renderRewrite(){
     if(part.after){const ins=document.createElement('ins');ins.textContent=part.after;changes.append(ins);}
   }
 }
+
+// ---- Main area: a band in the task's color on top, the result on the left, and a column on the right with
+// everything that passes the result on (copy formats, paste, keep working). The captured text sits behind the
+// band's source button, in a dialog with its origin, format and size.
+function captureWords(){return (sourceText.match(/\S+/g)||[]).length;}
+function renderBand(){
+  if($('open-source')){$('open-source').disabled=!sourceText;$('open-source').classList?.toggle?.('selected',!activeTask&&!!sourceText&&!historyVisible());}
+  // Before a task is chosen, the captured text fills the card under the band.
+  $('choose-preview').hidden=!!activeTask||!sourceText||$('choose-view').hidden;$('choose-preview-text').textContent=sourceText;if(!$('choose-preview').hidden)renderPreviewFacts();
+  const card=taskCards.find(c=>c[0]===activeTask);
+  document.documentElement?.style?.setProperty?.('--band',card?.[4]||'#264859');
+  $('band-task').textContent=card?.[1]||'Choose a task';
+  // Rewrite lists the requested changes in order; the other tasks show their chosen option.
+  const steps=activeTask==='rewrite'&&!$('rewrite-result').hidden?rewriteSteps.map(s=>{const p=rewritePresets.find(x=>x[1]===s.request)?.[0];return p?tr(p):s.request.length>40?s.request.slice(0,39)+'…':s.request;}).join(' → '):'';
+  const option=steps||(card?tr(optionLabel(activeTask,taskOption[activeTask]||'')):'');
+  $('band-option').textContent=option;$('band-option').hidden=!option;
+  // App and site names are data, not UI text; the rest is translated here.
+  const from=captureMode==='chrome'?'Chrome':captureClip?.app||tr('Clipboard');
+  const n=captureWords();
+  $('source-summary').textContent=[from,captureClip?.host,tr(`${n.toLocaleString()} ${n===1?'word':'words'}`)].filter(Boolean).join(' \u00b7 ');
+}
+// Facts under the captured text before a task is chosen: size, whether TextFixer can replace it, origin and format.
+function renderPreviewFacts(){
+  const box=$('preview-facts');box.replaceChildren();
+  const head=document.createElement('h3');head.className='aside-head';head.textContent='About this text';box.append(head);
+  const fact=(label,value,{wide=false,data=false,tone='',tip=''}={})=>{
+    if(!value)return;
+    const tile=document.createElement('div');tile.className='fact-tile'+(wide?' wide':'')+(tone?' '+tone:'');if(tip)tile.title=tip;
+    const l=document.createElement('span');l.className='fact-label';l.textContent=label;
+    const v=document.createElement('span');v.className='fact-value';v.textContent=value;if(data)v.dataset.noTr='';
+    tile.append(l,v);box.append(tile);
+  };
+  fact('Words',captureWords().toLocaleString(),{data:true});
+  fact('Characters',sourceText.length.toLocaleString(),{data:true});
+  fact('Paragraphs',String(sourceText.split(/\r?\n[ \t]*\r?\n/).filter(p=>p.trim()).length),{data:true});
+  fact('Editing',readOnlyCapture?'Read-only':canReplace?'Replaceable':'Copy only',{tone:readOnlyCapture||!canReplace?'muted-tone':'ok-tone',tip:readOnlyCapture?'Copy the result and paste it yourself.':canReplace?'TextFixer can replace the selection.':'Replace is not available for this capture.'});
+  const origin=[captureMode==='chrome'?'Chrome':captureClip?.app,windowTitle(),captureClip?.host].filter(Boolean).join(' \u00b7 ');
+  fact('Origin',origin,{wide:true,data:true});
+  fact('Source format',formatInfo?.source,{wide:true});
+  fact('Captured with',captureHow(),{wide:true});
+  // "Received: ..." is translated as one sentence; the tile shows the part after the colon.
+  if(formatInfo?.received)fact('Received',tr('Received: '+formatInfo.received+'.').replace(/^[^:]+:\s*/,'').replace(/\.$/,''),{wide:true});
+  const evidence=[formatInfo?.evidence,formatInfo?.unknown].filter(Boolean).map(x=>tr(x)).join(' ');
+  fact('Evidence',evidence,{wide:true});
+  const post=$('post-info');
+  if(post&&!post.hidden)fact('Post',[...post.children].map(c=>c.textContent).filter(Boolean).join(' \u00b7 '),{wide:true,data:true});
+}
+// The window title without a trailing " - App" that repeats the app name.
+function windowTitle(){
+  const w=captureClip?.window||'',app=captureClip?.app||'';
+  return app&&w.toLowerCase().endsWith(' - '+app.toLowerCase())?w.slice(0,-(app.length+3)):w;
+}
+const captureHow=()=>captureMode==='chrome'?tr('Chrome extension'):tr(`${shortcutLabels[captureTask]||shortcutLabels.open}, clipboard`);
+// Moves a view's export row and action buttons into a column next to its result. Groups: [label, element ids,
+// optional id of an element whose visibility the group follows].
+const asideSubs={apply:'In the source app','apply-translation':'In the source app','apply-rewrite':'In the source app','fact-apply':'In the source app','use-review':'Run another task','use-translation':'Run another task','use-rewrite':'Run another task','use-fact':'Run another task','use-answer':'Run another task','copy-conversation':'Questions and answers','rewrite-reset':'Back to the original'};
+function asideLayout(id,groups){
+  const head=document.createElement('h3');head.className='aside-head';head.textContent='Pass on';
+  const box=$(id);if(!box)return;
+  const main=document.createElement('div');main.className='result-main';
+  const aside=document.createElement('aside');aside.className='result-aside';
+  main.append(...[...(box.childNodes||[])]);
+  box.append(main,aside);aside.append(head);box.classList?.add?.('result-layout');
+  for(const [label,ids,follow] of groups){
+    const group=document.createElement('div');group.className='aside-group';
+    const title=document.createElement('h3');title.className='aside-label';title.textContent=label;group.append(title);
+    for(const part of ids){const el=$(part);if(!el)continue;if(asideSubs[part]&&el.dataset)el.dataset.sub=asideSubs[part];group.append(el);}
+    if(follow)group.dataset.follow=follow;
+    aside.append(group);
+  }
+  // Toolbars whose buttons all moved are left empty.
+  for(const bar of main.querySelectorAll?.('.toolbar')||[])if(!bar.querySelector?.('button, input, .hint'))bar.remove?.();
+}
+function syncAsides(){
+  renderBand();
+  // Rewrite: once there is a result, the presets and the request field sit below it.
+  const rw=$('rewrite-result'),rwMain=rw?.querySelector?.('.result-main');
+  if(rwMain){const target=rw.hidden?$('rewrite-view'):rwMain,before=rw.hidden?$('rewrite-empty'):null;for(const id of ['rewrite-presets','rewrite-form']){const el=$(id);if(el&&el.parentElement!==target)target.insertBefore(el,before);}}
+  // The band joins the result card below it; without a visible result it stands alone.
+  const joined=[...(document.querySelectorAll?.('.result-layout')||[])].some(el=>!el.hidden&&el.offsetParent!==null);
+  $('choose-view')?.classList?.toggle?.('joined',joined);
+  // The model of the visible result shows in the band; notes about the result become the band title's tooltip.
+  const view=[...(document.querySelectorAll?.('.result-layout')||[])].find(el=>!el.hidden&&el.offsetParent!==null);
+  const model=!view?'':view.id==='factcheck-view'?factMeta?.model||'':view.id==='rewrite-result'?rewriteModel:view.querySelector?.('#model,#translation-model,#rewrite-model,#answer-model')?.textContent||'';
+  const note=view?.querySelector?.('#answer-hint,#translation-hint,#fact-meta')?.textContent||'';
+  if($('band-model')){$('band-model').textContent=model;$('band-model').hidden=!model;}
+  if($('band-task')?.setAttribute){if(note)$('band-task').setAttribute('title',tr(note));else $('band-task').removeAttribute?.('title');}
+  for(const group of document.querySelectorAll?.('.aside-group')||[]){
+    const follow=group.dataset.follow&&$(group.dataset.follow);
+    group.hidden=(follow&&follow.hidden)||![...group.children].slice(1).some(c=>!c.hidden);
+  }
+}
+asideLayout('results',[['Copy as',['review-export']],['Paste',['apply','plain-text-option','readonly-hint']],['Keep working',['use-review']]]);
+asideLayout('translation-view',[['Copy as',['translation-export']],['Paste',['apply-translation','translation-readonly']],['Keep working',['use-translation']]]);
+asideLayout('rewrite-result',[['Copy as',['rewrite-export']],['Paste',['apply-rewrite','rewrite-readonly','rewrite-plain']],['Keep working',['use-rewrite','rewrite-reset']]]);
+asideLayout('answer-view',[['Copy as',['answer-export']],['Keep working',['use-answer']],['Conversation',['copy-conversation']]]);
+asideLayout('factcheck-view',[['Copy check as',['fact-export']],['Copy revised text as',['fact-revised-export'],'fact-revision'],['Paste',['fact-apply','fact-plain-option','fact-readonly'],'fact-revision'],['Keep working',['use-fact'],'fact-revision']]);

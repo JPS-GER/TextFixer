@@ -5,7 +5,7 @@
 // are never translated. Words added to results (copied fact check labels) follow the result language instead.
 let appLanguage='en';
 const i18nKeep=new WeakMap();   // element -> its English children while it shows German
-const i18nAttrs=['title','placeholder','aria-label'];
+const i18nAttrs=['title','placeholder','aria-label','data-sub'];
 
 function i18nWords(lang){return lang==='de'?i18nDe:null;}
 // Translates one English UI string; unknown strings stay as they are.
@@ -18,7 +18,7 @@ function tr(text,lang=appLanguage){
   return text;
 }
 // Captured text, results, answers, quotes and clipboard entries are content, never UI text.
-const i18nContent='[data-no-tr],script,style,textarea,pre,code,blockquote,#choose-text,#post-info,#inline-text,#original-text,#source,#preview,#translation-text,#translation-original,#rewrite-text,#rewrite-changes,#rewrite-steps,#fact-preview,.msg-text,.fact-explanation,.change-content,.history-text,.md';
+const i18nContent='[data-no-tr],script,style,textarea,pre,code,blockquote,#choose-text,#source-summary,#band-model,.fact-value[data-no-tr],#post-info,#inline-text,#original-text,#source,#preview,#translation-text,#translation-original,#rewrite-text,#rewrite-changes,#rewrite-steps,#fact-preview,.msg-text,.fact-explanation,.change-content,.history-text,.md';
 function i18nSkipped(el){return !el||el.closest?.(i18nContent)!=null;}
 function i18nKey(el){
   let n=0,hasText=false;const parts=[];
@@ -86,9 +86,10 @@ function setAppLanguage(lang){
     const seen=new Set();
     for(const r of records){
       const el=r.type==='characterData'?r.target.parentElement:r.target;
-      if(!el||seen.has(el))continue;seen.add(el);
-      if(r.type==='childList'){i18nElement(el);for(const n of r.addedNodes)if(n.nodeType===1)i18nTree(n);}
-      else i18nElement(el);
+      if(!el)continue;
+      // Added nodes are translated for every record: one element can get several childList records in a batch.
+      if(r.type==='childList')for(const n of r.addedNodes)if(n.nodeType===1)i18nTree(n);
+      if(seen.has(el))continue;seen.add(el);i18nElement(el);
     }
   });
   i18nObserver.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:i18nAttrs});

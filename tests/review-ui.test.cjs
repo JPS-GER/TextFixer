@@ -805,7 +805,8 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  element('apply-rewrite').onclick();
  assert.deepEqual({...sent.at(-1)},{action:'applyRewrite',text:'Treffen am Montag! Schick mir die E-Mail.',original:text});
  element('rewrite-reset').onclick();
- assert.equal(element('rewrite-result').hidden,true);
+ // In Own request mode, starting over shows the original text with the request field below it.
+ assert.equal(element('rewrite-result').hidden,false);assert.equal(element('rewrite-text').textContent,text);assert.equal(element('rewrite-form').hidden,false);
  // Summary runs once and is cached; a late answer for an older capture is dropped.
  sandbox.runTask('summary');
  assert.deepEqual({...sent.at(-1)},{action:'write',kind:'summary',text,original:text,captureId:40});
@@ -816,7 +817,7 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
  const before=sent.length;
  sandbox.runTask('rewrite','more');sandbox.runTask('summary');
  assert.equal(sent.length,before,'cached summary');
- const exportButtons=element('dialog').children[0].children[1].children[1].children;
+ const exportButtons=element('answer-export').children[0].children;
  assert.deepEqual(exportButtons.slice(1).map(x=>x.dataset.format),['formatted','plain','markdown','reddit','youtube','bbcode','mforum']);
  exportButtons[2].onclick();
  assert.deepEqual({...sent.at(-1)},{action:'copyAs',format:'plain',text:'\u2022 Treffen am Montag'});

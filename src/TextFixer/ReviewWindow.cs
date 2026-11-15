@@ -241,8 +241,34 @@ internal sealed class ReviewWindow : Form
         Find("code", @"<(pre|code)\b"); Find("table", @"<table\b"); Find("image", @"<img\b(?![^>]*ProseMirror-separator)"); Find("poll", @"data-poll-id"); Find("embedded video", @"<iframe|<video");
         var unknown = System.Text.RegularExpressions.Regex.Matches(fragment, @"<([a-zA-Z][\w:-]*)", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200))
             .Select(m => m.Groups[1].Value.ToLowerInvariant()).Where(t => !StandardTags.Contains(t)).Distinct().Take(8).ToArray();
-        return new { formats, host, found, unknown };
+        var (app, window) = Origin(_capture.Window);
+        return new { formats, host, found, unknown, app, window };
     }
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetWindowText(nint window, System.Text.StringBuilder text, int size);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
+
+    /// <summary>The app (its product description, else the process name) and the window title of a capture, for the
+    /// captured-text details. Shown in the window only; never logged or sent to ChatGPT.</summary>
+    private static (string? App, string? Window) Origin(nint window)
+    {
+        if (window == 0) return (null, null);
+        string? app = null;
+        try
+        {
+            GetWindowThreadProcessId(window, out var id);
+            using var process = Process.GetProcessById((int)id);
+            try { app = process.MainModule?.FileVersionInfo.FileDescription; } catch (System.ComponentModel.Win32Exception) { } catch (InvalidOperationException) { }
+            if (string.IsNullOrWhiteSpace(app)) app = process.ProcessName;
+        }
+        catch (ArgumentException) { }
+        catch (InvalidOperationException) { }
+        var title = new System.Text.StringBuilder(256);
+        var length = GetWindowText(window, title, title.Capacity);
+        var text = length > 0 ? title.ToString().Trim() : null;
+        return (app?.Trim(), string.IsNullOrEmpty(text) ? null : text);
+    }
+
     /// <summary>One request per review tab, all sent at once. Each answer is shown as soon as it arrives. <paramref name="only"/> limits the tabs.</summary>
     private async Task CheckByTabAsync(string original, CancellationToken cancellationToken, IReadOnlyList<string>? only = null)
     {
