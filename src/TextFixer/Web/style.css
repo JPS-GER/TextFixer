@@ -261,8 +261,10 @@ body.clipboard main > #history-view { flex:1; min-height:0; display:flex; flex-d
 .hv-search input:focus,.hv-search input:focus-visible { outline:none; border-color:var(--accent-edge); }
 .hv-search .hits { position:absolute; right:11px; font-size:calc(12.5px * var(--text-scale)); color:var(--dim); pointer-events:none; }
 .hv-card { flex:1; display:flex; flex-direction:column; min-height:0; border:1px solid var(--edge); border-radius:12px; background:var(--room-1); overflow:hidden; }
-.hv-seg { flex:none; display:flex; margin:8px; border:1px solid var(--edge-strong); border-radius:9px; overflow:hidden; }
-.hv-seg button { flex:1; min-width:0; justify-content:center; border:0; border-radius:0; background:transparent; color:var(--muted); font:600 calc(13px * var(--text-scale)) "Segoe UI",Arial; padding:6px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.hv-seg { flex:none; display:flex; flex-direction:column; margin:8px; border:1px solid var(--edge-strong); border-radius:9px; overflow:hidden; }
+.hv-seg-row { display:flex; }
+.hv-seg-row + .hv-seg-row { border-top:1px solid var(--edge); }
+.hv-seg button { flex:1 1 auto; min-width:0; justify-content:center; border:0; border-radius:0; background:transparent; color:var(--muted); font:600 calc(12.5px * var(--text-scale)) "Segoe UI",Arial; padding:6px 4px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .hv-seg button + button { border-left:1px solid var(--edge); }
 .hv-seg button.on { background:var(--room-3); color:var(--text); }
 .hv-seg i { width:4px; height:13px; border-radius:2px; background:var(--k,var(--dim)); flex:none; }
@@ -277,6 +279,9 @@ button.hv-row { position:relative; display:block; width:100%; text-align:left; b
 button.hv-row::before { content:""; position:absolute; left:5px; top:8px; bottom:8px; width:3px; border-radius:2px; background:var(--k,var(--dim)); }
 button.hv-row:hover { background:var(--room-2); }
 button.hv-row.sel { background:var(--room-3); }
+button.hv-row.media { display:grid; grid-template-columns:56px minmax(0,1fr); column-gap:10px; align-items:center; }
+.hv-row .thumb { grid-row:1 / span 3; width:56px; height:40px; object-fit:cover; border-radius:5px; background:var(--room-2); }
+.hv .missing-badge { font-size:calc(11.5px * var(--text-scale)); font-weight:600; border-radius:6px; padding:1px 7px; white-space:nowrap; color:var(--bad); background:var(--bad-bg); }
 .hv-row .t { display:block; white-space:nowrap; overflow:hidden; }
 .hv-row .m { display:flex; gap:8px; align-items:center; margin-top:1px; }
 .hv-row .snip { display:block; font-size:calc(12.5px * var(--text-scale)); color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
@@ -291,6 +296,17 @@ button.hv-row.sel { background:var(--room-3); }
 .hv-pane .hv-kind i { width:4px; height:16px; border-radius:2px; background:var(--k,var(--dim)); }
 .hv-pane .nav { margin-left:auto; display:flex; align-items:center; gap:2px; font-size:calc(12.5px * var(--text-scale)); color:var(--muted); }
 .hv-pane .full { flex:1; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:14px 16px; border:1px solid var(--edge); border-radius:10px; background:var(--room-1); min-height:120px; font-size:calc(14px * var(--text-scale)); line-height:1.5; }
+.hv-pane .full.media,.hv-pane .full.files { display:flex; flex-direction:column; align-items:center; gap:14px; white-space:normal; }
+.hv-pane .full.media img { max-width:100%; max-height:100%; object-fit:contain; margin:auto; }
+.hv-pane .full.files img,.hv-pane .full.files video { max-width:100%; max-height:62%; object-fit:contain; border-radius:6px; flex:none; }
+.hv-pane .full.files video { background:#000; }
+/* Transparent image parts show a checkerboard. */
+.hv-pane img.checker { background:conic-gradient(#2a4a5a 25%,#1d3a49 0 50%,#2a4a5a 0 75%,#1d3a49 0) 0 0 / 16px 16px; }
+.hv-files { list-style:none; margin:0; padding:0; width:100%; align-self:stretch; display:flex; flex-direction:column; gap:6px; }
+.hv-files li { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; padding:6px 10px; border-radius:7px; background:var(--room-2); }
+.hv-files .name { font-weight:600; overflow-wrap:anywhere; }
+.hv-files .dir { color:var(--dim); font-family:Consolas,"Cascadia Mono",monospace; font-size:calc(12.5px * var(--text-scale)); overflow-wrap:anywhere; }
+.hv-files li.missing .name { color:var(--dim); text-decoration:line-through; }
 .hv-pane .bar { display:flex; gap:10px; margin-top:12px; align-items:center; flex-wrap:wrap; }
 .hv-pane .bar .hv-ib { margin-left:auto; }
 .hv-pane .cut-note { color:var(--dim); font-size:calc(12.5px * var(--text-scale)); }

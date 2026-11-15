@@ -52,6 +52,63 @@ try
         Check(reloaded.Entries.Count == 0 && !File.Exists(path), "clear empties the list and deletes the file");
     }
 
+    // Images: a separate encrypted file per entry, deduplicated, deleted with the entry; files keep only their paths.
+    byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 3, 0, 0, 0, 2, 8, 6, 0, 0, 0, 1, 2, 3];
+    var images = Path.Combine(folder, "clipboard-images");
+    using (var history = new ClipboardHistory(path))
+    {
+        history.AddImage(png, "image/png", 3, 2, t0);
+        history.Add("text", null, null, t0.AddMinutes(1));
+        history.AddImage(png, "image/png", 3, 2, t0.AddMinutes(2));
+        var image = history.Entries[0];
+        Check(history.Entries.Count == 2 && image.IsImage && image.Text == "" && image.ImageWidth == 3 && image.ImageBytes == png.Length,
+            "the same image moves to the top instead of a second entry");
+        Check(history.ReadImage(image.Id) is { } back && back.SequenceEqual(png), "image bytes round-trip");
+        var stored = File.ReadAllBytes(Path.Combine(images, image.Id + ".bin"));
+        Check(!stored.AsSpan().SequenceEqual(png) && stored.AsSpan().IndexOf(png.AsSpan(0, 8)) < 0, "image file is encrypted");
+        history.AddFiles([@"C:\a\Film.mp4", @"C:\b\notes.txt"], t0.AddMinutes(3));
+        history.AddFiles([@"c:\A\film.mp4", @"C:\b\NOTES.txt"], t0.AddMinutes(4));
+        Check(history.Entries.Count == 3 && history.Entries[0].IsFiles && history.Entries[0].Text == "c:\\A\\film.mp4\nC:\\b\\NOTES.txt",
+            "the same file list moves to the top; the text lists the paths");
+        Check(history.Find("missing") is null && history.ReadImage(history.Entries[0].Id) is null, "only image entries have image bytes");
+    }
+    File.WriteAllBytes(Path.Combine(images, "orphan.bin"), [1]);
+    using (var reloaded = new ClipboardHistory(path))
+    {
+        var image = reloaded.Entries.First(e => e.IsImage);
+        Check(reloaded.Entries.Count == 3 && reloaded.Entries[0].Files!.Length == 2 && image.ImageType == "image/png", "images and files reload");
+        Check(!File.Exists(Path.Combine(images, "orphan.bin")), "image files without an entry are removed");
+        reloaded.Delete(image.Id);
+        Check(!File.Exists(Path.Combine(images, image.Id + ".bin")), "deleting an image entry deletes its file");
+        reloaded.AddImage(png, "image/png", 3, 2, t0);
+        reloaded.Clear();
+        Check(!Directory.Exists(images), "clear deletes the image files");
+    }
+    using (var full = new ClipboardHistory(path))
+    {
+        var big = new byte[ClipboardHistory.MaxImageTotal / 3 + 1];
+        for (var i = 0; i < 3; i++) { big[0] = (byte)i; full.AddImage(big, "image/bmp", 1, 1, t0.AddMinutes(i)); }
+        Check(full.Entries.Count(e => e.IsImage) == 2 && full.Entries[0].ImageBytes == big.Length, "images over the total size drop the oldest");
+        full.Clear();
+    }
+
+    // Clipboard bitmaps become BMP files with a file header; byte ranges for video seeking.
+    var dib = new byte[40 + 2 * 2 * 4];
+    BitConverter.GetBytes(40).CopyTo(dib, 0); BitConverter.GetBytes(2).CopyTo(dib, 4); BitConverter.GetBytes(-2).CopyTo(dib, 8);
+    BitConverter.GetBytes((short)1).CopyTo(dib, 12); BitConverter.GetBytes((short)32).CopyTo(dib, 14);
+    var bmp = TextFixer.Native.ClipboardImage.BmpFromDib(dib)!;
+    Check(bmp[0] == 'B' && bmp[1] == 'M' && BitConverter.ToInt32(bmp, 2) == dib.Length + 14 && BitConverter.ToInt32(bmp, 10) == 54
+        && TextFixer.Native.ClipboardImage.DibSize(dib) == (2, 2), "DIB to BMP: header, pixel offset and size");
+    BitConverter.GetBytes(3).CopyTo(dib, 16);
+    Check(BitConverter.ToInt32(TextFixer.Native.ClipboardImage.BmpFromDib(dib)!, 10) == 66, "bit field masks move the pixel offset");
+    Check(TextFixer.Native.ClipboardImage.BmpFromDib([1, 2, 3]) is null && TextFixer.Native.ClipboardImage.PngSize(png) == (3, 2), "damaged bitmaps are refused, PNG size is read");
+    Check(HistoryMedia.ParseRange("bytes=0-", 100) == (0, 99) && HistoryMedia.ParseRange("bytes=10-19", 100) == (10, 19)
+        && HistoryMedia.ParseRange("bytes=-30", 100) == (70, 99) && HistoryMedia.ParseRange("bytes=90-500", 100) == (90, 99), "byte ranges");
+    Check(HistoryMedia.ParseRange("bytes=100-", 100) is null && HistoryMedia.ParseRange("bytes=5-1", 100) is null && HistoryMedia.ParseRange("bytes=0-1,4-5", 100) is null
+        && HistoryMedia.ParseRange("items=0-1", 100) is null, "invalid ranges are refused");
+    Check(HistoryMedia.ContentType(@"C:\x\a.MP4") == "video/mp4" && HistoryMedia.ContentType("a.png") == "image/png" && HistoryMedia.ContentType("a.exe") is null,
+        "only image and video files are served");
+
     File.WriteAllBytes(path, [1, 2, 3, 4]);
     using (var damaged = new ClipboardHistory(path))
         Check(damaged.Entries.Count == 0, "damaged file gives an empty history");
@@ -62,6 +119,10 @@ try
     settings.ClipboardHistory = false;
     settings.Save();
     Check(!AppSettings.Load(settingsPath).ClipboardHistory, "setting round-trips");
+    Check(AppSettings.Load(settingsPath).ClipboardImages, "images are recorded by default");
+    settings.ClipboardImages = false;
+    settings.Save();
+    Check(!AppSettings.Load(settingsPath).ClipboardImages, "image setting round-trips");
     File.WriteAllText(settingsPath, "{ not json");
     Check(AppSettings.Load(settingsPath).ClipboardHistory, "damaged settings fall back to defaults");
 

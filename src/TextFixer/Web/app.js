@@ -616,7 +616,7 @@ $('fact-context-more').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDef
 $('apply-translation').onclick=()=>{if(translationStructured)applyStructured('applyTranslation',translationText,translationOriginal);else post('applyTranslation',{text:translationText,original:translationOriginal});};
 $('open-source').onclick=()=>{if(!sourceText)return;if(historyVisible())showHistory(false);activeTask='';showTaskView();update();};
 $('view-toggle').onclick=()=>showHistory(!historyVisible());
-$('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
+$('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});$('history-images').onchange=e=>post('historyImages',{enabled:e.target.checked});
 document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
 $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('register-chrome').onclick=()=>post('registerChrome');$('extension-folder').onclick=()=>post('extensionFolder');$('refresh-chrome').onclick=()=>post('chromeStatus');
 $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
@@ -668,7 +668,7 @@ window.chrome.webview.addEventListener('message',event=>{
     notice(!factClaims.length?'Fact check finished. No checkable factual claims found.':wrong?`Fact check finished. ${wrong} wrong ${wrong===1?'claim':'claims'} found. Review the sources before using a correction.`:'Fact check finished. Review the verdicts and their sources.');
   }
   if(m.type==='translation'){taskReady.translate=captureId;if(!m.revised)readyOption.translate=m.target&&m.target!=='auto'?m.target:'';$('translation-hint').textContent=readyOption.translate==='de'?'Translated into German.':readyOption.translate==='en'?'Translated into English.':'German text becomes English; text in other languages becomes German.';translationOriginal=m.original;translationText=reviewPlainStyle(m.translation,m.original,punctuationStyle);translationStructured=!!m.structured;translationIntact=m.intact!==false;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;$('results').hidden=true;$('formatting').hidden=true;showResultText('translation-text',translationText,translationStructured);$('translation-export').replaceChildren();$('translation-export').append(exportRow(()=>translationText));$('translation-original').textContent=m.original;$('translation-model').textContent=m.model||'';$('translation-view').hidden=false;if(m.revised)$('translation-request').value='';notice(!translationIntact?missingNotice('translation'):m.revised?'Translation revised. Request another change, or copy it.':readOnlyCapture?'Translation ready. Copy it and paste it where you need it.':'Translation ready. Copy it or replace your selection.');}
-  if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;renderHistory();}
+  if(m.type==='history'){historyEnabled=!!m.enabled;historyEntries=m.entries||[];$('history-enabled').checked=historyEnabled;$('history-images').checked=m.images!==false;$('history-images').disabled=!historyEnabled;renderHistory();}
   if(m.type==='historyCopied'){copiedId=m.id;copiedPlain=!!m.plain;clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>{copiedId=null;renderHistory();},1600);renderHistory();}
   if(m.type==='capture'&&m.text)showHistory(false);
   if(m.type==='autostart')$('autostart').checked=!!m.enabled;
@@ -777,7 +777,9 @@ function showHistory(on){
 function updateViewToggle(){$('view-toggle').classList.toggle('running',busy&&historyShown);}
 function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return'Just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const d=Math.round(h/24);return d+(d===1?' day ago':' days ago');}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
-const historyKinds={rich:['Formatted','Formatted text','var(--accent)'],url:['Links','Link','var(--ask)'],path:['Paths','Path','var(--good)'],text:['Text','Text','var(--dim)']};
+// Kinds: filter label, name of one entry, edge color. The first filter row holds text kinds, the second media.
+const historyKinds={text:['Text','Text','#7893a2'],url:['Links','Link','#8ecbff'],path:['Paths','Path','#3de8bb'],code:['Code','Code','#b9a2ff'],email:['E-Mail','E-mail address','#ffb066'],command:['Commands','Command','#a8e05f'],image:['Images','Image','#f08ad8'],video:['Videos','Video','#ff7b7b'],files:['Files','Files','#d6c08a']};
+const historyFilterRows=[['all','text','url','path','code','email','command'],['image','video','files']];
 const historyIcons={
   up:'M6 15l6-6 6 6',down:'M6 9l6 6 6-6',x:'M6 6l12 12M18 6L6 18'};
 function historyIcon(name){
@@ -786,8 +788,41 @@ function historyIcon(name){
   const path=document.createElementNS(ns,'path');path.setAttribute('d',historyIcons[name]);svg.append(path);return svg;
 }
 function entryText(e){return e.text??e.preview??'';}
-function entryKind(e){const t=entryText(e).trim();return e.hasFormatting?'rich':/^https?:\/\/\S+$/i.test(t)?'url':/^([A-Za-z]:\\|\\\\|\\)\S/.test(t)&&!t.includes('\n')?'path':'text';}
-const entryMono=e=>['url','path'].includes(entryKind(e));
+// Formatting does not decide the kind; a formatted entry shows a badge instead.
+function entryKind(e){
+  if(e.image)return'image';
+  if(e.files?.length)return e.files.every(f=>f.media==='video')?'video':'files';
+  const t=entryText(e).trim();
+  if(/^https?:\/\/\S+$/i.test(t))return'url';
+  if(/^(mailto:)?[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i.test(t))return'email';
+  if(/^([A-Za-z]:\\|\\\\|\\)\S/.test(t)&&!t.includes('\n'))return'path';
+  if(isCommandText(t))return'command';
+  if(isCodeText(t))return'code';
+  return'text';
+}
+// A command: up to five lines, starting with a prompt or a common command line tool.
+const commandStart=/^(\$ |> |PS [A-Za-z]:\\[^>]*> ?|(git|dotnet|npm|npx|pnpm|yarn|node|python3?|py|pip3?|winget|choco|scoop|powershell|pwsh|cmd|cd|dir|ls|mkdir|rmdir|rm|del|copy|xcopy|robocopy|curl|wget|ssh|scp|docker|kubectl|az|gh|claude|codex|cargo|go|java|mvn|gradle|sudo|apt|apt-get|brew|ipconfig|ping|netstat|taskkill|tasklist|setx)(\s|$))/;
+function isCommandText(t){const lines=t.split(/\r?\n/).filter(l=>l.trim());return lines.length>0&&lines.length<=5&&commandStart.test(lines[0].trim());}
+// Code: valid JSON, or at least two lines (and a third of all lines) that look like code.
+const codeLine=/[{};]\s*$|^\s*(\/\/|\/\*|#include|#!|import\s|from\s\S+\simport|using\s[\w.]+;|def\s\w+\(|class\s\w+|function\b|(const|let|var)\s\w+\s*=|public\s|private\s|return\b|if\s*\(|for\s*\(|while\s*\(|<\/?[a-z][\w-]*(\s[^>]*)?>)|=>|\w\([^)]*\)\s*\{/;
+function isCodeText(t){
+  if(/^[\[{]/.test(t)&&/[\]}]$/.test(t)){try{JSON.parse(t);return true;}catch{}}
+  const lines=t.split(/\r?\n/).filter(l=>l.trim()),n=lines.filter(l=>codeLine.test(l)).length;
+  return n>=2&&n>=lines.length*0.3;
+}
+const entryMono=e=>['url','path','code','command','email'].includes(entryKind(e));
+function fileName(path){return path.replace(/[\\\/]+$/,'').split(/[\\\/]/).pop()||path;}
+// The line shown in the list: the first text line, the file names, or the image size.
+function entryTitle(e){
+  if(e.image)return`Image ${e.image.width} × ${e.image.height}`;
+  if(e.files?.length)return fileName(e.files[0].path)+(e.files.length>1?` +${e.files.length-1}`:'');
+  return firstLine(entryText(e));
+}
+function formatBytes(b){return b<1048576?Math.max(1,Math.round(b/1024))+' KB':(b/1048576).toFixed(1)+' MB';}
+function entryThumb(e){
+  const f=e.files?.length===1&&e.files[0].exists&&e.files[0].media==='image'?e.files[0]:null,src=e.image?.url||f?.url;
+  if(!src)return null;const img=el('img','thumb');img.src=src;img.alt='';img.loading='lazy';return img;
+}
 function entryGroup(e){
   const now=new Date(),at=new Date(e.copiedAt);
   if(Date.now()-e.copiedAt<3600e3)return'Last hour';
@@ -839,16 +874,19 @@ function historyCopy(entry,plain){if(!entry||busy)return;post('historyRestore',{
 function renderHistory(){
   $('history-count').textContent=historyEnabled?historyEntries.length:'';
   $('history-clear').hidden=!historyEnabled||!historyEntries.length;
-  const empty=!historyEnabled?'Clipboard history is off. Turn it on in Settings.':historyEntries.length?'':'Copied text appears here.';
+  const empty=!historyEnabled?'Clipboard history is off. Turn it on in Settings.':historyEntries.length?'':'Copied texts, images and files appear here.';
   $('history-empty').textContent=empty;$('history-empty').hidden=!empty;$('history-body').hidden=!!empty;
   if(empty)return;
   // Kind filter
   const seg=$('history-filter');seg.replaceChildren();
-  for(const k of ['all','rich','url','path','text']){
-    const b=el('button',historyFilter===k?'on':'');b.type='button';
-    if(k==='all'){b.textContent='All';b.title='Show all kinds';}
-    else{const i=el('i');i.style?.setProperty('--k',historyKinds[k][2]);b.append(i,el('span','',historyKinds[k][0]));b.title='Only '+historyKinds[k][0].toLowerCase();}
-    b.onclick=()=>{historyFilter=k;historyCur=0;renderHistory();};seg.append(b);
+  for(const keys of historyFilterRows){
+    const line=el('div','hv-seg-row');seg.append(line);
+    for(const k of keys){
+      const b=el('button',historyFilter===k?'on':'');b.type='button';
+      if(k==='all'){b.textContent='All';b.title='Show all kinds';}
+      else{const i=el('i');i.style?.setProperty('--k',historyKinds[k][2]);b.append(i,el('span','',historyKinds[k][0]));b.title='Only '+historyKinds[k][0].toLowerCase();}
+      b.onclick=()=>{historyFilter=k;historyCur=0;renderHistory();};line.append(b);
+    }
   }
   const items=historyVisibleEntries(),order=historyOrder(items),selected=historySelected(items);
   $('history-hits').textContent=historyQuery?(items.length===1?'1 entry':items.length+' entries'):'';
@@ -859,10 +897,12 @@ function renderHistory(){
     const inGroup=order.filter(e=>entryGroup(e)===g);if(!inGroup.length)continue;
     list.append(el('div','hv-group',g));
     for(const e of inGroup){
-      const txt=entryText(e),kind=entryKind(e),row=el('button','hv-row'+(e===selected?' sel':''));row.type='button';row.style?.setProperty('--k',historyKinds[kind][2]);row.title=historyKinds[kind][1];
-      const t=el('span','t'+(entryMono(e)?' mono':''));t.dataset.noTr='';
+      const txt=entryText(e),kind=entryKind(e),thumb=entryThumb(e),row=el('button','hv-row'+(e===selected?' sel':'')+(thumb?' media':''));row.type='button';row.style?.setProperty('--k',historyKinds[kind][2]);row.title=historyKinds[kind][1];
+      const t=el('span','t'+(entryMono(e)||e.files?' mono':''));if(!e.image)t.dataset.noTr='';
       const m=el('span','m');m.append(el('span','time',clockOf(e)));
       if(e.hasFormatting)m.append(el('span','rich-badge','formatted'));
+      if(e.files&&!e.files.some(f=>f.exists))m.append(el('span','missing-badge','not found'));
+      if(thumb)row.append(thumb);
       const n=hitPositions(txt,historyQuery).length;if(historyQuery&&n>1)m.append(el('span','hitn',n+' matches'));
       row.append(t,m);titles.push([row,t,e]);
       row.onclick=()=>{historySel=e.id;historyCur=0;renderHistory();};
@@ -873,7 +913,7 @@ function renderHistory(){
   renderHistoryPane(selected);
   // Row titles are fitted after layout: middle truncation, then an excerpt when the hit is cut off.
   for(const [row,t,e] of titles){
-    const txt=entryText(e),line=firstLine(txt);
+    const txt=entryText(e),line=entryTitle(e);
     const cs=typeof getComputedStyle==='function'?getComputedStyle(t):null;const fitted=cs?midFit(line,t.clientWidth-2,`${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`):line;
     appendMarked(t,fitted,historyQuery);
     if(historyQuery&&!fitted.toLowerCase().includes(historyQuery.toLowerCase())){
@@ -887,7 +927,10 @@ function renderHistoryPane(e){
   if(!e){pane.append(el('p','hv-none','No entry matches.'));return;}
   const txt=entryText(e),kind=entryKind(e),hits=hitPositions(txt,historyQuery),cur=Math.min(historyCur,Math.max(0,hits.length-1));
   const meta=el('div','meta'),k=el('span','hv-kind'),bar=el('i');bar.style?.setProperty('--k',historyKinds[kind][2]);k.append(bar,el('span','',historyKinds[kind][1]));
-  meta.append(k,el('span','time',clockOf(e)),el('span','time',ago(e.copiedAt)),el('span','time',txt.length+(e.truncated?'+':'')+' characters'));
+  meta.append(k,el('span','time',clockOf(e)),el('span','time',ago(e.copiedAt)));
+  if(e.image)meta.append(el('span','time',`${e.image.width} × ${e.image.height}`),el('span','time',formatBytes(e.image.bytes)));
+  else if(e.files)meta.append(el('span','time',e.files.length===1?'1 file':e.files.length+' files'));
+  else meta.append(el('span','time',txt.length+(e.truncated?'+':'')+' characters'));
   if(hits.length){
     const nav=el('span','nav'),label=el('span','',`Match ${cur+1} of ${hits.length}`);
     const step=d=>{historyCur=(cur+d+hits.length)%hits.length;renderHistoryPane(e);};
@@ -895,16 +938,40 @@ function renderHistoryPane(e){
     const down=el('button','hv-ib');down.type='button';down.title='Next match';down.append(historyIcon('down'));down.onclick=()=>step(1);down.disabled=hits.length<2;
     nav.append(label,up,down);meta.append(nav);
   }
-  const full=el('div','full'+(entryMono(e)?' mono':''));full.dataset.noTr='';appendMarked(full,txt,historyQuery,cur);
+  const full=el('div','full'+(entryMono(e)?' mono':''));full.dataset.noTr='';
+  if(e.image){full.className='full media';const img=el('img','checker');img.src=e.image.url;img.alt='';full.append(img);}
+  else if(e.files)renderHistoryFiles(full,e,cur);
+  else appendMarked(full,txt,historyQuery,cur);
   const actions=el('div','bar');
   const copied=plain=>e.id===copiedId&&copiedPlain===plain;
   const lock=busy?'Copying is available when the running task has finished.':'';
-  const plain=el('button','primary'+(copied(true)?' done':''),copied(true)?'Copied':'Copy');plain.type='button';plain.title=lock||'Copy the text without formatting';plain.disabled=busy;plain.onclick=()=>historyCopy(e,true);actions.append(plain);
+  const gone=e.files&&!e.files.some(f=>f.exists);
+  const plain=el('button','primary'+(copied(true)?' done':''),copied(true)?'Copied':e.files?'Copy files':'Copy');plain.type='button';
+  plain.title=lock||(gone?'The files are no longer there.':e.image?'Copy the image':e.files?'Copy the files to paste them in Explorer':'Copy the text without formatting');
+  plain.disabled=busy||gone;plain.onclick=()=>historyCopy(e,true);actions.append(plain);
   if(e.hasFormatting){const rich=el('button',copied(false)?'done':'',copied(false)?'Copied':'Copy formatted');rich.type='button';rich.title=lock||'Copy the text with bold, links and lists';rich.disabled=busy;rich.onclick=()=>historyCopy(e,false);actions.append(rich);}
-  if(e.truncated)actions.append(el('span','cut-note','Preview shows the first 100,000 characters. Copy uses the full text.'));
+  if(e.truncated&&!e.files)actions.append(el('span','cut-note','Preview shows the first 100,000 characters. Copy uses the full text.'));
   const remove=el('button','hv-ib remove');remove.type='button';remove.title='Remove from history';remove.append(historyIcon('x'));remove.onclick=()=>post('historyDelete',{id:e.id});actions.append(remove);
   pane.append(meta,full,actions);
   full.querySelector?.('mark.cur')?.scrollIntoView?.({block:'nearest'});
+}
+// Files: a single image or video plays here from its place on the disk, every file is listed with its folder.
+function renderHistoryFiles(full,e,cur){
+  full.className='full files';
+  const one=e.files.length===1&&e.files[0].exists?e.files[0]:null;
+  if(one?.media==='image'){const img=el('img','checker');img.src=one.url;img.alt='';full.append(img);}
+  if(one?.media==='video'){const v=el('video');v.controls=true;v.preload='metadata';v.src=one.url;full.append(v);}
+  const list=el('ul','hv-files');let offset=0;
+  for(const f of e.files){
+    const li=el('li',f.exists?'':'missing'),name=el('span','name'),dir=el('span','dir');
+    const folder=f.path.slice(0,f.path.length-fileName(f.path).length);
+    // Hits are counted over the whole path list, so the current hit is marked in the right line.
+    const before=hitPositions(entryText(e).slice(0,offset),historyQuery).length,local=cur-before;
+    appendMarked(dir,folder,historyQuery,local);appendMarked(name,fileName(f.path),historyQuery,local-hitPositions(folder,historyQuery).length);
+    li.append(name,dir);if(!f.exists)li.append(el('span','missing-badge',tr('not found')));
+    list.append(li);offset+=f.path.length+1;
+  }
+  full.append(list);
 }
 $('history-search').oninput=e=>{historyQuery=e.target.value;historyCur=0;renderHistory();};
 // Keys in the clipboard view: arrows choose an entry, Enter copies it, Esc clears the search and then opens the text tools.

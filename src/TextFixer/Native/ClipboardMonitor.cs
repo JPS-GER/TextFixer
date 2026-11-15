@@ -3,10 +3,18 @@ using System.Text;
 
 namespace TextFixer.Native;
 
-internal sealed record ClipboardContent(string Text, string? Html, string? Rtf);
+/// <summary>A copy: text with optional HTML and RTF, or an image (PNG or BMP bytes), or a list of files.</summary>
+internal sealed record ClipboardContent(string Text, string? Html, string? Rtf)
+{
+    public byte[]? Image { get; init; }
+    public string? ImageType { get; init; }
+    public int ImageWidth { get; init; }
+    public int ImageHeight { get; init; }
+    public string[]? Files { get; init; }
+}
 
 /// <summary>
-/// Reports text copies for the clipboard history. Content marked for exclusion (password managers,
+/// Reports copies for the clipboard history: files (as paths), text, and images when <see cref="ImagesEnabled"/>. Content marked for exclusion (password managers,
 /// TextFixer's own temporary Alt+Q data) is skipped before any of its data is read.
 /// </summary>
 internal sealed class ClipboardMonitor : NativeWindow, IDisposable
@@ -22,9 +30,12 @@ internal sealed class ClipboardMonitor : NativeWindow, IDisposable
     [DllImport("kernel32.dll")] private static extern nint GlobalLock(nint memory);
     [DllImport("kernel32.dll")] private static extern bool GlobalUnlock(nint memory);
     [DllImport("kernel32.dll")] private static extern nuint GlobalSize(nint memory);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern uint DragQueryFile(nint drop, uint index, StringBuilder? file, uint length);
 
     private const int WmClipboardUpdate = 0x031D;
-    private const uint CfUnicodeText = 13;
+    private const uint CfUnicodeText = 13, CfDib = 8, CfHdrop = 15;
+    internal const int MaxImageBytes = 30 * 1024 * 1024;
+    private const int MaxFiles = 200;
     private const int MaxTextChars = 1_000_000;
     private const int MaxFormatBytes = 4 * 1024 * 1024;
     private const int MaxOpenAttempts = 5;
@@ -34,6 +45,7 @@ internal sealed class ClipboardMonitor : NativeWindow, IDisposable
     private readonly uint _canInclude = RegisterClipboardFormat("CanIncludeInClipboardHistory");
     private readonly uint _html = RegisterClipboardFormat("HTML Format");
     private readonly uint _rtf = RegisterClipboardFormat("Rich Text Format");
+    private readonly uint _png = RegisterClipboardFormat("PNG");
     private bool _listening;
     private uint _ignored, _handled;
     private int _openAttempts;
@@ -42,6 +54,9 @@ internal sealed class ClipboardMonitor : NativeWindow, IDisposable
 
     /// <summary>While true, updates wait (for example during an Alt+Q capture that owns the clipboard).</summary>
     internal bool Paused { get; set; }
+
+    /// <summary>Records copied images (Settings > Clipboard history > Record images).</summary>
+    internal bool ImagesEnabled { get; set; } = true;
 
     internal ClipboardMonitor()
     {
@@ -101,22 +116,57 @@ internal sealed class ClipboardMonitor : NativeWindow, IDisposable
     private bool TryRead(out ClipboardContent? content)
     {
         content = null;
-        if (IsClipboardFormatAvailable(_exclude) || !IsClipboardFormatAvailable(CfUnicodeText)) return true;
+        if (IsClipboardFormatAvailable(_exclude)) return true;
+        var files = IsClipboardFormatAvailable(CfHdrop);
+        var text = IsClipboardFormatAvailable(CfUnicodeText);
+        var image = ImagesEnabled && ((_png != 0 && IsClipboardFormatAvailable(_png)) || IsClipboardFormatAvailable(CfDib));
+        if (!files && !text && !image) return true;
         if (!OpenClipboard(Handle)) return false;
         try
         {
             if (_canInclude != 0 && IsClipboardFormatAvailable(_canInclude)
                 && ReadBytes(_canInclude, 4) is { Length: >= 4 } flag && BitConverter.ToInt32(flag) == 0) return true;
-            var unicode = ReadBytes(CfUnicodeText, MaxTextChars * 2 + 2);
-            if (unicode is null) return true;
-            var text = Encoding.Unicode.GetString(unicode);
-            var end = text.IndexOf('\0');
-            if (end >= 0) text = text[..end];
-            if (string.IsNullOrWhiteSpace(text)) return true;
-            content = new ClipboardContent(text, ReadString(_html, Encoding.UTF8), ReadString(_rtf, Encoding.Latin1));
+            // Files copied in Explorer: only the paths are kept, the files stay where they are.
+            if (files && ReadFiles() is { Length: > 0 } paths) { content = new ClipboardContent("", null, null) { Files = paths }; return true; }
+            if (text)
+            {
+                var unicode = ReadBytes(CfUnicodeText, MaxTextChars * 2 + 2);
+                if (unicode is null) return true;
+                var value = Encoding.Unicode.GetString(unicode);
+                var end = value.IndexOf('\0');
+                if (end >= 0) value = value[..end];
+                if (string.IsNullOrWhiteSpace(value)) return true;
+                content = new ClipboardContent(value, ReadString(_html, Encoding.UTF8), ReadString(_rtf, Encoding.Latin1));
+                return true;
+            }
+            // Images are stored as delivered: PNG when the source offers it, otherwise the bitmap with a BMP file header.
+            if (_png != 0 && IsClipboardFormatAvailable(_png) && ReadBytes(_png, MaxImageBytes) is { } png && ClipboardImage.PngSize(png) is var (pw, ph) && pw > 0)
+            { content = new ClipboardContent("", null, null) { Image = png, ImageType = "image/png", ImageWidth = pw, ImageHeight = ph }; return true; }
+            if (IsClipboardFormatAvailable(CfDib) && ReadBytes(CfDib, MaxImageBytes) is { } dib && ClipboardImage.BmpFromDib(dib) is { } bmp)
+            {
+                var (bw, bh) = ClipboardImage.DibSize(dib);
+                content = new ClipboardContent("", null, null) { Image = bmp, ImageType = "image/bmp", ImageWidth = bw, ImageHeight = bh };
+            }
             return true;
         }
         finally { CloseClipboard(); }
+    }
+
+    private static string[]? ReadFiles()
+    {
+        var drop = GetClipboardData(CfHdrop);
+        if (drop == 0) return null;
+        var count = DragQueryFile(drop, 0xFFFFFFFF, null, 0);
+        if (count == 0 || count > MaxFiles) return null;
+        var files = new List<string>();
+        for (uint i = 0; i < count; i++)
+        {
+            var length = DragQueryFile(drop, i, null, 0);
+            if (length == 0 || length > 32767) continue;
+            var name = new StringBuilder((int)length + 1);
+            if (DragQueryFile(drop, i, name, length + 1) > 0) files.Add(name.ToString());
+        }
+        return [.. files];
     }
 
     private string? ReadString(uint format, Encoding encoding)

@@ -379,6 +379,7 @@ internal sealed class ReviewWindow : Form
         {
             type = "history",
             enabled = _settings.ClipboardHistory,
+            images = _settings.ClipboardImages,
             entries = _history.Entries.Select(e => new
             {
                 e.Id,
@@ -386,8 +387,55 @@ internal sealed class ReviewWindow : Form
                 text = Preview(e.Text),
                 truncated = e.Text.Length > PreviewLength,
                 hasFormatting = e.HasFormatting,
+                image = e.IsImage ? new { url = HistoryImageRoute + e.Id, width = e.ImageWidth, height = e.ImageHeight, bytes = e.ImageBytes } : null,
+                files = e.Files?.Select((path, index) => new
+                {
+                    path,
+                    exists = HistoryFileExists(path),
+                    url = HistoryMedia.ContentType(path) is null ? null : $"{HistoryFileRoute}{e.Id}/{index}",
+                    media = HistoryMedia.ContentType(path)?.Split('/')[0],
+                }),
             }),
         });
+    }
+
+    private const string HistoryImageRoute = "https://textfixer.local/history/image/", HistoryFileRoute = "https://textfixer.local/history/file/";
+    // Network paths are not checked: an unreachable server would stall the window.
+    private static bool HistoryFileExists(string path) => path.StartsWith(@"\\", StringComparison.Ordinal) || File.Exists(path) || Directory.Exists(path);
+
+    /// <summary>
+    /// Serves a history image (decrypted from its file) or a copied image or video file to the page. Only paths that a
+    /// history entry lists are served, and only media types; nothing else on the disk is reachable.
+    /// </summary>
+    private CoreWebView2WebResourceResponse? HistoryResource(CoreWebView2 core, CoreWebView2WebResourceRequest request)
+    {
+        if (_history is null) return null;
+        var uri = request.Uri.Split('?')[0];
+        if (uri.StartsWith(HistoryImageRoute, StringComparison.Ordinal))
+        {
+            var id = uri[HistoryImageRoute.Length..];
+            if (_history.Find(id) is not { IsImage: true } entry || _history.ReadImage(id) is not { } bytes) return null;
+            return core.Environment.CreateWebResourceResponse(new MemoryStream(bytes), 200, "OK", "Content-Type: " + entry.ImageType + "\r\nCache-Control: no-store");
+        }
+        if (!uri.StartsWith(HistoryFileRoute, StringComparison.Ordinal)) return null;
+        var parts = uri[HistoryFileRoute.Length..].Split('/');
+        if (parts.Length != 2 || !int.TryParse(parts[1], out var index) || _history.Find(parts[0]) is not { IsFiles: true } owner
+            || index < 0 || index >= owner.Files!.Length) return null;
+        var path = owner.Files[index];
+        if (HistoryMedia.ContentType(path) is not { } type || !File.Exists(path)) return null;
+        FileStream stream;
+        try { stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        // Videos ask for byte ranges to seek; a range answer lets the player jump without reading the whole file.
+        var length = stream.Length;
+        var range = request.Headers.Contains("Range") ? HistoryMedia.ParseRange(request.Headers.GetHeader("Range"), length) : null;
+        if (range is var (start, end))
+        {
+            stream.Position = start;
+            return core.Environment.CreateWebResourceResponse(new HistoryMedia.Slice(stream, end - start + 1), 206, "Partial Content",
+                $"Content-Type: {type}\r\nAccept-Ranges: bytes\r\nContent-Range: bytes {start}-{end}/{length}\r\nContent-Length: {end - start + 1}\r\nCache-Control: no-store");
+        }
+        return core.Environment.CreateWebResourceResponse(stream, 200, "OK", $"Content-Type: {type}\r\nAccept-Ranges: bytes\r\nContent-Length: {length}\r\nCache-Control: no-store");
     }
 
     // The page searches and shows the full text; very long entries are cut for the page only, copying uses the stored text.
@@ -411,19 +459,44 @@ internal sealed class ReviewWindow : Form
                 if (Busy) { Notify("Copying is available when the running task has finished."); return; }
                 if (_history.Find(id) is not { } entry) { SendHistory(); return; }
                 var data = new DataObject();
-                data.SetText(entry.Text, TextDataFormat.UnicodeText);
+                Image? picture = null;
+                if (entry.IsImage)
+                {
+                    // PNG for apps that read it (keeps transparency), and a bitmap for all others.
+                    if (_history.ReadImage(id) is not { } bytes) { Notify("The image could not be read."); return; }
+                    if (entry.ImageType == "image/png") data.SetData("PNG", false, new MemoryStream(bytes));
+                    try { picture = Image.FromStream(new MemoryStream(bytes)); data.SetImage(picture); }
+                    catch (Exception ex) when (ex is ArgumentException or ExternalException) { if (entry.ImageType != "image/png") { Notify("The image could not be read."); return; } }
+                }
+                else if (entry.IsFiles)
+                {
+                    var present = entry.Files!.Where(HistoryFileExists).ToArray();
+                    if (present.Length == 0) { Notify("The files are no longer there."); return; }
+                    var list = new System.Collections.Specialized.StringCollection();
+                    list.AddRange(present);
+                    data.SetFileDropList(list);
+                }
+                else data.SetText(entry.Text, TextDataFormat.UnicodeText);
                 // "Copy plain text" puts only the text on the clipboard; "Copy with formatting" adds the saved HTML and RTF.
                 var plain = !root.TryGetProperty("plain", out var plainElement) || plainElement.ValueKind != JsonValueKind.False;
                 if (!plain && entry.Html is not null) data.SetText(entry.Html, TextDataFormat.Html);
                 if (!plain && entry.Rtf is not null) data.SetData(DataFormats.Rtf, entry.Rtf);
                 try { Clipboard.SetDataObject(data, true); }
                 catch (ExternalException) { Notify("The clipboard is busy. Try again in a moment."); return; }
+                finally { picture?.Dispose(); }
                 _clipboardMonitor.IgnoreCurrent();
                 _history.MoveToTop(id, DateTime.UtcNow);
                 Send(new { type = "historyCopied", id, plain });
                 return;
             case "historyDelete": _history.Delete(root.GetProperty("id").GetString() ?? ""); return;
             case "historyClear": _history.Clear(); return;
+            case "historyImages":
+                _settings.ClipboardImages = root.GetProperty("enabled").GetBoolean();
+                try { _settings.Save(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The setting could not be saved: " + ex.Message); }
+                _clipboardMonitor.ImagesEnabled = _settings.ClipboardImages;
+                SendHistory();
+                return;
             case "historyEnabled":
                 var enabled = root.GetProperty("enabled").GetBoolean();
                 _settings.ClipboardHistory = enabled;
@@ -465,6 +538,11 @@ internal sealed class ReviewWindow : Form
             core.AddWebResourceRequestedFilter("https://textfixer.local/*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += (_, request) =>
             {
+                if (request.Request.Uri.StartsWith("https://textfixer.local/history/", StringComparison.Ordinal))
+                {
+                    request.Response = HistoryResource(core, request.Request) ?? core.Environment.CreateWebResourceResponse(null, 404, "Not Found", "Cache-Control: no-store");
+                    return;
+                }
                 var asset = WebAssets.Find(new Uri(request.Request.Uri).AbsolutePath);
                 request.Response = asset is { } found
                     ? core.Environment.CreateWebResourceResponse(new MemoryStream(found.Data), 200, "OK", "Content-Type: " + found.Type + "\r\nCache-Control: no-store")
@@ -522,7 +600,7 @@ internal sealed class ReviewWindow : Form
             }
             if (action == "cancel") { _operation?.Cancel(); return; }
             if (action == "usage") { Process.Start(new ProcessStartInfo(ChatGptReviewService.ManageUsageUrl) { UseShellExecute = true }); return; }
-            if (action is "historyList" or "historyRestore" or "historyDelete" or "historyClear" or "historyEnabled")
+            if (action is "historyList" or "historyRestore" or "historyDelete" or "historyClear" or "historyEnabled" or "historyImages")
             {
                 HandleHistory(action, root);
                 return;

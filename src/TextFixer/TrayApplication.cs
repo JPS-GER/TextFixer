@@ -50,7 +50,13 @@ internal sealed class TrayApplication : ApplicationContext
         _review.ConfigureChrome(_chrome);
         _review.ConfigureHistory(_history, _clipboard, _settings);
         _review.ConfigureShortcuts(_hotkey);
-        _clipboard.Copied += (_, c) => _history.Add(c.Text, c.Html, c.Rtf, DateTime.UtcNow);
+        _clipboard.Copied += (_, c) =>
+        {
+            if (c.Files is { } files) _history.AddFiles(files, DateTime.UtcNow);
+            else if (c.Image is { } image) _history.AddImage(image, c.ImageType!, c.ImageWidth, c.ImageHeight, DateTime.UtcNow);
+            else _history.Add(c.Text, c.Html, c.Rtf, DateTime.UtcNow);
+        };
+        _clipboard.ImagesEnabled = _settings.ClipboardImages;
         _clipboard.Enabled = _settings.ClipboardHistory;
         _chrome.MessageReceived += (_, e) => Dispatch(() => _review.ReceiveChromeMessage(e.SessionId, e.Message));
         _chrome.SessionConnected += (_, _) => Dispatch(_review.ChromeConnected);

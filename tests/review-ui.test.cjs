@@ -895,7 +895,7 @@ console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, ta
  const pane=()=>element('history-pane').children;
  const bar=()=>pane()[2].children;
  assert.equal(rows().length,4,'every entry has a row');
- assert.deepEqual(rows().map(r=>r.title),['Text','Formatted text','Link','Path'],'kinds from formatting, link and path');
+ assert.deepEqual(rows().map(r=>r.title),['Text','Text','Link','Path'],'formatting does not decide the kind');
  assert.equal(pane()[1].children.map(n=>n.textContent??n.nodeValue).join(''),'Plain entry about Mittwoch','the newest entry is shown in full');
  assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy',''],'plain entry: Copy and remove');
  bar()[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'a',plain:true});
@@ -915,10 +915,10 @@ console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, ta
  assert.equal(rows().length,0,'search does not use regular expressions');
  element('history-search').value='';element('history-search').oninput({target:element('history-search')});
  // Kind filter
- element('history-filter').children[3].onclick();
+ element('history-filter').children[0].children[3].onclick();
  assert.deepEqual(rows().map(r=>r.title),['Path'],'the Paths filter keeps paths');
  assert.ok(bar().some(b=>b.className==='cut-note'),'a long entry notes that the preview is shortened');
- element('history-filter').children[0].onclick();
+ element('history-filter').children[0].children[0].onclick();
  // While a task runs, copying is blocked.
  if(!sandbox.historyVisible())element('view-toggle').onclick();
  message({type:'busy',busy:true});
@@ -929,6 +929,37 @@ console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, ta
  assert.equal(element('history-body').hidden,true);
 }
 console.log('PASS: clipboard view lists, searches, filters and copies entries.');
+{
+ // Kinds: code, e-mail, commands, images, videos and files.
+ const kind=text=>sandbox.entryKind({text});
+ assert.equal(kind('max@example.de'),'email');
+ assert.equal(kind('Schreib an max@example.de bitte'),'text','an address inside a sentence is text');
+ assert.equal(kind('git -c safe.directory=C:/x status --short'),'command');
+ assert.equal(kind('PS C:\\Users\\JPS> dotnet build'),'command');
+ assert.equal(kind('Start the app and check it.'),'text','a sentence is not a command');
+ assert.equal(kind('function a(){\n  return 1;\n}'),'code');
+ assert.equal(kind('{"a":1,"b":[2]}'),'code','JSON is code');
+ assert.equal(kind('Liebe Grüße;\nbis morgen.'),'text','one semicolon does not make code');
+ assert.equal(sandbox.entryKind({text:'',image:{url:'u',width:2,height:3,bytes:9}}),'image');
+ assert.equal(sandbox.entryKind({text:'C:\\a.mp4',files:[{path:'C:\\a.mp4',exists:true,media:'video',url:'v'}]}),'video');
+ assert.equal(sandbox.entryKind({text:'C:\\a.mp4\nC:\\b.txt',files:[{path:'C:\\a.mp4',exists:true,media:'video'},{path:'C:\\b.txt',exists:true}]}),'files');
+ message({type:'history',enabled:true,images:true,entries:[
+  {id:'i',text:'',copiedAt:Date.now(),image:{url:'https://textfixer.local/history/image/i',width:1920,height:1080,bytes:2500000}},
+  {id:'f',text:'C:\\gone\\old.docx',copiedAt:Date.now()-1000,files:[{path:'C:\\gone\\old.docx',exists:false,url:null,media:null}]}]});
+ if(!sandbox.historyVisible())element('view-toggle').onclick();
+ const rows=()=>element('history-list').children.filter(c=>c.className?.startsWith('hv-row'));
+ const bar=()=>element('history-pane').children[2].children;
+ assert.equal(rows()[0].children[0].tag,'img','an image row shows a thumbnail');
+ assert.equal(rows()[0].children[0].src,'https://textfixer.local/history/image/i');
+ assert.equal(element('history-pane').children[1].children[0].tag,'img','the preview shows the image');
+ assert.equal(bar()[0].textContent,'Copy');bar()[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'i',plain:true});
+ rows()[1].onclick();
+ assert.equal(bar()[0].textContent,'Copy files');assert.equal(bar()[0].disabled,true,'missing files cannot be copied');
+ assert.ok(rows()[1].children.some(c=>c.children?.some(b=>b.className==='missing-badge')),'a missing file is marked in the list');
+ assert.equal(element('history-images').checked,true);
+ element('history-images').onchange({target:{checked:false}});assert.deepEqual({...sent.at(-1)},{action:'historyImages',enabled:false});
+}
+console.log('PASS: clipboard kinds for code, e-mail, commands, images, videos and files.');
 {
  // Composed headings and text field placeholders are translated; text field content is not.
  assert.equal(sandbox.tr('Summary: Key points','de'),'Zusammenfassung: Kernpunkte');

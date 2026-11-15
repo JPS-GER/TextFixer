@@ -9,6 +9,8 @@ internal sealed class AppSettings
     private readonly string _path;
 
     public bool ClipboardHistory { get; set; } = true;
+    /// <summary>Records copied images in the clipboard history; only applies while the history is on.</summary>
+    public bool ClipboardImages { get; set; } = true;
 
     /// <summary>"single": one request for all tabs. "focused": one request per tab, shown as each arrives.</summary>
     public string ReviewMode { get; set; } = SingleReview;
@@ -56,6 +58,8 @@ internal sealed class AppSettings
             using var document = JsonDocument.Parse(File.ReadAllBytes(path));
             if (document.RootElement.TryGetProperty("clipboardHistory", out var history) && history.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 settings.ClipboardHistory = history.GetBoolean();
+            if (document.RootElement.TryGetProperty("clipboardImages", out var images) && images.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                settings.ClipboardImages = images.GetBoolean();
             if (document.RootElement.TryGetProperty("reviewMode", out var mode) && mode.ValueKind == JsonValueKind.String && mode.GetString() is SingleReview or FocusedReview)
                 settings.ReviewMode = mode.GetString()!;
             if (document.RootElement.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.String && model.GetString() is { Length: > 0 and <= 200 } slug)
@@ -115,7 +119,7 @@ internal sealed class AppSettings
     {
         var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, emailSpelling = EmailSpelling, addressForm = AddressForm, reviewDu = ReviewDu, appLanguage = AppLanguage, resultLanguage = ResultLanguage, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value?.ToString()) }, Options));
+        File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(new { clipboardHistory = ClipboardHistory, clipboardImages = ClipboardImages, reviewMode = ReviewMode, punctuationStyle = PunctuationStyle, model = Model, translationModel = TranslationModel, factCheckModel = FactCheckModel, emailSpelling = EmailSpelling, addressForm = AddressForm, reviewDu = ReviewDu, appLanguage = AppLanguage, resultLanguage = ResultLanguage, shortcuts = Shortcuts.ToDictionary(s => s.Key, s => s.Value?.ToString()) }, Options));
         File.Move(temp, _path, overwrite: true);
     }
 }
