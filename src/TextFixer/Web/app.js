@@ -407,7 +407,7 @@ function showInline(){
     button.setAttribute('aria-pressed',String(p.accepted));
     button.setAttribute('aria-label',`${p.before||'insert'} to ${p.after||'delete'}. ${button.title}`);
     if(p.before)button.append(removedText(p.before,!p.after&&p.accepted));
-    if(p.after){const next=document.createElement('ins');next.textContent=p.after;button.append(next);}
+    if(p.after)button.append(addedText(p.after,p.accepted));
     button.onclick=()=>toggleCorrection(p);container.append(button);
   });
 }
@@ -416,9 +416,18 @@ function removedText(text,label){
   const old=document.createElement('del');old.textContent=text;
   if(text.length<=4&&!/[\p{L}\p{N}\r\n]/u.test(text)){
     const space=!text.trim();old.className='punct';
-    old.dataset.label=label?(space?'remove space':'remove'):(space?'space':'');
+    old.dataset.label=tr(label?(space?'remove space':'remove'):(space?'space':''));
   }
   return old;
+}
+// Short added punctuation or spaces get a labelled box like removals, so they are easy to spot.
+function addedText(text,label){
+  const next=document.createElement('ins');next.textContent=text;
+  if(text.length<=4&&!/[\p{L}\p{N}\r\n]/u.test(text)){
+    const space=!text.trim();next.className='punct';
+    next.dataset.label=tr(label?(space?'add space':'add'):(space?'space':''));
+  }
+  return next;
 }
 function showChanges(){
   const container=$('changes');container.replaceChildren();
@@ -448,7 +457,7 @@ function showFindings(){
     if(f.dismissed)return;
     const card=document.createElement('article');card.className='finding';
     const top=document.createElement('div');top.className='finding-top';
-    const kind=document.createElement('span');kind.className='kind';kind.textContent=f.kind.replaceAll('_',' ');
+    const kind=document.createElement('span');kind.className='kind';kind.textContent=tr(f.kind.replaceAll('_',' '));
     const dismiss=document.createElement('button');dismiss.className='link';dismiss.textContent='Dismiss';dismiss.disabled=locked();
     dismiss.onclick=()=>{if(locked())return;f.dismissed=true;const w=wordings.find(w=>w.findingIndex===index);if(w){w.accepted=false;w.created=false;}showChanges();};
     top.append(kind,dismiss);card.append(top);

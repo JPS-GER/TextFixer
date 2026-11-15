@@ -92,6 +92,9 @@ footer { font-size:calc(11px * var(--text-scale)); color:var(--dim); text-align:
 del.punct { text-decoration:none; font-weight:700; outline:1px dashed var(--bad); outline-offset:-1px; padding:1px 5px; white-space:pre; }
 del.punct:not([data-label=""])::before { content:attr(data-label); font:600 calc(10px * var(--text-scale)) "Segoe UI",Arial; letter-spacing:.4px; text-transform:uppercase; margin-right:5px; vertical-align:1px; opacity:.9; }
 .inline-correction.rejected del.punct { outline-color:var(--accent-edge); }
+ins.punct { font-weight:700; outline:1px dashed var(--good); outline-offset:-1px; padding:1px 5px; white-space:pre; }
+ins.punct:not([data-label=""])::before { content:attr(data-label); font:600 calc(10px * var(--text-scale)) "Segoe UI",Arial; letter-spacing:.4px; text-transform:uppercase; margin-right:5px; vertical-align:1px; opacity:.9; }
+.inline-correction.rejected ins.punct { outline-color:var(--accent-edge); }
 .correction-details { margin-top:14px; }
 .correction-details summary { font-size:calc(12px * var(--text-scale)); color:var(--muted); cursor:pointer; margin-bottom:12px; }
 .chrome-setup { background:var(--room-1); border:1px solid var(--edge); border-radius:10px; padding:16px 20px; }

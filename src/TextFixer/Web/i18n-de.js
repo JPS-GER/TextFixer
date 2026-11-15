@@ -1,6 +1,15 @@
 'use strict';
 // German texts for the window, keyed by the English text (see i18n.js). Child elements are {0}, {1} in order.
 const i18nDe={
+"remove":"entfernen",
+"space":"Leerzeichen",
+"add":"einfügen",
+"add space":"Leerzeichen einfügen",
+"contradiction":"Widerspruch",
+"unsupported claim":"Unbelegte Behauptung",
+"logic gap":"Logiklücke",
+"term misuse":"Falscher Begriff",
+"ambiguity":"Mehrdeutigkeit",
 "TextFixer can replace the selection.":"TextFixer kann die Auswahl ersetzen.",
 "Copy the result and paste it yourself.":"Kopiere das Ergebnis und füge es selbst ein.",
 "Source text":"Quelltext",
