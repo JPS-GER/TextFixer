@@ -117,7 +117,7 @@ internal sealed class ReviewWindow : Form
         Open();
         if (_ready) Send(new { type = view }); else _pendingView = view;
     }
-    internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
+    internal void Shutdown() { RemoveOpenedImages(); _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
     /// <param name="task">open shows the task choice; any other task from <see cref="Shortcuts.Tasks"/> starts right away.</param>
     internal void SetCapture(CapturedText capture, string task = "review")
     {
@@ -148,6 +148,7 @@ internal sealed class ReviewWindow : Form
         _service.ReviewDu = settings.ReviewDu;
         _service.ResultLanguage = settings.ResultLanguage;
         history.Changed += (_, _) => SendHistory();
+        RemoveOpenedImages();
     }
     internal void ConfigureShortcuts(HotkeyManager hotkeys)
     {
@@ -394,6 +395,7 @@ internal sealed class ReviewWindow : Form
                     exists = HistoryFileExists(path),
                     url = HistoryMedia.ContentType(path) is null ? null : $"{HistoryFileRoute}{e.Id}/{index}",
                     media = HistoryMedia.ContentType(path)?.Split('/')[0],
+                    openable = HistoryMedia.IsOpenable(path),
                 }),
             }),
         });
@@ -448,6 +450,98 @@ internal sealed class ReviewWindow : Form
         return text[..end];
     }
 
+    /// <summary>
+    /// A result or a history entry becomes the captured text. After a result, an editable selection stays the paste
+    /// target (plain text only); a history entry, a Chrome or a read-only capture continues as read-only text.
+    /// </summary>
+    private void UseAsCapture(string? text, bool fromHistory)
+    {
+        if (string.IsNullOrWhiteSpace(text) || _operation is not null) return;
+        var target = !fromHistory && _chromeCapture is null && _capture is { Editable: not false } ? _capture : null;
+        _chromeCapture = null;
+        _capture = target is not null ? new CapturedText(target.Window, text, false, null, target.Editable) : new CapturedText(0, text, false, null, Editable: false);
+        _task = Shortcuts.Open; _captureId++; _factSources.Clear(); _dialogSources.Clear();
+        Send(new { type = "capture", captureId = _captureId, task = _task, text, canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = false, canPreserveFormatting = false, mode = "clipboard", reused = true });
+    }
+
+    private static void Shell(string target) => Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
+
+    /// <summary>Opens Explorer with the file selected, or the folder itself; nothing is run.</summary>
+    private static void ShowInExplorer(string path)
+    {
+        if (path.Contains('"')) return;
+        Process.Start(new ProcessStartInfo("explorer.exe", Directory.Exists(path) ? $"\"{path}\"" : $"/select,\"{path}\"") { UseShellExecute = false })?.Dispose();
+    }
+
+    // Images opened in another app need a plain file; these copies live in %TEMP%\TextFixer and are removed at start and exit.
+    private static string OpenedImagesFolder => Path.Combine(Path.GetTempPath(), "TextFixer");
+    internal static void RemoveOpenedImages()
+    {
+        try
+        {
+            if (!Directory.Exists(OpenedImagesFolder)) return;
+            foreach (var file in Directory.EnumerateFiles(OpenedImagesFolder, "clipboard-*"))
+                try { File.Delete(file); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// The target comes from the stored entry, never from the page: http(s) links, a validated e-mail address,
+    /// existing paths in Explorer, and only allowlisted file types in their default app.
+    /// </summary>
+    private void OpenHistoryEntry(ClipboardEntry entry, string? how)
+    {
+        var single = entry.IsText ? entry.Text.Trim() : "";
+        var path = entry.IsText && !single.Contains('\n') && Path.IsPathFullyQualified(single) ? single : null;
+        var firstFile = entry.Files?.FirstOrDefault(HistoryFileExists);
+        try
+        {
+            switch (how)
+            {
+                case "browser" when entry.IsText && HistoryMedia.WebUrl(single) is { } url: Shell(url.AbsoluteUri); return;
+                case "mail" when entry.IsText && HistoryMedia.MailAddress(single) is { } address && address.IndexOfAny(['?', '&', '%', '#', '/', '\\']) < 0:
+                    Shell("mailto:" + address); return;
+                case "explorer" when path is not null:
+                    if (!HistoryFileExists(path)) { Notify("The file is no longer there."); return; }
+                    ShowInExplorer(path); return;
+                case "explorer" or "folder" when entry.IsFiles:
+                    if (firstFile is null) { Notify("The files are no longer there."); return; }
+                    ShowInExplorer(firstFile); return;
+                case "app" when entry.IsFiles && entry.Files!.Length == 1:
+                    if (!File.Exists(entry.Files[0])) { Notify("The file is no longer there."); return; }
+                    if (!HistoryMedia.IsOpenable(entry.Files[0])) { Notify("This file type is not opened from the history."); return; }
+                    Shell(entry.Files[0]); return;
+                case "app" when entry.IsImage:
+                    if (_history?.ReadImage(entry.Id) is not { } bytes) { Notify("The image could not be read."); return; }
+                    Directory.CreateDirectory(OpenedImagesFolder);
+                    var file = Path.Combine(OpenedImagesFolder, $"clipboard-{entry.Id}{(entry.ImageType == "image/png" ? ".png" : ".bmp")}");
+                    File.WriteAllBytes(file, bytes);
+                    Shell(file); return;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            Notify("It could not be opened: " + ex.Message); return;
+        }
+        Notify("This entry cannot be opened that way.");
+    }
+
+    private void SaveHistoryImage(ClipboardEntry entry)
+    {
+        if (!entry.IsImage || _history?.ReadImage(entry.Id) is not { } bytes) { Notify("The image could not be read."); return; }
+        var png = entry.ImageType == "image/png";
+        using var dialog = new SaveFileDialog
+        {
+            Filter = png ? "PNG image|*.png" : "Bitmap image|*.bmp",
+            FileName = "Clipboard " + entry.CopiedAt.ToLocalTime().ToString("yyyy-MM-dd HH.mm.ss") + (png ? ".png" : ".bmp"),
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        try { File.WriteAllBytes(dialog.FileName, bytes); Notify("Image saved."); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Notify("The image could not be saved: " + ex.Message); }
+    }
+
     private void HandleHistory(string action, JsonElement root)
     {
         if (_history is null || _clipboardMonitor is null || _settings is null) return;
@@ -490,6 +584,13 @@ internal sealed class ReviewWindow : Form
                 return;
             case "historyDelete": _history.Delete(root.GetProperty("id").GetString() ?? ""); return;
             case "historyClear": _history.Clear(); return;
+            case "historyOpen" or "historySave" or "historyUse":
+                if (_history.Find(root.GetProperty("id").GetString() ?? "") is not { } chosen) { SendHistory(); return; }
+                if (action == "historyOpen") OpenHistoryEntry(chosen, root.TryGetProperty("how", out var how) ? how.GetString() : null);
+                else if (action == "historySave") SaveHistoryImage(chosen);
+                else if (Busy) Notify("Finish or cancel the current operation first.");
+                else if (chosen.IsText) UseAsCapture(chosen.Text, fromHistory: true);
+                return;
             case "historyImages":
                 _settings.ClipboardImages = root.GetProperty("enabled").GetBoolean();
                 try { _settings.Save(); }
@@ -600,7 +701,7 @@ internal sealed class ReviewWindow : Form
             }
             if (action == "cancel") { _operation?.Cancel(); return; }
             if (action == "usage") { Process.Start(new ProcessStartInfo(ChatGptReviewService.ManageUsageUrl) { UseShellExecute = true }); return; }
-            if (action is "historyList" or "historyRestore" or "historyDelete" or "historyClear" or "historyEnabled" or "historyImages")
+            if (action is "historyList" or "historyRestore" or "historyDelete" or "historyClear" or "historyEnabled" or "historyImages" or "historyOpen" or "historySave" or "historyUse")
             {
                 HandleHistory(action, root);
                 return;
@@ -720,19 +821,7 @@ internal sealed class ReviewWindow : Form
                 var folder = ChromeSetup.ExtensionFolder ?? throw new InvalidOperationException("The chrome-extension folder was not found alongside this build.");
                 Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); return;
             }
-            if (action == "useAsCapture")
-            {
-                // A result becomes the captured text. An editable selection stays the paste target (plain text only);
-                // a Chrome or read-only capture continues as read-only text.
-                var reused = ReadText(root);
-                if (string.IsNullOrWhiteSpace(reused) || _operation is not null) return;
-                var target = _chromeCapture is null && _capture is { Editable: not false } ? _capture : null;
-                _chromeCapture = null;
-                _capture = target is not null ? new CapturedText(target.Window, reused, false, null, target.Editable) : new CapturedText(0, reused, false, null, Editable: false);
-                _task = Shortcuts.Open; _captureId++; _factSources.Clear(); _dialogSources.Clear();
-                Send(new { type = "capture", captureId = _captureId, task = _task, text = reused, canReplace = CanReplace, readOnly = ReadOnlyCapture, hasFormatting = false, canPreserveFormatting = false, mode = "clipboard", reused = true });
-                return;
-            }
+            if (action == "useAsCapture") { UseAsCapture(ReadText(root), fromHistory: false); return; }
             if (action == "openSource")
             {
                 // Only exact https URLs cited for the current capture; the WebView itself never navigates.

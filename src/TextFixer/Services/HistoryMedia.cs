@@ -14,6 +14,41 @@ internal static class HistoryMedia
     /// <returns>The content type of an image or video file, or null for any other file.</returns>
     internal static string? ContentType(string path) => Types.GetValueOrDefault(Path.GetExtension(path));
 
+    // Documents the history may open in their default app. Programs, scripts and shortcuts are never opened.
+    private static readonly HashSet<string> Documents = new(StringComparer.OrdinalIgnoreCase)
+        { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".csv", ".rtf", ".odt", ".ods", ".odp" };
+
+    /// <summary>Images, videos and the listed documents; everything else only shows its folder.</summary>
+    internal static bool IsOpenable(string path) => ContentType(path) is not null || Documents.Contains(Path.GetExtension(path));
+
+    private static readonly System.Text.RegularExpressions.Regex VideoId = new(@"^[\w-]{11}$");
+
+    /// <returns>The video id of a YouTube watch, short, embed, live or youtu.be link, or null.</returns>
+    internal static string? YouTubeId(string text)
+    {
+        if (!Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")) return null;
+        var host = uri.Host.ToLowerInvariant();
+        var segments = uri.AbsolutePath.Trim('/').Split('/');
+        string? id = null;
+        if (host == "youtu.be") id = segments[0];
+        else if (host is "youtube.com" or "www.youtube.com" or "m.youtube.com" or "music.youtube.com")
+        {
+            if (segments[0] == "watch")
+                id = uri.Query.TrimStart('?').Split('&').Select(p => p.Split('=', 2)).FirstOrDefault(p => p[0] == "v" && p.Length == 2)?[1];
+            else if (segments.Length >= 2 && segments[0] is "shorts" or "embed" or "live") id = segments[1];
+        }
+        return id is not null && VideoId.IsMatch(id) ? id : null;
+    }
+
+    /// <returns>A web address the history may open in the browser: http or https only.</returns>
+    internal static Uri? WebUrl(string text) =>
+        Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && !text.Trim().Any(char.IsWhiteSpace) ? uri : null;
+
+    private static readonly System.Text.RegularExpressions.Regex Mail = new(@"^(?:mailto:)?([^\s@<>()"",;:]+@[^\s@<>()"",;:]+\.[A-Za-z]{2,})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <returns>The address of a single e-mail address entry, or null.</returns>
+    internal static string? MailAddress(string text) => Mail.Match(text.Trim()) is { Success: true } m ? m.Groups[1].Value : null;
+
     /// <summary>Reads "bytes=start-end", "bytes=start-" or "bytes=-suffix" for a file of <paramref name="length"/> bytes.</summary>
     internal static (long Start, long End)? ParseRange(string header, long length)
     {

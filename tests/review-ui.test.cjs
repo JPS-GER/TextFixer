@@ -16,7 +16,7 @@ class Element {
 const elements=new Map(),sent=[];
 const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
 let receive;
-const sandbox={setTimeout:()=>0,setInterval:()=>1,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),createTextNode:text=>({nodeType:3,nodeValue:text,textContent:text}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
+const sandbox={URL,setTimeout:()=>0,setInterval:()=>1,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),createTextNode:text=>({nodeType:3,nodeValue:text,textContent:text}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
 vm.createContext(sandbox);
 for(const file of ['diff.js','review-model.js','markup.js','i18n-de.js','i18n.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
 const message=m=>receive({data:m});
@@ -897,14 +897,14 @@ console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, ta
  assert.equal(rows().length,4,'every entry has a row');
  assert.deepEqual(rows().map(r=>r.title),['Text','Text','Link','Path'],'formatting does not decide the kind');
  assert.equal(pane()[1].children.map(n=>n.textContent??n.nodeValue).join(''),'Plain entry about Mittwoch','the newest entry is shown in full');
- assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy',''],'plain entry: Copy and remove');
+ assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Use as captured text',''],'plain entry: Copy and remove');
  bar()[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'a',plain:true});
  bar().at(-1).onclick();assert.deepEqual({...sent.at(-1)},{action:'historyDelete',id:'a'});
  rows()[1].onclick();
- assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Copy formatted',''],'formatted entry adds Copy formatted');
+ assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Copy formatted','Use as captured text',''],'formatted entry adds Copy formatted');
  bar()[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'b',plain:false});
  message({type:'historyCopied',id:'b',plain:false});
- assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Copied',''],'only the used button confirms');
+ assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Copied','Use as captured text',''],'only the used button confirms');
  // Search is literal, finds text beyond the first line and marks every hit.
  element('history-search').value='mittwoch';element('history-search').oninput({target:element('history-search')});
  assert.equal(rows().length,2,'search keeps the matching entries');
@@ -960,6 +960,50 @@ console.log('PASS: clipboard view lists, searches, filters and copies entries.')
  element('history-images').onchange({target:{checked:false}});assert.deepEqual({...sent.at(-1)},{action:'historyImages',enabled:false});
 }
 console.log('PASS: clipboard kinds for code, e-mail, commands, images, videos and files.');
+{
+ // YouTube and the actions besides copying: the page sends only the entry id and the action.
+ const yt=sandbox.youtubeId;
+ assert.equal(yt('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5'),'dQw4w9WgXcQ');
+ assert.equal(yt('https://youtu.be/dQw4w9WgXcQ'),'dQw4w9WgXcQ');
+ assert.equal(yt('https://www.youtube.com/shorts/dQw4w9WgXcQ'),'dQw4w9WgXcQ');
+ assert.equal(yt('https://music.youtube.com/watch?v=dQw4w9WgXcQ'),'dQw4w9WgXcQ');
+ assert.equal(yt('https://www.youtube.com/@channel'),null,'a channel is a link');
+ assert.equal(yt('https://evil.example/watch?v=dQw4w9WgXcQ'),null,'other hosts are links');
+ assert.equal(sandbox.entryKind({text:'https://youtu.be/dQw4w9WgXcQ'}),'youtube');
+ message({type:'history',enabled:true,images:true,entries:[
+  {id:'y',text:'https://youtu.be/dQw4w9WgXcQ',copiedAt:Date.now()},
+  {id:'u',text:'https://example.com/a',copiedAt:Date.now()-1},
+  {id:'m',text:'max@example.de',copiedAt:Date.now()-2},
+  {id:'p',text:'C:\\Users\\me\\file.txt',copiedAt:Date.now()-3},
+  {id:'i',text:'',copiedAt:Date.now()-4,image:{url:'x',width:1,height:1,bytes:1}},
+  {id:'d',text:'C:\\a.pdf',copiedAt:Date.now()-5,files:[{path:'C:\\a.pdf',exists:true,openable:true}]},
+  {id:'x',text:'C:\\tool.exe',copiedAt:Date.now()-6,files:[{path:'C:\\tool.exe',exists:true,openable:false}]}]});
+ if(!sandbox.historyVisible())element('view-toggle').onclick();
+ const rows=()=>element('history-list').children.filter(c=>c.className?.startsWith('hv-row'));
+ const actions=()=>element('history-pane').children[2].children.filter(b=>b.dataset?.how);
+ const how=()=>actions().map(b=>b.dataset.how);
+ assert.equal(rows()[0].children[0].src,'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg','YouTube rows show the thumbnail');
+ const full=element('history-pane').children[1];
+ assert.ok(!full.children.some(c=>c.tag==='iframe'),'the player loads only after a click');
+ const replaced=[];full.children[0].replaceWith=n=>replaced.push(n);full.children[0].onclick();
+ assert.equal(replaced[0].tag,'iframe');assert.equal(replaced[0].src,'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1&rel=0');
+ assert.deepEqual(how(),['browser']);actions()[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyOpen',id:'y',how:'browser'});
+ const pick=i=>rows()[i].onclick();
+ pick(1);assert.deepEqual(how(),['browser']);
+ pick(2);assert.deepEqual(how(),['mail']);
+ pick(3);assert.deepEqual(how(),['explorer']);
+ pick(4);assert.deepEqual(how(),['app','save']);actions()[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historySave',id:'i'});
+ pick(5);assert.deepEqual(how(),['app','folder'],'a document can be opened');
+ pick(6);assert.deepEqual(how(),['folder'],'a program is never opened, only its folder');
+ message({type:'busy',busy:true});
+ pick(5);assert.ok(actions().every(b=>!b.disabled),'open actions stay available while a task runs');
+ message({type:'busy',busy:false});
+ message({type:'history',enabled:true,entries:[{id:'t',text:'Some text',copiedAt:Date.now()}]});
+ actions()[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyUse',id:'t'});
+ message({type:'busy',busy:true});assert.equal(actions()[0].disabled,true,'use as captured text waits for the running task');
+ message({type:'busy',busy:false});
+}
+console.log('PASS: YouTube player on click and clipboard actions send only id and action.');
 {
  // Composed headings and text field placeholders are translated; text field content is not.
  assert.equal(sandbox.tr('Summary: Key points','de'),'Zusammenfassung: Kernpunkte');

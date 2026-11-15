@@ -778,8 +778,8 @@ function updateViewToggle(){$('view-toggle').classList.toggle('running',busy&&hi
 function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return'Just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const d=Math.round(h/24);return d+(d===1?' day ago':' days ago');}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
 // Kinds: filter label, name of one entry, edge color. The first filter row holds text kinds, the second media.
-const historyKinds={text:['Text','Text','#7893a2'],url:['Links','Link','#8ecbff'],path:['Paths','Path','#3de8bb'],code:['Code','Code','#b9a2ff'],email:['E-Mail','E-mail address','#ffb066'],command:['Commands','Command','#a8e05f'],image:['Images','Image','#f08ad8'],video:['Videos','Video','#ff7b7b'],files:['Files','Files','#d6c08a']};
-const historyFilterRows=[['all','text','url','path','code','email','command'],['image','video','files']];
+const historyKinds={text:['Text','Text','#7893a2'],url:['Links','Link','#8ecbff'],path:['Paths','Path','#3de8bb'],code:['Code','Code','#b9a2ff'],email:['E-Mail','E-mail address','#ffb066'],command:['Commands','Command','#a8e05f'],image:['Images','Image','#f08ad8'],video:['Videos','Video','#ff9f6b'],youtube:['YouTube','YouTube video','#ff5c5c'],files:['Files','Files','#d6c08a']};
+const historyFilterRows=[['all','text','url','path','code','email','command'],['image','video','youtube','files']];
 const historyIcons={
   up:'M6 15l6-6 6 6',down:'M6 9l6 6 6-6',x:'M6 6l12 12M18 6L6 18'};
 function historyIcon(name){
@@ -793,12 +793,23 @@ function entryKind(e){
   if(e.image)return'image';
   if(e.files?.length)return e.files.every(f=>f.media==='video')?'video':'files';
   const t=entryText(e).trim();
-  if(/^https?:\/\/\S+$/i.test(t))return'url';
+  if(/^https?:\/\/\S+$/i.test(t))return youtubeId(t)?'youtube':'url';
   if(/^(mailto:)?[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i.test(t))return'email';
   if(/^([A-Za-z]:\\|\\\\|\\)\S/.test(t)&&!t.includes('\n'))return'path';
   if(isCommandText(t))return'command';
   if(isCodeText(t))return'code';
   return'text';
+}
+// The video id of a YouTube watch, short, embed, live or youtu.be link (the same rules as HistoryMedia.YouTubeId).
+function youtubeId(text){
+  let u;try{u=new URL(text.trim());}catch{return null;}
+  if(!/^https?:$/.test(u.protocol))return null;
+  const host=u.hostname.toLowerCase(),seg=u.pathname.replace(/^\/+|\/+$/g,'').split('/');let id=null;
+  if(host==='youtu.be')id=seg[0];
+  else if(['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com'].includes(host)){
+    if(seg[0]==='watch')id=u.searchParams.get('v');else if(seg.length>=2&&['shorts','embed','live'].includes(seg[0]))id=seg[1];
+  }
+  return id&&/^[\w-]{11}$/.test(id)?id:null;
 }
 // A command: up to five lines, starting with a prompt or a common command line tool.
 const commandStart=/^(\$ |> |PS [A-Za-z]:\\[^>]*> ?|(git|dotnet|npm|npx|pnpm|yarn|node|python3?|py|pip3?|winget|choco|scoop|powershell|pwsh|cmd|cd|dir|ls|mkdir|rmdir|rm|del|copy|xcopy|robocopy|curl|wget|ssh|scp|docker|kubectl|az|gh|claude|codex|cargo|go|java|mvn|gradle|sudo|apt|apt-get|brew|ipconfig|ping|netstat|taskkill|tasklist|setx)(\s|$))/;
@@ -810,7 +821,7 @@ function isCodeText(t){
   const lines=t.split(/\r?\n/).filter(l=>l.trim()),n=lines.filter(l=>codeLine.test(l)).length;
   return n>=2&&n>=lines.length*0.3;
 }
-const entryMono=e=>['url','path','code','command','email'].includes(entryKind(e));
+const entryMono=e=>['url','youtube','path','code','command','email'].includes(entryKind(e));
 function fileName(path){return path.replace(/[\\\/]+$/,'').split(/[\\\/]/).pop()||path;}
 // The line shown in the list: the first text line, the file names, or the image size.
 function entryTitle(e){
@@ -820,7 +831,8 @@ function entryTitle(e){
 }
 function formatBytes(b){return b<1048576?Math.max(1,Math.round(b/1024))+' KB':(b/1048576).toFixed(1)+' MB';}
 function entryThumb(e){
-  const f=e.files?.length===1&&e.files[0].exists&&e.files[0].media==='image'?e.files[0]:null,src=e.image?.url||f?.url;
+  const yt=!e.image&&!e.files?youtubeId(entryText(e)):null;
+  const f=e.files?.length===1&&e.files[0].exists&&e.files[0].media==='image'?e.files[0]:null,src=e.image?.url||f?.url||(yt&&`https://i.ytimg.com/vi/${yt}/mqdefault.jpg`);
   if(!src)return null;const img=el('img','thumb');img.src=src;img.alt='';img.loading='lazy';return img;
 }
 function entryGroup(e){
@@ -923,7 +935,11 @@ function renderHistory(){
   list.querySelector?.('.hv-row.sel')?.scrollIntoView?.({block:'nearest'});
 }
 function renderHistoryPane(e){
-  const pane=$('history-pane');pane.replaceChildren();
+  const pane=$('history-pane');
+  // A playing video survives a redraw of the same entry (the 30-second clock, a new copy, a busy change):
+  // only the header and the buttons are replaced, because moving a frame or video in the page restarts it.
+  const live=e&&pane.dataset.id===e.id&&pane.children?.length===3?pane.querySelector?.('iframe.hv-yt, video'):null;
+  if(!live)pane.replaceChildren();pane.dataset.id=e?.id||'';
   if(!e){pane.append(el('p','hv-none','No entry matches.'));return;}
   const txt=entryText(e),kind=entryKind(e),hits=hitPositions(txt,historyQuery),cur=Math.min(historyCur,Math.max(0,hits.length-1));
   const meta=el('div','meta'),k=el('span','hv-kind'),bar=el('i');bar.style?.setProperty('--k',historyKinds[kind][2]);k.append(bar,el('span','',historyKinds[kind][1]));
@@ -941,6 +957,7 @@ function renderHistoryPane(e){
   const full=el('div','full'+(entryMono(e)?' mono':''));full.dataset.noTr='';
   if(e.image){full.className='full media';const img=el('img','checker');img.src=e.image.url;img.alt='';full.append(img);}
   else if(e.files)renderHistoryFiles(full,e,cur);
+  else if(kind==='youtube')renderHistoryYouTube(full,e,txt,cur);
   else appendMarked(full,txt,historyQuery,cur);
   const actions=el('div','bar');
   const copied=plain=>e.id===copiedId&&copiedPlain===plain;
@@ -950,10 +967,42 @@ function renderHistoryPane(e){
   plain.title=lock||(gone?'The files are no longer there.':e.image?'Copy the image':e.files?'Copy the files to paste them in Explorer':'Copy the text without formatting');
   plain.disabled=busy||gone;plain.onclick=()=>historyCopy(e,true);actions.append(plain);
   if(e.hasFormatting){const rich=el('button',copied(false)?'done':'',copied(false)?'Copied':'Copy formatted');rich.type='button';rich.title=lock||'Copy the text with bold, links and lists';rich.disabled=busy;rich.onclick=()=>historyCopy(e,false);actions.append(rich);}
+  for(const [how,label,title,needsFile] of historyActions(e,kind)){
+    const b=el('button','',label);b.type='button';b.title=title;b.dataset.how=how;
+    b.disabled=(how==='use'&&busy)||(needsFile&&gone);
+    b.onclick=()=>how==='save'?post('historySave',{id:e.id}):how==='use'?post('historyUse',{id:e.id}):post('historyOpen',{id:e.id,how});
+    actions.append(b);
+  }
   if(e.truncated&&!e.files)actions.append(el('span','cut-note','Preview shows the first 100,000 characters. Copy uses the full text.'));
   const remove=el('button','hv-ib remove');remove.type='button';remove.title='Remove from history';remove.append(historyIcon('x'));remove.onclick=()=>post('historyDelete',{id:e.id});actions.append(remove);
+  if(live){pane.children[0].replaceWith(meta);pane.children[2].replaceWith(actions);return;}
   pane.append(meta,full,actions);
   full.querySelector?.('mark.cur')?.scrollIntoView?.({block:'nearest'});
+}
+// Actions besides copying: [how, label, tooltip, needs a present file]. C# checks every target again.
+function historyActions(e,kind){
+  const one=e.files?.length===1?e.files[0]:null;
+  switch(kind){
+    case'url':case'youtube':return[['browser','Open in browser','Open the link in your default browser']];
+    case'email':return[['mail','Write e-mail','Write an e-mail to this address in your mail app']];
+    case'path':return[['explorer','Show in Explorer','Show the file or folder in Explorer']];
+    case'image':return[['app','Open','Open a temporary copy in the default app for images'],['save','Save as...','Save the image as a file']];
+    case'video':case'files':return[...(one?.openable?[['app','Open','Open the file in its default app',true]]:[]),['folder',e.files.length>1?'Open folder':'Show in Explorer','Open the folder with the file selected',true]];
+    default:return[['use','Use as captured text','Work on this text with the text tools']];
+  }
+}
+// YouTube: the thumbnail first, the player (youtube-nocookie.com) only after a click.
+function renderHistoryYouTube(full,e,txt,cur){
+  const id=youtubeId(txt);full.className='full media';
+  const box=el('button','hv-yt');box.type='button';box.title='Play the video here';
+  const img=el('img');img.src=`https://i.ytimg.com/vi/${id}/hqdefault.jpg`;img.alt='';box.append(img,el('span','play'));
+  box.onclick=()=>{
+    const frame=el('iframe','hv-yt');frame.src=`https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+    frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-presentation');frame.setAttribute('allow','autoplay; encrypted-media; fullscreen; picture-in-picture');frame.setAttribute('referrerpolicy','strict-origin-when-cross-origin');frame.title='YouTube';
+    box.replaceWith(frame);
+  };
+  const link=el('div','hv-yt-link');link.dataset.noTr='';appendMarked(link,txt,historyQuery,cur);
+  full.append(box,link);
 }
 // Files: a single image or video plays here from its place on the disk, every file is listed with its folder.
 function renderHistoryFiles(full,e,cur){
@@ -974,11 +1023,13 @@ function renderHistoryFiles(full,e,cur){
   full.append(list);
 }
 $('history-search').oninput=e=>{historyQuery=e.target.value;historyCur=0;renderHistory();};
-// Keys in the clipboard view: arrows choose an entry, Enter copies it, Esc clears the search and then opens the text tools.
+// Keys in the clipboard view: arrows choose an entry, Enter copies it, Ctrl+Enter runs its first other action
+// (open, show, write e-mail, use), Esc clears the search and then opens the text tools.
 document.addEventListener?.('keydown',e=>{
-  if(!historyShown||e.ctrlKey||e.altKey||e.metaKey||document.querySelector?.('dialog[open]'))return;
+  if(!historyShown||e.altKey||e.metaKey||(e.ctrlKey&&e.key!=='Enter')||document.querySelector?.('dialog[open]'))return;
   const items=historyVisibleEntries(),order=historyOrder(items),sel=historySelected(items);
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){const n=order[order.indexOf(sel)+(e.key==='ArrowDown'?1:-1)];if(n){e.preventDefault();historySel=n.id;historyCur=0;renderHistory();}return;}
+  if(e.key==='Enter'&&e.ctrlKey&&!e.altKey&&sel){e.preventDefault();$('history-pane').querySelector?.('.bar button[data-how]:not(:disabled)')?.click();return;}
   if(e.key==='Enter'&&(e.target===$('history-search')||e.target===document.body)){e.preventDefault();historyCopy(sel,true);return;}
   if(e.key==='Escape'){e.preventDefault();if(historyQuery){historyQuery='';$('history-search').value='';historyCur=0;renderHistory();}else showHistory(false);}
 });

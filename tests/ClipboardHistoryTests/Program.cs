@@ -108,6 +108,15 @@ try
         && HistoryMedia.ParseRange("items=0-1", 100) is null, "invalid ranges are refused");
     Check(HistoryMedia.ContentType(@"C:\x\a.MP4") == "video/mp4" && HistoryMedia.ContentType("a.png") == "image/png" && HistoryMedia.ContentType("a.exe") is null,
         "only image and video files are served");
+    Check(HistoryMedia.YouTubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5") == "dQw4w9WgXcQ" && HistoryMedia.YouTubeId("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        && HistoryMedia.YouTubeId("https://m.youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ" && HistoryMedia.YouTubeId("https://www.youtube.com/@channel") is null
+        && HistoryMedia.YouTubeId("https://evil.example/watch?v=dQw4w9WgXcQ") is null && HistoryMedia.YouTubeId("javascript:alert(1)") is null, "YouTube video ids");
+    Check(HistoryMedia.IsOpenable(@"C:\a\Brief.PDF") && HistoryMedia.IsOpenable("clip.mp4") && !HistoryMedia.IsOpenable("tool.exe") && !HistoryMedia.IsOpenable("run.bat")
+        && !HistoryMedia.IsOpenable("app.lnk") && !HistoryMedia.IsOpenable("x.ps1") && !HistoryMedia.IsOpenable("noext"), "only media and listed documents open in their app");
+    Check(HistoryMedia.WebUrl("https://example.com/a?b=1") is not null && HistoryMedia.WebUrl("file:///C:/x") is null && HistoryMedia.WebUrl("javascript:alert(1)") is null
+        && HistoryMedia.WebUrl("https://a.com b") is null, "only http and https links open in the browser");
+    Check(HistoryMedia.MailAddress("max@example.de") == "max@example.de" && HistoryMedia.MailAddress("mailto:max@example.de") == "max@example.de"
+        && HistoryMedia.MailAddress("write max@example.de") is null, "e-mail addresses");
 
     File.WriteAllBytes(path, [1, 2, 3, 4]);
     using (var damaged = new ClipboardHistory(path))
