@@ -298,7 +298,8 @@ body { padding-bottom:48px; }
 .format-space { display:inline; white-space:pre; }
 
 /* Review categories: one segmented bar; the selected tab takes the review color. */
-.review-tab-row { display:flex; align-items:center; gap:8px 14px; flex-wrap:wrap; margin-bottom:20px; }
+/* The tabs head the text box they filter, like the footer below the text. */
+.review-tab-row { display:flex; align-items:center; gap:8px 14px; flex-wrap:wrap; padding:8px 10px; background:var(--room-2); border-bottom:1px solid var(--edge); }
 .review-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:4px; background:var(--room); border:1px solid var(--edge); border-radius:11px; }
 .review-tab { display:flex; align-items:center; gap:8px; padding:7px 14px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:calc(13px * var(--text-scale)); }
 .review-tab:hover:not(:disabled) { background:var(--room-2); color:var(--text); }
@@ -306,7 +307,7 @@ body { padding-bottom:48px; }
 .review-tab:disabled { color:var(--dim); opacity:.55; }
 .review-tab .number { margin:0; padding:0; background:none; color:var(--dim); font-variant-numeric:tabular-nums; }
 .review-tab.selected .number { color:#ffffffcc; }
-.review-tabs-empty { display:flex; flex-wrap:wrap; gap:4px 18px; color:var(--dim); font-size:calc(13px * var(--text-scale)); font-weight:600; }
+.review-tabs-empty { display:flex; flex-wrap:wrap; gap:4px 18px; padding:0 4px; color:var(--dim); font-size:calc(13px * var(--text-scale)); font-weight:600; }
 .empty-tab { display:flex; align-items:center; gap:8px; }
 .empty-tab .number { margin:0; padding:0; background:none; color:var(--dim); font-weight:600; }
 .inactive-change { opacity:.48; }

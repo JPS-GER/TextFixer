@@ -481,7 +481,6 @@ function addedText(text,label){
 function showChanges(){
   const container=$('changes');container.replaceChildren();
   const changes=[...parts.filter(p=>p.changed&&p.category===activeTab),...wordings.filter(w=>w.created&&activeTab==='worth')];
-  $('correction-count').textContent=changes.length;
   if(!changes.length){const p=document.createElement('p');p.className='empty';p.textContent='No text corrections in this category.';container.append(p);}
   changes.forEach((p,index)=>{
     const inactive=!activeCorrection(p),label=document.createElement('label');label.className='change'+(inactive?' inactive-change':'');

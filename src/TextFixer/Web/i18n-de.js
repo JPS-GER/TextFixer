@@ -142,7 +142,7 @@ const i18nDe={
 "Wording":"Formulierung",
 "Worth checking":"Prüfenswert",
 "Formatting":"Formatierung",
-"Corrections in context {0}":"Korrekturen im Zusammenhang {0}",
+"Corrections in context":"Korrekturen im Zusammenhang",
 "Accept all":"Alle annehmen",
 "Reject all":"Alle ablehnen",
 "Full text with suggested corrections":"Gesamter Text mit vorgeschlagenen Korrekturen",
