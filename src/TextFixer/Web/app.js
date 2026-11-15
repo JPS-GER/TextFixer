@@ -44,13 +44,13 @@ let reviewMode='single',partialReview=false,tabState={},tabResults={},tabErrors=
 const focusOrder=['spelling','grammar','punctuation','wording','worth'];
 function locked(){return busy&&!partialReview;}
 let activeTab='spelling',reviewFindings=[],wordings=[];
-const reviewTabs=[['spelling','Spelling'],['grammar','Grammar'],['punctuation','Punctuation'],['wording','Wording']];
+const reviewTabs=[['spelling','Spelling'],['grammar','Grammar'],['punctuation','Punctuation'],['wording','Wording'],['formatting','Formatting']];
 // Names of every review part, including Worth checking, which has its own section instead of a tab.
 const reviewPartNames=Object.fromEntries([...reviewTabs,['worth','Worth checking']]);
 function activeCorrection(p){return p.category===activeTab&&!p.layoutProtected&&(p.category==='worth'||!reviewSuperseded(p,wordings));}
 function tabCount(key){
   if(key==='worth')return reviewFindings.filter(f=>!f.dismissed).length;
-  if(key==='formatting')return captureMode==='chrome'?0:formattingSuggestions.length;
+  if(key==='formatting')return shownFormatting().length;
   return parts.filter(p=>p.changed&&p.category===key).length;
 }
 function renderTabs(){
@@ -59,7 +59,8 @@ function renderTabs(){
     const button=document.createElement('button');button.type='button';button.id='tab-'+key;button.className='review-tab'+(activeTab===key?' selected':'');
     button.dataset.category=key;button.setAttribute('role','tab');button.setAttribute('aria-selected',String(activeTab===key));
     const state=tabState[key];
-    button.disabled=tabCount(key)===0||(state&&state!=='ready');if(state)button.className+=' state-'+state;button.tabIndex=activeTab===key||(!tabCount(activeTab)&&reviewTabs.find(([k])=>tabCount(k)>0)?.[0]===key)?0:-1;
+    // Formatting fixes cannot be applied with plain-text replacement, so their tab is not selectable then.
+    button.disabled=tabCount(key)===0||(state&&state!=='ready')||(key==='formatting'&&plainReplace());if(state)button.className+=' state-'+state;button.tabIndex=activeTab===key||(!tabCount(activeTab)&&reviewTabs.find(([k])=>tabCount(k)>0)?.[0]===key)?0:-1;
     const name=document.createElement('span');name.textContent=title;
     const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);
     if(state&&state!=='ready'){count.className='tab-state';count.textContent=state==='failed'?'!':state==='stopped'?'-':'';button.title=tabStateTitle[state];}
@@ -86,7 +87,6 @@ function renderTabs(){
   }
   // Basics only skips Worth checking, so its section is left out; in a tab-by-tab review it appears once its answer is in.
   $('worth-results').hidden=readyOption.review==='errors'||(partialReview&&tabState.worth!=='ready');
-  $('formatting-results').hidden=captureMode==='chrome'||!formattingSuggestions.length;
 }
 const tabStateTitle={running:'Checking now',failed:'Could not be checked',stopped:'Stopped'};
 function focusParts(original){
@@ -322,7 +322,6 @@ function update(){
   for(const id of ['use-review','use-translation','use-fact','use-rewrite'])$(id).disabled=busy;
   for(const id of ['fact-start','fact-recheck','fact-context','fact-context-more'])$(id).disabled=busy;
   $('dialog-send').disabled=busy;$('dialog-question').disabled=busy;$('copy-conversation').disabled=busy;
-  document.querySelectorAll('#formatting-findings input, #formatting-findings button').forEach(x=>x.disabled=locked()||$('allow-plain-text').checked);
   const formattedPaste=captureMode!=='chrome'&&richClipboard&&!$('allow-plain-text').checked;
   $('copy').disabled=busy;$('copy').hidden=!formattedPaste;$('apply').disabled=busy||!canReplace||(captureMode!=='chrome'&&!formattedPaste&&!$('allow-plain-text').checked);
   $('allow-plain-text').disabled=busy;$('plain-text-option').hidden=captureMode==='chrome'||!canReplace;
@@ -350,52 +349,49 @@ function update(){
   $('formatting').textContent=richClipboard?'':'This selection includes formatting. Plain-text replacement may remove formatting.';
 }
 let formattingSuggestions=[];
-function selectedFormatting(){return formattingSuggestions.filter(f=>f.accepted).map(f=>f.id);}
-function showFormatting(items){
-  formattingSuggestions=items.map(f=>({...f,accepted:false}));
-  $('formatting-results').hidden=!items.length||captureMode==='chrome';
-  renderFormatting();
+// A formatting fix needs a known decoration and a run around its space inside the original text.
+function validFormatting(f){return ['underline','strikethrough','link'].includes(f.property)&&Number.isInteger(f.runStart)&&Number.isInteger(f.runEnd)&&f.runStart>=0&&f.runEnd<=reviewOriginal.length&&f.runStart<=f.start&&f.end<=f.runEnd;}
+// Formatting fixes shown in the review. Where a text correction or a used wording touches the run, the text wins and
+// the formatting fix is not offered. Chrome captures have no formatting to fix.
+function shownFormatting(){
+  if(captureMode==='chrome')return [];
+  const edits=[...parts.filter(p=>p.changed),...wordings.filter(w=>w.accepted)];
+  const touches=(p,f)=>p.start===p.end?p.start>f.runStart&&p.start<f.runEnd:p.start<f.runEnd&&p.end>f.runStart;
+  return formattingSuggestions.filter(f=>validFormatting(f)&&!edits.some(p=>touches(p,f)));
 }
-function renderFormatting(){
-  const container=$('formatting-findings');container.replaceChildren();
-  formattingSuggestions.forEach((f,index)=>{
-    const card=document.createElement('article');card.className='formatting-suggestion';
-    const label=document.createElement('label');label.className='formatting-label';
-    const input=document.createElement('input');input.type='checkbox';input.checked=f.accepted;
-    input.disabled=locked()||$('allow-plain-text').checked;
-    input.setAttribute('aria-label',f.description);
-    input.onchange=()=>{if(input.disabled)return;f.accepted=input.checked;renderFormatting();};
-    const description=document.createElement('span');description.textContent=f.description;
-    label.append(input,description);card.append(label);
-    const context=document.createElement('div');context.className='inline-text formatting-context';
-    const valid=['underline','strikethrough','link'].includes(f.property)&&Number.isInteger(f.runStart)&&Number.isInteger(f.runEnd)&&f.runStart>=0&&f.runEnd<=reviewOriginal.length&&f.runStart<=f.start&&f.end<=f.runEnd;
-    if(valid){
-      // Render only plain text with known CSS classes, never captured HTML or links.
-      let left=Math.max(0,f.runStart-35),right=Math.min(reviewOriginal.length,f.runEnd+35);
-      if(left>0&&/[\uDC00-\uDFFF]/.test(reviewOriginal[left]))left--;
-      if(right<reviewOriginal.length&&/[\uDC00-\uDFFF]/.test(reviewOriginal[right]))right++;
-      const beforeContext=document.createElement('span');beforeContext.textContent=(left?'...':'')+reviewOriginal.slice(left,f.runStart);
-      // Same old and new boxes as the corrections in context: the old run with its decoration, the new one without it on the space.
-      const button=document.createElement('button');button.type='button';button.className='inline-correction formatting-correction'+(f.accepted?'':' rejected');
-      button.disabled=input.disabled;button.setAttribute('aria-pressed',String(f.accepted));
-      button.setAttribute('aria-label',f.description+'. '+(f.accepted?'Accepted. Click to reject.':'Not accepted. Click to accept.'));
-      button.title=f.accepted?'Accepted formatting fix. Click to reject.':'Click to accept this formatting fix.';
-      for(const corrected of [false,true]){
-        const variant=document.createElement(corrected?'ins':'del');
-        const run=document.createElement('span');run.className='format-decoration format-'+f.property;
-        const space=document.createElement('span');space.className='format-space';space.textContent='\u00b7';space.title='Space (kept in the text)';
-        const leading=f.start===f.runStart;
-        const content=document.createElement('span');content.textContent=reviewOriginal.slice(leading?f.end:f.runStart,leading?f.runEnd:f.start);
-        if(corrected){run.append(content);if(leading)variant.append(space,run);else variant.append(run,space);}
-        else {if(leading)run.append(space,content);else run.append(content,space);variant.append(run);}
-        button.append(variant);
-      }
-      button.onclick=()=>{if(button.disabled)return;f.accepted=!f.accepted;renderFormatting();$('formatting-findings').querySelectorAll('button')[index]?.focus();};
-      const afterContext=document.createElement('span');afterContext.textContent=reviewOriginal.slice(f.runEnd,right)+(right<reviewOriginal.length?'...':'');
-      context.append(beforeContext,button,afterContext);card.append(context);
-    }
-    container.append(card);
+function selectedFormatting(){return shownFormatting().filter(f=>f.accepted).map(f=>f.id);}
+// Formatting fixes start accepted, like text corrections.
+function showFormatting(items){formattingSuggestions=items.map(f=>({...f,accepted:true}));}
+const plainReplace=()=>!!$('allow-plain-text').checked;
+// Old and new run of a formatting fix: the old run with its decoration over the space, the new one without it there.
+// Only plain text with known CSS classes, never captured HTML or links.
+function formattingVariants(f){
+  return [false,true].map(corrected=>{
+    const variant=document.createElement(corrected?'ins':'del');
+    const run=document.createElement('span');run.className='format-decoration format-'+f.property;
+    const space=document.createElement('span');space.className='format-space';space.textContent='\u00b7';space.title=tr('Space (kept in the text)');
+    const leading=f.start===f.runStart;
+    const content=document.createElement('span');content.textContent=reviewOriginal.slice(leading?f.end:f.runStart,leading?f.runEnd:f.start);
+    if(corrected){run.append(content);if(leading)variant.append(space,run);else variant.append(run,space);}
+    else {if(leading)run.append(space,content);else run.append(content,space);variant.append(run);}
+    return variant;
   });
+}
+// A formatting fix in the text: clickable in the Formatting tab, gray in the other tabs.
+function formattingBox(f,active){
+  const box=document.createElement(active?'button':'span');
+  box.className=(active?'inline-correction':'inactive-correction')+' formatting-correction'+(f.accepted?'':' rejected');
+  box.append(...formattingVariants(f));
+  if(active){
+    box.type='button';box.dataset.start=String(f.runStart);box.dataset.inactive=String(plainReplace());box.disabled=locked()||plainReplace();
+    box.setAttribute('aria-pressed',String(f.accepted));
+    box.title=`${tr(f.description)}. ${tr(f.accepted?'Accepted correction. Click to reject.':'Rejected correction. Click to accept.')}`;
+    box.onclick=()=>{if(box.disabled)return;f.accepted=!f.accepted;showChanges();};
+  }else{
+    box.title=`${tr(f.description)}. ${tr('Formatting correction. Click to open its tab.')}`;
+    box.onclick=()=>{if(!plainReplace())openCorrection({category:'formatting',start:f.runStart});};
+  }
+  return box;
 }
 function revised(){return reviewRevised(reviewOriginal,parts,wordings);}
 function acceptedEdits(){return reviewEdits(parts,wordings);}
@@ -425,17 +421,27 @@ function openCorrection(p){
 }
 function showInline(){
   const container=$('inline-text');container.replaceChildren();let pos=0;
-  const segments=reviewSegments(reviewOriginal,parts,wordings),ends=sentenceEnds(reviewOriginal),lit=new Set();
-  for(const p of segments)if(p.changed&&p.category===activeTab){
-    for(let i=sentenceIndex(ends,p.start),last=sentenceIndex(ends,Math.max(p.start,p.end-1));i<=last;i++)lit.add(i);
+  // Adjacent unchanged parts form one piece, so a formatting run across a part boundary is found.
+  const segments=[];
+  for(const p of reviewSegments(reviewOriginal,parts,wordings)){
+    const last=segments.at(-1);
+    if(last&&!p.changed&&!p.superseded&&!last.changed&&!last.superseded)segments[segments.length-1]={...last,before:last.before+p.before,after:last.after+p.after};
+    else segments.push(p);
   }
+  const ends=sentenceEnds(reviewOriginal),lit=new Set(),fmts=shownFormatting();
+  const light=(start,end)=>{for(let i=sentenceIndex(ends,start),last=sentenceIndex(ends,Math.max(start,end-1));i<=last;i++)lit.add(i);};
+  for(const p of segments)if(p.changed&&p.category===activeTab)light(p.start,p.end);
+  if(activeTab==='formatting')for(const f of fmts)light(f.runStart,f.runEnd);
   const muted=i=>lit.size>0&&!lit.has(i);
   segments.forEach(p=>{
     const at=pos;pos+=(p.before||'').length;
     if(!p.changed){
-      // Unchanged text splits at sentence ends, so each sentence can be muted on its own.
+      // Unchanged text splits at sentence ends, so each sentence can be muted on its own, and around formatting fixes.
       for(let s=at,end=pos;s<end;){
-        const i=sentenceIndex(ends,s),e=Math.min(end,ends[i]);
+        const f=fmts.find(f=>f.runStart===s&&f.runEnd<=end);
+        if(f){container.append(formattingBox(f,activeTab==='formatting'));s=f.runEnd;continue;}
+        const i=sentenceIndex(ends,s);let e=Math.min(end,ends[i]);
+        for(const g of fmts)if(g.runStart>s&&g.runStart<e&&g.runEnd<=end)e=g.runStart;
         const span=document.createElement('span');appendGapped(span,reviewOriginal.slice(s,e),s,reviewOriginal);
         span.className=[p.superseded?'superseded-text':'',muted(i)?'muted':''].filter(Boolean).join(' ');
         container.append(span);s=e;
@@ -481,7 +487,18 @@ function addedText(text,label){
 function showChanges(){
   const container=$('changes');container.replaceChildren();
   const changes=[...parts.filter(p=>p.changed&&p.category===activeTab),...wordings.filter(w=>w.created&&activeTab==='worth')];
-  if(!changes.length){const p=document.createElement('p');p.className='empty';p.textContent='No text corrections in this category.';container.append(p);}
+  const fmtTab=activeTab==='formatting',fmts=fmtTab?shownFormatting():[];
+  if(!changes.length&&!fmts.length){const p=document.createElement('p');p.className='empty';p.textContent='No text corrections in this category.';container.append(p);}
+  fmts.forEach(f=>{
+    const label=document.createElement('label');label.className='change';label.title=tr(f.description);
+    const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.className='switch';checkbox.checked=f.accepted;
+    checkbox.disabled=locked()||plainReplace();checkbox.dataset.inactive=String(plainReplace());
+    checkbox.onchange=()=>{if(checkbox.disabled)return;f.accepted=checkbox.checked;showChanges();};
+    const content=document.createElement('span');content.className='change-content formatting-correction';
+    const [old,next]=formattingVariants(f),arrow=document.createElement('span');arrow.className='change-arrow';arrow.textContent='\u2192';
+    content.append(old,arrow,next);
+    label.append(checkbox,content,changeContext({start:f.runStart,end:f.runEnd}));container.append(label);
+  });
   changes.forEach((p,index)=>{
     const inactive=!activeCorrection(p),label=document.createElement('label');label.className='change'+(inactive?' inactive-change':'');
     const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=p.accepted;checkbox.setAttribute('aria-label',`Accept correction ${index+1}`);
@@ -502,7 +519,7 @@ function showChanges(){
     label.append(checkbox,content,changeContext(p));container.append(label);
   });
   // Progress of the active tab: accepted and rejected corrections.
-  const decided=parts.filter(p=>p.changed&&p.category===activeTab&&activeCorrection(p)),yes=decided.filter(p=>p.accepted).length;
+  const decided=fmtTab?(plainReplace()?[]:fmts):parts.filter(p=>p.changed&&p.category===activeTab&&activeCorrection(p)),yes=decided.filter(p=>p.accepted).length;
   $('decision-progress').hidden=!decided.length;
   $('progress-accepted').style?.setProperty?.('width',decided.length?`${yes/decided.length*100}%`:'0');
   $('progress-rejected').style?.setProperty?.('width',decided.length?`${(decided.length-yes)/decided.length*100}%`:'0');
@@ -555,6 +572,7 @@ function showFindings(){
 }
 function bulkCorrections(accepted){
   if(locked())return;
+  if(activeTab==='formatting'){if(!plainReplace())shownFormatting().forEach(f=>f.accepted=accepted);showChanges();return;}
   parts.filter(p=>p.changed&&activeCorrection(p)).forEach(p=>p.accepted=accepted);
   showChanges();
 }
@@ -564,7 +582,8 @@ $('open-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('
 $('settings').addEventListener('close',stopRecording);
 $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');post('models');};$('close-settings').onclick=()=>$('settings').close();
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
-$('allow-plain-text').onchange=update;
+// With plain-text replacement the formatting fixes stay visible in gray; the Formatting tab is left for the first other tab.
+$('allow-plain-text').onchange=()=>{if(plainReplace()&&activeTab==='formatting')activeTab=reviewTabs.find(([k])=>k!=='formatting'&&tabCount(k)>0)?.[0]||'spelling';showChanges();};
 document.querySelectorAll('input[data-writing]').forEach(r=>r.onchange=()=>{if(r.checked)post('writing',{[r.dataset.writing]:r.value});});
 renderTaskMenu();
 $('rewrite-form').onsubmit=e=>{e.preventDefault();requestRewrite($('rewrite-request').value.trim());};
@@ -849,7 +868,7 @@ function tabLineWidth(px,base){
 // The largest size is the one whose one-line tab bar still fits the screen; the window's minimum width keeps the
 // tab bar on one line at the chosen size. The saved size stays, so a larger size returns on a larger screen.
 const textSize=(()=>{
-  const DEFAULT=16,MIN=12,MAX=18,BASE=14;
+  const DEFAULT=15,MIN=12,MAX=18,BASE=14;
   let preferred=DEFAULT,size=DEFAULT,open=false,screenKey='';
   try{const saved=Number(localStorage.getItem('textSize'));if(saved)preferred=saved;}catch{}
   const clamp=v=>Math.min(MAX,Math.max(MIN,Math.round(v)));

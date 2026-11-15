@@ -4,9 +4,9 @@ namespace TextFixer;
 
 internal static class WindowLayout
 {
-    // Window width in CSS px that keeps the review tabs on one line at the default text size of 16 px, measured from
+    // Window width in CSS px that keeps the review tabs on one line at the default text size of 15 px, measured from
     // the page. Once loaded, the page reports the exact value for the chosen text size.
-    internal const int DefaultTabLineWidth = 1172;
+    internal const int DefaultTabLineWidth = 1121;
 
     internal static int MinimumWidth(double css, int dpi, Rectangle area) =>
         Math.Min(area.Width, (int)Math.Ceiling(css * Math.Max(96, dpi) / 96d));

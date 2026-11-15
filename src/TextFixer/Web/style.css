@@ -287,9 +287,6 @@ body { padding-bottom:48px; }
 .capture-icon { display:inline-flex; align-items:center; color:var(--accent); flex-shrink:0; }
 .capture-icon svg [hidden] { display:none; }
 
-.formatting-suggestion { margin:14px 0; }
-.formatting-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:calc(13px * var(--text-scale)); margin-bottom:8px; }
-.formatting-context { max-height:none; padding:14px 18px; }
 /* Formatting fixes use the correction boxes; the old box is not struck through, its decoration is what changes. */
 .formatting-correction del,.formatting-correction.rejected del { text-decoration:none; }
 .formatting-correction del,.formatting-correction ins { white-space:nowrap; }
