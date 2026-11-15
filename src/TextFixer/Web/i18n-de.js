@@ -1,6 +1,8 @@
 'use strict';
 // German texts for the window, keyed by the English text (see i18n.js). Child elements are {0}, {1} in order.
 const i18nDe={
+"Keep TextFixer in front of other windows":"TextFixer vor allen anderen Fenstern halten",
+"In front of other windows. Click to release.":"Vor allen anderen Fenstern. Klicken zum Lösen.",
 "Wording from Worth checking. Click to show it.":"Formulierung aus Prüfenswert. Klicken zeigt sie.",
 "Bold, lists, quotes and links for Word, Outlook, Teams and Google Docs. Apps without formatting get plain text.":"Fett, Listen, Zitate und Links für Word, Outlook, Teams und Google Docs. Apps ohne Formatierung erhalten Nur-Text.",
 "No markup. Lists use • bullets, quotes start with \">\".":"Ohne Auszeichnung. Listen nutzen •-Aufzählungszeichen, Zitate beginnen mit \">\".",

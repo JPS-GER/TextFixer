@@ -331,6 +331,7 @@ header h1 { font-size:calc(22px * var(--text-scale)); }
 main { max-width:1100px; margin:0 auto; }
 .icon-button { width:40px; height:40px; padding:0 !important; display:inline-grid; place-items:center; border-radius:9px; color:var(--muted); }
 .icon-button:hover { color:var(--text); }
+.icon-button.pin.active svg { fill:currentColor; }
 main.task-active #choose-text { max-height:180px; }
 @media(max-width:900px) { .sidebar { width:min(calc(206px * var(--text-scale)), 40vw); } }
 .empty-view { max-width:520px; margin:48px auto 0; text-align:center; }

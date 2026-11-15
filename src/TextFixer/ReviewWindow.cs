@@ -514,6 +514,7 @@ internal sealed class ReviewWindow : Form
                 return;
             }
             if (action == "minWidth") { ApplyMinimumWidth(root); return; }
+            if (action == "topMost") { TopMost = root.TryGetProperty("on", out var on) && on.ValueKind == JsonValueKind.True; return; }
             if (action == "models") { await SendModelsAsync(); return; }
             if (action == "shortcutRecording" && _hotkeys is not null)
             {

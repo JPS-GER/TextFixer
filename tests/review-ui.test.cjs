@@ -673,6 +673,12 @@ console.log('PASS: Markdown subset rendering and plain text.');
 }
 console.log('PASS: text size steps, limits and reset.');
 {
+ // Pin keeps the window in front and is toggled by its button.
+ element('pin-window').onclick();assert.deepEqual([sent.at(-1).action,sent.at(-1).on],['topMost',true]);
+ element('pin-window').onclick();assert.equal(sent.at(-1).on,false);
+}
+console.log('PASS: pin toggles keeping the window in front.');
+{
  // Source format: clipboard facts and syntax candidates; matching export formats get a dot.
  message({type:'capture',captureId:90,task:'open',text:'Hallo **Welt** und *du*.\r\nZweite\u00a0Zeile',canReplace:false,readOnly:true});
  assert.equal(element('format-source').textContent,'Markdown family, shared markers only');

@@ -580,6 +580,13 @@ $('source').addEventListener('input',()=>{pendingAutoCheck=false;sourceText=$('s
 $('signin').onclick=()=>post('signin');$('signout').onclick=()=>post('signout');$('usage').onclick=()=>post('usage');$('cancel').onclick=()=>post('cancel');
 $('open-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('help').close();
 $('settings').addEventListener('close',stopRecording);
+// Pin: keeps the window in front of other windows. Kept in this WebView profile and applied at start.
+const pinWindow=(()=>{
+  let on=false;try{on=localStorage.getItem('pinWindow')==='1';}catch{}
+  const apply=send=>{const b=$('pin-window');b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));b.title=tr(on?'In front of other windows. Click to release.':'Keep TextFixer in front of other windows');if(send)post('topMost',{on});};
+  $('pin-window').onclick=()=>{on=!on;try{localStorage.setItem('pinWindow',on?'1':'0');}catch{}apply(true);};
+  apply(on);return {apply};
+})();
 $('open-settings').onclick=()=>{$('settings').showModal();post('chromeStatus');post('models');};$('close-settings').onclick=()=>$('settings').close();
 $('copy').onclick=()=>post('copy',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});$('apply').onclick=()=>post('apply',{text:revised(),original:reviewOriginal,edits:acceptedEdits(),formattingIds:selectedFormatting(),allowPlainText:$('allow-plain-text').checked});
 // With plain-text replacement the formatting fixes stay visible in gray; the Formatting tab is left for the first other tab.
