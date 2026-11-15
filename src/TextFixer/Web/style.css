@@ -289,14 +289,10 @@ body { padding-bottom:48px; }
 .formatting-suggestion { margin:14px 0; }
 .formatting-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:calc(13px * var(--text-scale)); margin-bottom:8px; }
 .formatting-context { max-height:none; padding:14px 18px; }
-.formatting-correction { display:inline-flex; flex-wrap:wrap; gap:6px; padding:3px; margin:0 3px; font:inherit; line-height:inherit; background:transparent; border:1px solid var(--edge); vertical-align:middle; text-align:left; }
-.formatting-correction:hover { border-color:var(--accent); }
-.formatting-before,.formatting-after { display:inline-block; padding:0 6px; border-radius:4px; white-space:pre-wrap; }
-.formatting-before { background:var(--bad-bg); color:var(--bad); }
-.formatting-after { background:var(--good-bg); color:var(--good); }
-.formatting-correction small { display:block; font-size:calc(10px * var(--text-scale)); line-height:1.4; color:var(--muted); text-decoration:none; }
-.formatting-correction.accepted { border-color:var(--good); background:var(--good-bg); }
-.formatting-correction[aria-pressed="false"] .formatting-after { opacity:.65; }
+/* Formatting fixes use the correction boxes; the old box is not struck through, its decoration is what changes. */
+.formatting-correction del,.formatting-correction.rejected del { text-decoration:none; }
+.formatting-correction del,.formatting-correction ins { white-space:nowrap; }
+.formatting-correction.rejected ins { text-decoration:none; }
 .format-underline,.format-link { text-decoration-line:underline; text-underline-offset:3px; text-decoration-skip-ink:none; }
 .format-strikethrough { text-decoration-line:line-through; }
 .format-space { display:inline; white-space:pre; }
@@ -310,7 +306,9 @@ body { padding-bottom:48px; }
 .review-tab:disabled { color:var(--dim); opacity:.55; }
 .review-tab .number { margin:0; padding:0; background:none; color:var(--dim); font-variant-numeric:tabular-nums; }
 .review-tab.selected .number { color:#ffffffcc; }
-.review-tabs-empty { color:var(--dim); font-size:calc(12px * var(--text-scale)); }
+.review-tabs-empty { display:flex; flex-wrap:wrap; gap:4px 18px; color:var(--dim); font-size:calc(13px * var(--text-scale)); font-weight:600; }
+.empty-tab { display:flex; align-items:center; gap:8px; }
+.empty-tab .number { margin:0; padding:0; background:none; color:var(--dim); font-weight:600; }
 .inactive-change { opacity:.48; }
 .finding .use-wording { margin:8px 12px 8px 0; }
 .review-mode { flex-direction:column; align-items:stretch; gap:14px; }

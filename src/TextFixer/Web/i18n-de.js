@@ -540,7 +540,6 @@ const i18nDeVerdict=s=>{const m=s.match(/^(\d+) (.+)$/);if(!m)return s;const w={
 const i18nDeExport={'formatted text':'formatierter Text','plain text':'Nur-Text','Markdown':'Markdown','BBCode':'BBCode','M! Forum text':'M!-Forum-Text','Reddit text':'Reddit-Text','YouTube text':'YouTube-Text'};
 const i18nDePatterns=[
   // Review: zero-count categories, gray corrections and the progress of the active tab.
-  [/^(.+): no corrections$/,names=>`${names.split(', ').map(n=>tr(n,'de')).join(', ')}: keine Korrekturen`],
   [/^(Spelling|Grammar|Punctuation|Wording) correction\. Click to open its tab\.$/,c=>`Korrektur in ${tr(c,'de')}. Klicken öffnet den Reiter.`],
   [/^(\d+) accepted, (\d+) rejected$/,(a,r)=>`${a} angenommen, ${r} abgelehnt`],
   // Formatting suggestions (HtmlClipboard.Formatting.cs).

@@ -75,8 +75,15 @@ function renderTabs(){
     };
     container.append(button);
   });
-  const empty=reviewTabs.filter(([key])=>tabCount(key)===0&&(!tabState[key]||tabState[key]==='ready')).map(([,title])=>title);
-  $('review-tabs-empty').textContent=empty.length&&parts.length?`${empty.join(', ')}: no corrections`:'';
+  // Each category without corrections appears as its name and 0, like a tab.
+  const note=$('review-tabs-empty');note.replaceChildren();
+  if(parts.length)for(const [key,title] of reviewTabs){
+    if(tabCount(key)!==0||(tabState[key]&&tabState[key]!=='ready'))continue;
+    const item=document.createElement('span');item.className='empty-tab';
+    const name=document.createElement('span');name.textContent=title;
+    const count=document.createElement('span');count.className='number';count.textContent='0';
+    item.append(name,count);note.append(item);
+  }
   // Basics only skips Worth checking, so its section is left out; in a tab-by-tab review it appears once its answer is in.
   $('worth-results').hidden=readyOption.review==='errors'||(partialReview&&tabState.worth!=='ready');
   $('formatting-results').hidden=captureMode==='chrome'||!formattingSuggestions.length;
@@ -368,13 +375,13 @@ function renderFormatting(){
       if(left>0&&/[\uDC00-\uDFFF]/.test(reviewOriginal[left]))left--;
       if(right<reviewOriginal.length&&/[\uDC00-\uDFFF]/.test(reviewOriginal[right]))right++;
       const beforeContext=document.createElement('span');beforeContext.textContent=(left?'...':'')+reviewOriginal.slice(left,f.runStart);
-      const button=document.createElement('button');button.type='button';button.className='formatting-correction'+(f.accepted?' accepted':'');
+      // Same old and new boxes as the corrections in context: the old run with its decoration, the new one without it on the space.
+      const button=document.createElement('button');button.type='button';button.className='inline-correction formatting-correction'+(f.accepted?'':' rejected');
       button.disabled=input.disabled;button.setAttribute('aria-pressed',String(f.accepted));
       button.setAttribute('aria-label',f.description+'. '+(f.accepted?'Accepted. Click to reject.':'Not accepted. Click to accept.'));
       button.title=f.accepted?'Accepted formatting fix. Click to reject.':'Click to accept this formatting fix.';
       for(const corrected of [false,true]){
-        const variant=document.createElement('span');variant.className=corrected?'formatting-after':'formatting-before';
-        const name=document.createElement('small');name.textContent=corrected?'After':'Before';variant.append(name);
+        const variant=document.createElement(corrected?'ins':'del');
         const run=document.createElement('span');run.className='format-decoration format-'+f.property;
         const space=document.createElement('span');space.className='format-space';space.textContent='\u00b7';space.title='Space (kept in the text)';
         const leading=f.start===f.runStart;

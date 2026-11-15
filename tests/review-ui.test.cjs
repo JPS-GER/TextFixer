@@ -38,7 +38,7 @@ message({type:'result',original,result:{correctedText:original.replace('tesst','
 assert.equal(element('results').hidden,false);
 assert.equal(element('preview').textContent,original.replace('tesst','test'));
 assert.equal(element('inline-text').children.map(p=>p.tag==='span'?p.textContent:p.children.find(c=>c.tag==='del')?.textContent||'').join(''),original,'inline review preserves original context and CRLF');
-assert.equal(element('review-tabs-empty').textContent,'Grammar, Punctuation, Wording: no corrections','categories without corrections leave the bar and are named');
+assert.deepEqual(element('review-tabs-empty').children.map(i=>i.children.map(c=>c.textContent).join(' ')),['Grammar 0','Punctuation 0','Wording 0'],'categories without corrections leave the bar and appear with 0');
 assert.ok(element('review-tabs').children.filter(t=>t.hidden).length===3,'zero-count tabs are hidden');
 const correction=element('inline-text').querySelectorAll('button')[0];
 assert.equal(correction.children.find(c=>c.tag==='del').textContent,'tesst');
@@ -173,9 +173,10 @@ for(const property of ['underline','strikethrough','link']){
  let button=element('formatting-findings').querySelectorAll('button')[0];
  assert.ok(button,'formatting has clickable contextual preview');
  const [before,after]=button.children;
- assert.equal(before.children[1].className,'format-decoration format-'+property);
- assert.equal(before.children[1].children[1].textContent,'\u00b7','old space remains inside decoration');
- assert.equal(after.children[2].textContent,'\u00b7','new space is outside decoration');
+ assert.equal(before.tag,'del');assert.equal(after.tag,'ins','old and new use the correction boxes');
+ assert.equal(before.children[0].className,'format-decoration format-'+property);
+ assert.equal(before.children[0].children[1].textContent,'\u00b7','old space remains inside decoration');
+ assert.equal(after.children[1].textContent,'\u00b7','new space is outside decoration');
  element('copy').onclick();assert.equal(sent.at(-1).formattingIds.length,0,'preview starts rejected');
  button.onclick();assert.equal(element('formatting-findings').querySelectorAll('input')[0].checked,true,'preview accepts and syncs checkbox');
  element('copy').onclick();assert.equal(sent.at(-1).formattingIds[0],7);
@@ -183,7 +184,7 @@ for(const property of ['underline','strikethrough','link']){
 }
 formattingResult('underline','first word',5,6,5,10);
 let leadingButton=element('formatting-findings').querySelectorAll('button')[0];
-assert.equal(leadingButton.children[1].children[1].textContent,'\u00b7','leading space moves before decoration');
+assert.equal(leadingButton.children[1].children[0].textContent,'\u00b7','leading space moves before decoration');
 message({type:'busy',busy:true,action:'check'});
 assert.equal(leadingButton.disabled,true,'busy state disables formatting preview');leadingButton.onclick();
 message({type:'busy',busy:false});element('copy').onclick();assert.equal(sent.at(-1).formattingIds.length,0,'busy click cannot accept');
