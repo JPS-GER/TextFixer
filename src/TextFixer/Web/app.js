@@ -174,8 +174,8 @@ function updateTaskMenu(){
     m.button.disabled=busy||noText;
     const here=!noText&&!historyShown&&activeTask===m.task,chosen=taskOption[m.task]||'';
     const selected=here&&(m.option==='context'?factSetup:m.option===''?chosen===''&&!(m.task==='factcheck'&&factSetup):chosen===m.option);
-    if(m.group){m.group.className='task-group'+(here?' active':'')+(noText?' idle':'');m.button.className='group-head'+(selected?' selected':'');}
-    else m.button.className='group-row'+(selected?' selected':'');
+    if(m.group){m.group.className='task-group'+(here?' active':'')+(noText?' idle':'');m.button.className='group-head'+(selected?' selected':'')+(selected&&busy?' running':'');}
+    else m.button.className='group-row'+(selected?' selected':'')+(selected&&busy?' running':'');
   }
 }
 // Whether the active option's result for this capture is ready to show.
@@ -620,6 +620,21 @@ $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('history
 document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
 $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('register-chrome').onclick=()=>post('registerChrome');$('extension-folder').onclick=()=>post('extensionFolder');$('refresh-chrome').onclick=()=>post('chromeStatus');
 $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bulkCorrections(false);
+// While a task runs and its result has not appeared yet, the empty main area shows a spinner with the status text.
+// The task band stays at the top; the spinner shows below it while none of these has content.
+const resultViews=['choose-preview','results','translation-view','rewrite-view','answer-view','factcheck-setup','factcheck-view','empty-view'];
+function updateWorking(){
+  const w=$('working');if(!w)return;
+  const waiting=busy&&!historyVisible()&&resultViews.every(id=>!$(id)||$(id).hidden);
+  // Only real changes are written; writing the same value would wake the observer below again.
+  if(w.hidden===waiting)w.hidden=!waiting;
+  const text=waiting?$('notice').textContent:'';if($('working-text').textContent!==text)$('working-text').textContent=text;
+}
+if(typeof MutationObserver==='function'){
+  const watch=new MutationObserver(updateWorking);
+  watch.observe($('main'),{subtree:true,attributes:true,attributeFilter:['hidden','class']});
+  watch.observe($('notice'),{childList:true,characterData:true,subtree:true});
+}
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
@@ -673,7 +688,7 @@ window.chrome.webview.addEventListener('message',event=>{
     notice(r.searches?'Answer ready.':'Answer ready. No web search ran for it.');}
   // A failed or cancelled question goes back into the input field.
   if(m.type==='busy'&&!m.busy)for(const k of Object.keys(answers)){const a=answers[k];if(!a?.pending)continue;if(!$('dialog-question').value)$('dialog-question').value=a.pending;a.pending='';if(answerKey(activeTask)===k)renderDialog();}
-  if(m.type==='busy'){busy=m.busy;if(factClaims.length)renderFacts();if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
+  if(m.type==='busy'){busy=m.busy;updateTaskMenu();setTimeout(updateWorking,0);if(factClaims.length)renderFacts();if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
   if(m.type==='shortcuts'){shortcutLabels={...shortcutLabels,...m.shortcuts};shortcutDefaults={...shortcutDefaults,...m.defaults};shortcutRegistered=m.registered||{};shortcutError=m.error?{task:m.errorTask,message:m.error}:null;recordingTask=null;renderShortcuts();}

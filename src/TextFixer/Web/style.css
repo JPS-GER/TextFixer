@@ -318,6 +318,9 @@ body { padding-bottom:48px; }
 .review-tab.state-failed .tab-state { background:var(--bad-bg); color:var(--bad); border:1px solid var(--bad); }
 .review-tab.state-stopped .tab-state { color:var(--muted); }
 @keyframes tab-spin { to { transform:rotate(360deg); } }
+.working { display:flex; flex-direction:column; align-items:center; gap:18px; padding:72px 24px; color:var(--muted); text-align:center; font-size:calc(14px * var(--text-scale)); }
+.working[hidden] { display:none; }
+.working-spinner { width:calc(40px * var(--text-scale)); height:calc(40px * var(--text-scale)); border-radius:50%; border:3px solid var(--accent-edge); border-top-color:var(--accent); animation:tab-spin .8s linear infinite; }
 
 /* App frame: header on top, the task sidebar on the left, the main area scrolls on its own. */
 html,body { height:100%; }
@@ -354,6 +357,9 @@ button.group-row.selected { background:var(--room-3); }
 button.group-row.selected .menu-dot { background:var(--text); border-color:var(--text); box-shadow:0 0 0 2px var(--room-3),0 0 0 3.5px var(--text); width:9px; height:9px; margin:1px; }
 button.group-head .menu-dot { width:18px; height:18px; border:2px solid rgba(255,255,255,.95); }
 button.group-head.selected .menu-dot,#open-history.active .menu-dot { background:#e8eef1; box-shadow:inset 0 0 0 3px var(--group); }
+/* The running task's dot turns into a spinner. */
+button.group-head.selected.running .menu-dot,button.group-row.selected.running .menu-dot { background:transparent; box-shadow:none; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; animation:tab-spin .8s linear infinite; }
+button.group-row.selected.running .menu-dot { width:11px; height:11px; margin:0; }
 .menu-icon { flex:none; display:inline-grid; place-items:center; width:24px; height:22px; font:800 calc(13px * var(--text-scale))/1 "Segoe UI",Arial; color:color-mix(in srgb,var(--group) 55%,#fff); }
 button.group-head .menu-icon { width:28px; height:28px; border:1.5px solid rgba(255,255,255,.85); border-radius:8px; color:#fff; }
 .menu-icon.icon-go::before { content:""; width:9px; height:10px; background:currentColor; clip-path:polygon(0 0,100% 50%,0 100%); margin-left:2px; }
