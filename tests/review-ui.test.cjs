@@ -16,7 +16,7 @@ class Element {
 const elements=new Map(),sent=[];
 const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
 let receive;
-const sandbox={document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
+const sandbox={setTimeout:()=>0,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
 vm.createContext(sandbox);
 for(const file of ['diff.js','review-model.js','markup.js','i18n-de.js','i18n.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
 const message=m=>receive({data:m});
@@ -38,6 +38,8 @@ message({type:'result',original,result:{correctedText:original.replace('tesst','
 assert.equal(element('results').hidden,false);
 assert.equal(element('preview').textContent,original.replace('tesst','test'));
 assert.equal(element('inline-text').children.map(p=>p.tag==='span'?p.textContent:p.children.find(c=>c.tag==='del')?.textContent||'').join(''),original,'inline review preserves original context and CRLF');
+assert.equal(element('review-tabs-empty').textContent,'Grammar, Punctuation, Wording: no corrections','categories without corrections leave the bar and are named');
+assert.ok(element('review-tabs').children.filter(t=>t.hidden).length===3,'zero-count tabs are hidden');
 const correction=element('inline-text').querySelectorAll('button')[0];
 assert.equal(correction.children.find(c=>c.tag==='del').textContent,'tesst');
 assert.equal(correction.children.find(c=>c.tag==='ins').textContent,'test');
@@ -213,7 +215,16 @@ assert.equal(tabs()[0].attributes['aria-selected'],'true','Spelling is default')
 assert.ok(tabs().filter(t=>t.children[1].textContent===0).every(t=>t.disabled),'zero-count tab visible but disabled');
 assert.equal(element('worth-results').hidden,false,'Worth checking has its own section');
 assert.equal(element('inline-text').querySelectorAll('button').length,1,'only active correction is clickable');
-assert.ok(element('inline-text').children.filter(c=>c.className==='inactive-correction').length>=3,'other corrections appear faded');
+const grayed=element('inline-text').children.filter(c=>c.className.startsWith('inactive-correction'));
+assert.ok(grayed.length>=3,'other corrections appear in gray');
+assert.ok(grayed.every(c=>c.children.some(x=>x.tag==='del')&&c.children.some(x=>x.tag==='ins')),'gray corrections keep old and new boxes, so the text keeps its layout');
+assert.ok(element('inline-text').children.some(c=>c.className==='muted'&&c.textContent.includes('there')),'sentences without a correction of the active tab are muted');
+assert.ok(!element('inline-text').children.some(c=>c.className==='muted'&&c.textContent.includes('A ')),'the sentence with the active correction stays bright');
+assert.equal(element('progress-label').textContent,'1 accepted, 0 rejected','progress counts the active tab');
+assert.equal(element('changes').children[0].children[2].children.map(c=>c.textContent).join(''),'A tesst.','list rows show the sentence around the correction');
+grayed.find(c=>c.children.some(x=>x.textContent==='go')).onclick();
+assert.equal(tabs().find(t=>t.attributes['aria-selected']==='true').dataset.category,'grammar','clicking a gray correction opens its tab');
+selectTab('spelling');
 element('reject-all').onclick();
 assert.equal(element('preview').textContent,categoriesCorrected.replace('test','tesst'),'reject all affects Spelling only');
 selectTab('grammar');element('reject-all').onclick();

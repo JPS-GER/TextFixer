@@ -125,7 +125,13 @@ Optional development generator: `dotnet run --project tools/BrandAssets -c Relea
 
 ## Review tabs and finding rewrites
 
-The review opens on the first non-empty tab in the fixed order below. If every tab is empty, Spelling remains selected. Tabs appear in this order: Spelling, Grammar, Punctuation, Wording, Worth checking, Formatting. Each has a count; empty tabs remain visible and greyed. The full text remains visible in "Corrections in context". Only the selected tab's corrections are highlighted and clickable. Other corrections are faded and inert, showing their accepted or rejected text. Switching tabs preserves choices, and the revised text includes accepted corrections from every tab. "Accept all" and "Reject all" affect the selected tab only.
+The review opens on the first non-empty tab in the fixed order below. If every tab is empty, Spelling remains selected. The tabs Spelling, Grammar, Punctuation and Wording form one segmented bar; the selected tab takes the review color (`--band`). Each has a count. A checked tab without corrections leaves the bar and is named in a note next to it ("Grammar: no corrections"); running, failed and stopped tabs stay in the bar. Worth checking and Formatting have sections of their own. The full text remains visible in "Corrections in context":
+- Only the selected tab's corrections are colored and clickable (red old, green new, each box with a thin border).
+- Corrections of other tabs show the same old and new boxes in gray, with their accepted or rejected state. Clicking one opens its tab and briefly highlights it there (`openCorrection`).
+- Sentences without a correction of the selected tab are muted (`sentenceEnds`, `showInline`). A sentence ends after `.`, `!`, `?` or `…` plus spaces, or at a line break.
+- All correction boxes have the same box model without vertical padding, so switching tabs moves no word and no line.
+
+Below the text, a footer inside the text box holds "Accept all", "Reject all" (selected tab only) and a progress bar with accepted and rejected counts of the selected tab. The correction list ("Show correction list") has one compact row per correction: a switch, old → new, and the sentence around it (`changeContext`); below 520 px list width the sentence moves under the change. Switching tabs preserves choices, and the revised text includes accepted corrections from every tab.
 
 Service-supplied correction categories are matched to locally computed diff parts using original UTF-16 ranges. Missing labels fall back to punctuation for punctuation/quote/whitespace-only changes, spelling for a single changed word, and grammar otherwise. If one diff unit overlaps several classified ranges, the largest overlap wins, with source order breaking ties. Category labels never supply the edit positions: the local diff and minimal Unicode-safe patches remain authoritative.
 

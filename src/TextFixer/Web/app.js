@@ -64,6 +64,8 @@ function renderTabs(){
     const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);
     if(state&&state!=='ready'){count.className='tab-state';count.textContent=state==='failed'?'!':state==='stopped'?'-':'';button.title=tabStateTitle[state];}
     button.append(name,count);
+    // A checked category without corrections leaves the bar and is named in the note next to it.
+    button.hidden=tabCount(key)===0&&(!state||state==='ready');
     button.onclick=()=>{if(button.disabled)return;autoTab=false;activeTab=key;showChanges();$('tab-'+key)?.focus();};
     button.onkeydown=e=>{
       if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();
@@ -73,6 +75,8 @@ function renderTabs(){
     };
     container.append(button);
   });
+  const empty=reviewTabs.filter(([key])=>tabCount(key)===0&&(!tabState[key]||tabState[key]==='ready')).map(([,title])=>title);
+  $('review-tabs-empty').textContent=empty.length&&parts.length?`${empty.join(', ')}: no corrections`:'';
   // Basics only skips Worth checking, so its section is left out; in a tab-by-tab review it appears once its answer is in.
   $('worth-results').hidden=readyOption.review==='errors'||(partialReview&&tabState.worth!=='ready');
   $('formatting-results').hidden=captureMode==='chrome'||!formattingSuggestions.length;
@@ -393,18 +397,55 @@ function toggleCorrection(p){
   if(locked()||!activeCorrection(p))return;
   p.accepted=!p.accepted;showChanges();
 }
+// Sentence ends in the original text: after closing punctuation and its spaces, and after line breaks.
+function sentenceEnds(text){
+  const ends=[],re=/[.!?\u2026]+["'\u201c\u201d\u00bb\u00ab)\]]*\s+|(?:\r?\n)+/g;let m;
+  while((m=re.exec(text)))ends.push(m.index+m[0].length);
+  if(ends.at(-1)!==text.length)ends.push(text.length);
+  return ends;
+}
+function sentenceIndex(ends,pos){let i=0;while(i<ends.length-1&&ends[i]<=pos)i++;return i;}
+// Opens the tab of a correction shown in gray and points at it there.
+function openCorrection(p){
+  if(p.category==='worth'){$('worth-results').scrollIntoView?.({block:'start',behavior:'smooth'});return;}
+  const state=tabState[p.category];
+  if(!reviewTabs.some(([k])=>k===p.category)||(state&&state!=='ready'))return;
+  autoTab=false;activeTab=p.category;showChanges();
+  const button=[...$('inline-text').querySelectorAll('button')].find(b=>b.dataset.start===String(p.start));
+  if(!button)return;
+  button.scrollIntoView?.({block:'nearest',behavior:'smooth'});
+  button.classList.toggle('flash',true);setTimeout(()=>button.classList.toggle('flash',false),1000);
+}
 function showInline(){
   const container=$('inline-text');container.replaceChildren();let pos=0;
-  reviewSegments(reviewOriginal,parts,wordings).forEach(p=>{
+  const segments=reviewSegments(reviewOriginal,parts,wordings),ends=sentenceEnds(reviewOriginal),lit=new Set();
+  for(const p of segments)if(p.changed&&p.category===activeTab){
+    for(let i=sentenceIndex(ends,p.start),last=sentenceIndex(ends,Math.max(p.start,p.end-1));i<=last;i++)lit.add(i);
+  }
+  const muted=i=>lit.size>0&&!lit.has(i);
+  segments.forEach(p=>{
     const at=pos;pos+=(p.before||'').length;
-    if(!p.changed){const span=document.createElement('span');appendGapped(span,p.before,at,reviewOriginal);if(p.superseded)span.className='inactive-correction';container.append(span);return;}
-    if(p.category!==activeTab){
-      const span=document.createElement('span');span.className='inactive-correction';span.textContent=p.accepted?p.after:p.before;
-      span.title=(p.accepted?'Accepted':'Rejected')+' '+(p.category==='worth'?'wording from Worth checking':p.category)+' correction';container.append(span);return;
+    if(!p.changed){
+      // Unchanged text splits at sentence ends, so each sentence can be muted on its own.
+      for(let s=at,end=pos;s<end;){
+        const i=sentenceIndex(ends,s),e=Math.min(end,ends[i]);
+        const span=document.createElement('span');appendGapped(span,reviewOriginal.slice(s,e),s,reviewOriginal);
+        span.className=[p.superseded?'superseded-text':'',muted(i)?'muted':''].filter(Boolean).join(' ');
+        container.append(span);s=e;
+      }
+      return;
     }
-    const button=document.createElement('button');button.type='button';button.className='inline-correction'+(p.accepted?'':' rejected');
+    if(p.category!==activeTab){
+      // Same old and new boxes as in its own tab, in gray, so switching tabs keeps the text in place.
+      const span=document.createElement('span');span.className='inactive-correction';if(!p.accepted)span.className+=' rejected';
+      if(p.before)span.append(removedText(p.before,!p.after&&p.accepted));
+      if(p.after)span.append(addedText(p.after,p.accepted));
+      span.title=tr(p.category==='worth'?'Wording from Worth checking. Click to show it.':`${reviewPartNames[p.category]||p.category} correction. Click to open its tab.`);
+      span.onclick=()=>openCorrection(p);container.append(span);return;
+    }
+    const button=document.createElement('button');button.type='button';button.className='inline-correction'+(p.accepted?'':' rejected');button.dataset.start=String(p.start);
     button.disabled=locked()||!!p.layoutProtected;button.dataset.layoutProtected=String(!!p.layoutProtected);button.dataset.category=p.category;
-    button.title=p.layoutProtected?'Not applied: this suggestion would change line breaks.':p.accepted?'Accepted correction. Click to reject.':'Rejected correction. Click to accept.';
+    button.title=tr(p.layoutProtected?'Not applied: this suggestion would change line breaks.':p.accepted?'Accepted correction. Click to reject.':'Rejected correction. Click to accept.');
     button.setAttribute('aria-pressed',String(p.accepted));
     button.setAttribute('aria-label',`${p.before||'insert'} to ${p.after||'delete'}. ${button.title}`);
     if(p.before)button.append(removedText(p.before,!p.after&&p.accepted));
@@ -444,12 +485,34 @@ function showChanges(){
       if(p.category==='worth'&&checkbox.checked)reviewAcceptWording(p,wordings);else p.accepted=checkbox.checked;
       showChanges();
     };
+    checkbox.className='switch';
     const content=document.createElement('span');content.className='change-content';
-    const old=p.before?removedText(p.before,false):document.createElement('del');if(!p.before)old.textContent='(insertion)';
-    const next=document.createElement('ins');next.textContent=p.after||'(deletion)';
-    content.append(old,next);label.append(checkbox,content);container.append(label);
+    if(!p.before)content.append(addedText(p.after,true));
+    else if(!p.after)content.append(removedText(p.before,true));
+    else {
+      const arrow=document.createElement('span');arrow.className='change-arrow';arrow.textContent='\u2192';
+      const next=document.createElement('ins');next.textContent=p.after;content.append(removedText(p.before,false),arrow,next);
+    }
+    label.append(checkbox,content,changeContext(p));container.append(label);
   });
+  // Progress of the active tab: accepted and rejected corrections.
+  const decided=parts.filter(p=>p.changed&&p.category===activeTab&&activeCorrection(p)),yes=decided.filter(p=>p.accepted).length;
+  $('decision-progress').hidden=!decided.length;
+  $('progress-accepted').style?.setProperty?.('width',decided.length?`${yes/decided.length*100}%`:'0');
+  $('progress-rejected').style?.setProperty?.('width',decided.length?`${(decided.length-yes)/decided.length*100}%`:'0');
+  $('progress-label').textContent=`${yes} accepted, ${decided.length-yes} rejected`;
   preview();renderTabs();showFindings();update();
+}
+// The sentence around a correction, shortened, with the changed words in bold.
+function changeContext(p){
+  const ends=sentenceEnds(reviewOriginal),i=sentenceIndex(ends,p.start),from=i?ends[i-1]:0,to=ends[i];
+  const left=reviewOriginal.slice(from,p.start).replace(/^\s+/,''),right=reviewOriginal.slice(p.end,to).replace(/\s+$/,'');
+  const box=document.createElement('span');box.className='change-context';
+  const mark=document.createElement('b');mark.textContent=reviewOriginal.slice(p.start,p.end)||'\u2038';
+  const text=value=>{const span=document.createElement('span');span.textContent=value;return span;};
+  // Long sides are cut at a word boundary.
+  box.append(text(left.length>28?'\u2026'+left.slice(-28).replace(/^\S*\s/,''):left),mark,text(right.length>28?right.slice(0,28).replace(/\s\S*$/,'')+'\u2026':right));
+  return box;
 }
 function showFindings(){
   const container=$('findings');container.replaceChildren();$('finding-count').textContent=tabCount('worth');
