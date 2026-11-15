@@ -839,7 +839,7 @@ function requestRewrite(request){
   post('write',{kind:'rewrite',text:rewriteSteps.at(-1)?.text??sourceText,original:sourceText,request,captureId});
 }
 // Window width that keeps the review tabs on one line at a text size, in CSS px: the sidebar, the frame around the
-// tab bar and the widest tab bar (German or English names, two-digit counts). Measured with hidden copies of the real
+// tab bar and the widest tab bar (German or English names, two-digit counts or running marks, an empty category beside it). Measured with hidden copies of the real
 // elements, so it follows style.css. 0 when the page cannot be measured.
 const tabLineNames=[['Rechtschreibung','Grammatik','Satzzeichen','Formulierung','Formatierung'],['Spelling','Grammar','Punctuation','Wording','Formatting']];
 function tabLineWidth(px,base){
@@ -850,12 +850,21 @@ function tabLineWidth(px,base){
   const gutter=document.createElement('div');gutter.className='main-scroll';gutter.style.cssText='width:100px;height:10px;overflow-y:scroll';
   probe.append(sidebar,gutter);
   let bar=0;
-  for(const names of tabLineNames){
+  // Every layout the bar can take: all tabs with two-digit counts or with the running mark, and one category
+  // without corrections next to the bar (as while the other tabs are still being checked).
+  for(const names of tabLineNames)for(const running of [false,true])for(let empty=-1;empty<names.length;empty++){
     const frame=document.createElement('div');frame.className='result-layout';frame.style.cssText='display:block;width:max-content';
     let parent=frame;
-    for(const [tag,cls] of [['div','result-main'],['section',''],['div','context-box'],['div','review-tab-row'],['div','review-tabs']]){const e=document.createElement(tag);if(cls)e.className=cls;parent.append(e);parent=e;}
-    const tabs=parent;tabs.style.flexWrap='nowrap';
-    names.forEach((name,i)=>{const b=document.createElement('button');b.className='review-tab'+(i?'':' selected');const n=document.createElement('span');n.textContent=name;const c=document.createElement('span');c.className='number';c.textContent='99';b.append(n,c);tabs.append(b);});
+    for(const [tag,cls] of [['div','result-main'],['section',''],['div','context-box'],['div','review-tab-row']]){const e=document.createElement(tag);if(cls)e.className=cls;parent.append(e);parent=e;}
+    const row=parent;row.style.flexWrap='nowrap';
+    const tabs=document.createElement('div');tabs.className='review-tabs';tabs.style.flexWrap='nowrap';row.append(tabs);
+    names.forEach((name,i)=>{
+      const n=document.createElement('span');n.textContent=name;const c=document.createElement('span');
+      if(i===empty){const item=document.createElement('div');item.className='review-tabs-empty';const e=document.createElement('span');e.className='empty-tab';c.className='number';c.textContent='0';e.append(n,c);item.append(e);row.append(item);return;}
+      const b=document.createElement('button');b.className='review-tab'+(i?'':' selected')+(running?' state-running':'');
+      if(running)c.className='tab-state';else{c.className='number';c.textContent='99';}
+      b.append(n,c);tabs.append(b);
+    });
     probe.append(frame);
   }
   main.append(probe);
