@@ -637,6 +637,7 @@ window.chrome.webview.addEventListener('message',event=>{
   }
   if(m.type==='models')renderModels(m);
   if(m.type==='connected'&&$('settings').open)post('models');
+  if(m.type==='screenChanged'){textSize.rescreen();return;}
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
   if(m.type==='dialog'){const a=answers[dialogKey],r=m.answer||{};
     if(a){a.turns.push({role:'user',text:a.pending||m.question||''},{role:'assistant',text:r.text||'',sources:r.sources||[],searches:r.searches||0});a.pending='';}
@@ -818,20 +819,59 @@ function requestRewrite(request){
   notice('Rewriting your text...');
   post('write',{kind:'rewrite',text:rewriteSteps.at(-1)?.text??sourceText,original:sourceText,request,captureId});
 }
+// Window width that keeps the review tabs on one line at a text size, in CSS px: the sidebar, the frame around the
+// tab bar and the widest tab bar (German or English names, two-digit counts). Measured with hidden copies of the real
+// elements, so it follows style.css. 0 when the page cannot be measured.
+const tabLineNames=[['Rechtschreibung','Grammatik','Satzzeichen','Formulierung','Formatierung'],['Spelling','Grammar','Punctuation','Wording','Formatting']];
+function tabLineWidth(px,base){
+  const main=$('main'),scroll=$('main-scroll');
+  if(!main?.getBoundingClientRect||!scroll||typeof getComputedStyle!=='function')return 0;
+  const probe=document.createElement('div');probe.style.cssText=`position:absolute;left:0;top:0;visibility:hidden;width:max-content;--text-scale:${px/base}`;
+  const sidebar=document.createElement('div');sidebar.style.cssText='width:calc(var(--sidebar-base) * var(--text-scale));height:0';
+  const gutter=document.createElement('div');gutter.className='main-scroll';gutter.style.cssText='width:100px;height:10px;overflow-y:scroll';
+  probe.append(sidebar,gutter);
+  let bar=0;
+  for(const names of tabLineNames){
+    const frame=document.createElement('div');frame.className='result-layout';frame.style.cssText='display:block;width:max-content';
+    let parent=frame;
+    for(const [tag,cls] of [['div','result-main'],['section',''],['div','context-box'],['div','review-tab-row'],['div','review-tabs']]){const e=document.createElement(tag);if(cls)e.className=cls;parent.append(e);parent=e;}
+    const tabs=parent;tabs.style.flexWrap='nowrap';
+    names.forEach((name,i)=>{const b=document.createElement('button');b.className='review-tab'+(i?'':' selected');const n=document.createElement('span');n.textContent=name;const c=document.createElement('span');c.className='number';c.textContent='99';b.append(n,c);tabs.append(b);});
+    probe.append(frame);
+  }
+  main.append(probe);
+  for(const frame of [...probe.children].slice(2))bar=Math.max(bar,frame.getBoundingClientRect().width);
+  const css=getComputedStyle(main),width=sidebar.getBoundingClientRect().width+(gutter.offsetWidth-gutter.clientWidth)+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight)+bar;
+  probe.remove();
+  return Math.ceil(width);
+}
 // Text size for the whole window, kept in this WebView profile. Sizes are the body text in px; every font scales with it.
+// The largest size is the one whose one-line tab bar still fits the screen; the window's minimum width keeps the
+// tab bar on one line at the chosen size. The saved size stays, so a larger size returns on a larger screen.
 const textSize=(()=>{
-  const DEFAULT=16,MIN=12,MAX=24,BASE=14;
-  let size=DEFAULT,open=false;
-  try{const saved=Number(localStorage.getItem('textSize'));if(saved)size=saved;}catch{}
+  const DEFAULT=16,MIN=12,MAX=18,BASE=14;
+  let preferred=DEFAULT,size=DEFAULT,open=false,screenKey='';
+  try{const saved=Number(localStorage.getItem('textSize'));if(saved)preferred=saved;}catch{}
   const clamp=v=>Math.min(MAX,Math.max(MIN,Math.round(v)));
-  size=clamp(size);
+  preferred=clamp(preferred);
+  // Largest size that fits the screen; MIN when even that does not fit (the tab bar then wraps).
+  const largest=()=>{
+    const avail=globalThis.screen?.availWidth;if(!avail)return MAX;
+    for(let px=MAX;px>MIN;px--){const need=tabLineWidth(px,BASE);if(!need||need<=avail)return px;}
+    return MIN;
+  };
+  let fit=MAX;
+  const limit=()=>{
+    fit=largest();size=Math.min(preferred,fit);
+    const need=tabLineWidth(size,BASE);if(need)post('minWidth',{width:need});
+  };
   const apply=()=>document.documentElement?.style?.setProperty('--text-scale',String(size/BASE));
   const render=()=>{
     $('open-text-size').title=`Text size ${size} px (click to change, or turn the wheel)`;
     $('open-text-size').toggleAttribute?.('data-open',open);
     $('text-size').hidden=!open;
     $('text-size-value').textContent=`${size} px`;
-    $('text-smaller').disabled=size<=MIN;$('text-larger').disabled=size>=MAX;$('text-reset').disabled=size===DEFAULT;
+    $('text-smaller').disabled=size<=MIN;$('text-larger').disabled=size>=Math.min(MAX,fit);$('text-reset').disabled=size===Math.min(DEFAULT,fit);
     $('text-reset').title=`Back to ${DEFAULT} px`;
   };
   const place=()=>{
@@ -839,7 +879,9 @@ const textSize=(()=>{
     popup.style.setProperty('left',`${Math.max(8,Math.min(box.right-popup.offsetWidth,innerWidth-popup.offsetWidth-8))}px`);
     popup.style.setProperty('top',`${box.bottom+6}px`);
   };
-  const set=v=>{size=clamp(v);try{localStorage.setItem('textSize',String(size));}catch{}apply();render();if(open)place();sizeQuestion();};
+  const set=v=>{preferred=Math.min(clamp(v),fit);try{localStorage.setItem('textSize',String(preferred));}catch{}limit();apply();render();if(open)place();sizeQuestion();};
+  // A move to another screen or another scaling can change the largest size and the minimum width.
+  const rescreen=()=>{const key=`${globalThis.screen?.availWidth}|${globalThis.devicePixelRatio}`;if(key===screenKey)return;screenKey=key;limit();apply();render();if(open)place();sizeQuestion();};
   const step=by=>set(size+by);
   const toggle=()=>{open=!open;render();if(open)place();};
   const close=()=>{if(!open)return;open=false;render();};
@@ -850,9 +892,9 @@ const textSize=(()=>{
   $('text-smaller').onclick=()=>step(-1);$('text-larger').onclick=()=>step(1);$('text-reset').onclick=()=>set(DEFAULT);
   document.addEventListener?.('pointerdown',e=>{if(open&&!e.target.closest?.('#text-size,#open-text-size'))close();});
   document.addEventListener?.('keydown',e=>{if(open&&e.key==='Escape')close();});
-  window.addEventListener?.('resize',()=>{if(open)place();});
-  apply();render();
-  return {get size(){return size;},step,set,close,isOpen:()=>open};
+  window.addEventListener?.('resize',()=>{rescreen();if(open)place();});
+  screenKey=`${globalThis.screen?.availWidth}|${globalThis.devicePixelRatio}`;limit();apply();render();
+  return {get size(){return size;},step,set,close,isOpen:()=>open,rescreen};
 })();
 // ---- Source format of the captured text and the export buttons (docs/text-formats.md).
 const siteProfiles={'maniac-forum.de':['mforum','M! Forum'],'youtube.com':['youtube','YouTube'],'reddit.com':['reddit','Reddit']};

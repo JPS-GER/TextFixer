@@ -1,6 +1,7 @@
 /* AI Center petrol palette, from its terminal and application theme. */
 :root {
   --text-scale: 1.142857;
+  --sidebar-base: 262px;
   color-scheme: dark;
   --room: #0a2532;
   --room-1: #0d2c3b;
@@ -328,7 +329,7 @@ header { flex:none; padding:16px 24px; }
 .mark { width:40px; height:40px; }
 header h1 { font-size:calc(22px * var(--text-scale)); }
 .app-body { flex:1; min-height:0; display:flex; padding-bottom:41px; }
-.sidebar { width:min(calc(262px * var(--text-scale)), 34vw); flex:none; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px 12px 12px 14px; background:var(--room-1); border-right:1px solid var(--edge); }
+.sidebar { width:min(calc(var(--sidebar-base) * var(--text-scale)), 34vw); flex:none; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:12px 12px 12px 14px; background:var(--room-1); border-right:1px solid var(--edge); }
 .main-scroll { flex:1; min-width:0; overflow-y:auto; }
 main { max-width:1100px; margin:0 auto; }
 .icon-button { width:40px; height:40px; padding:0 !important; display:inline-grid; place-items:center; border-radius:9px; color:var(--muted); }

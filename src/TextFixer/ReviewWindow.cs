@@ -62,6 +62,29 @@ internal sealed class ReviewWindow : Form
         base.OnLoad(e);
     }
 
+    private Screen? _screen;
+
+    // The page reports the width in CSS px that keeps the review tabs on one line at its text size. The minimum
+    // never exceeds the screen; a window that becomes wider than the screen edge moves back inside.
+    private void ApplyMinimumWidth(JsonElement root)
+    {
+        if (!root.TryGetProperty("width", out var value) || !value.TryGetDouble(out var css) || css <= 0) return;
+        var area = Screen.FromControl(this).WorkingArea;
+        var width = WindowLayout.MinimumWidth(css, DeviceDpi, area);
+        MinimumSize = new Size(width, MinimumSize.Height);
+        if (WindowState == FormWindowState.Normal && Right > area.Right) Left = Math.Max(area.Left, area.Right - Width);
+    }
+
+    // Moving to another screen can change the largest text size and the minimum width; the page measures again.
+    protected override void OnLocationChanged(EventArgs e)
+    {
+        base.OnLocationChanged(e);
+        if (!IsHandleCreated) return;
+        var screen = Screen.FromControl(this);
+        if (_screen is not null && !_screen.Equals(screen) && _ready) Send(new { type = "screenChanged" });
+        _screen = screen;
+    }
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
 
@@ -489,6 +512,7 @@ internal sealed class ReviewWindow : Form
                 HandleHistory(action, root);
                 return;
             }
+            if (action == "minWidth") { ApplyMinimumWidth(root); return; }
             if (action == "models") { await SendModelsAsync(); return; }
             if (action == "shortcutRecording" && _hotkeys is not null)
             {

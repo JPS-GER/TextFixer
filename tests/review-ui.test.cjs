@@ -657,9 +657,10 @@ console.log('PASS: a result can become the captured text.');
 }
 console.log('PASS: Markdown subset rendering and plain text.');
 {
- // Text size: 16 px by default, steps of 1 px between 12 and 24, Reset goes back to 16.
+ // Text size: 16 px by default, steps of 1 px between 12 and 18, Reset goes back to 16.
  element('open-text-size').onclick();assert.equal(element('text-size').hidden,false);assert.equal(element('text-size-value').textContent,'16 px');assert.equal(element('text-reset').disabled,true);
  element('text-larger').onclick();assert.equal(element('text-size-value').textContent,'17 px');assert.equal(element('text-reset').disabled,false);
+ for(let i=0;i<20;i++)element('text-larger').onclick();assert.equal(element('text-size-value').textContent,'18 px','18 px is the largest size');assert.equal(element('text-larger').disabled,true);
  for(let i=0;i<20;i++)element('text-smaller').onclick();assert.equal(element('text-size-value').textContent,'12 px');assert.equal(element('text-smaller').disabled,true);
  element('text-reset').onclick();assert.equal(element('text-size-value').textContent,'16 px');
  element('open-text-size').onclick();assert.equal(element('text-size').hidden,true);
