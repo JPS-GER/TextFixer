@@ -1,7 +1,13 @@
 using System.Reflection;
 using System.Text;
 
-var path = Path.GetFullPath(args.Length > 0 ? args[0] : "artifacts/TextFixer/TextFixer.dll");
+// The installed app is one exe; its assembly is checked in the Release build, the exe for the same interface.
+var installed = Path.GetFullPath("artifacts/TextFixer/TextFixer.exe");
+var path = Path.GetFullPath(args.Length > 0 ? args[0] : "src/TextFixer/bin/Release/net10.0-windows/TextFixer.dll");
+if (!File.Exists(installed)) throw new Exception("Installed exe missing: " + installed);
+foreach (var loose in new[] { "TextFixer.dll", "Microsoft.Web.WebView2.Core.dll", "runtimes" })
+    if (Path.Exists(Path.Combine(Path.GetDirectoryName(installed)!, loose))) throw new Exception("Installed folder holds a loose file: " + loose);
+if (File.ReadAllBytes(installed).AsSpan().IndexOf("id=\"task-choices\""u8) < 0) throw new Exception("Installed exe has a stale interface.");
 var assembly = Assembly.LoadFile(path);
 var method = assembly.GetType("TextFixer.WebAssets", true)!.GetMethod("Find", BindingFlags.Static | BindingFlags.NonPublic)!;
 foreach (var asset in new[] { "/index.html", "/style.css", "/app.js", "/diff.js", "/review-model.js", "/markup.js", "/i18n.js", "/i18n-de.js", "/logo.svg", "/" })
@@ -19,4 +25,4 @@ foreach (var icon in new[] { "brand/TextFixer.ico", "brand/tray-dark.ico", "bran
 }
 foreach (var missing in new[] { "/missing.js", "/../Program.cs", "/%2e%2e/Program.cs" })
     if (method.Invoke(null, [missing]) is not null) throw new Exception("Unexpected embedded asset: " + missing);
-Console.WriteLine("PASS: actual installed assembly serves ten embedded asset paths, embeds app/tray icons, and rejects three unknown/traversal paths.");
+Console.WriteLine("PASS: installed single exe; the assembly serves ten embedded asset paths, embeds app/tray icons, and rejects three unknown/traversal paths.");
