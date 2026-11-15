@@ -108,12 +108,14 @@ internal sealed class ReviewWindow : Form
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         if (!WindowFocus.BringOwnWindowForward(Handle)) Diagnostic("Foreground activation was refused by Windows.");
     }
-    // Opened by the user (start, tray icon or tray menu): without a captured text the page shows the clipboard history.
-    private bool _openHomePending;
-    internal void OpenHome()
+    // Opened by the user from the tray or at start: "openClipboard" shows the clipboard history, "openTextFixer" the text tools.
+    private string? _pendingView;
+    internal void OpenClipboard() => OpenView("openClipboard");
+    internal void OpenTextFixer() => OpenView("openTextFixer");
+    private void OpenView(string view)
     {
         Open();
-        if (_ready) Send(new { type = "openHome" }); else _openHomePending = true;
+        if (_ready) Send(new { type = view }); else _pendingView = view;
     }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
     /// <param name="task">open shows the task choice; any other task from <see cref="Shortcuts.Tasks"/> starts right away.</param>
@@ -381,15 +383,18 @@ internal sealed class ReviewWindow : Form
             {
                 e.Id,
                 copiedAt = new DateTimeOffset(DateTime.SpecifyKind(e.CopiedAt, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
-                preview = Preview(e.Text),
+                text = Preview(e.Text),
+                truncated = e.Text.Length > PreviewLength,
                 hasFormatting = e.HasFormatting,
             }),
         });
     }
 
+    // The page searches and shows the full text; very long entries are cut for the page only, copying uses the stored text.
+    private const int PreviewLength = 100_000;
     private static string Preview(string text)
     {
-        const int length = 300;
+        const int length = PreviewLength;
         if (text.Length <= length) return text;
         var end = char.IsHighSurrogate(text[length - 1]) ? length - 1 : length;
         return text[..end];
@@ -402,6 +407,8 @@ internal sealed class ReviewWindow : Form
         {
             case "historyRestore":
                 var id = root.GetProperty("id").GetString() ?? "";
+                // A running capture uses the clipboard itself.
+                if (Busy) { Notify("Copying is available when the running task has finished."); return; }
                 if (_history.Find(id) is not { } entry) { SendHistory(); return; }
                 var data = new DataObject();
                 data.SetText(entry.Text, TextDataFormat.UnicodeText);
@@ -509,7 +516,7 @@ internal sealed class ReviewWindow : Form
             var action = root.GetProperty("action").GetString();
             if (action == "ready")
             {
-                _ready = true; SendCapture(); if (_openHomePending) { _openHomePending = false; Send(new { type = "openHome" }); } SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); SendShortcuts(); await SendStatusAsync();
+                _ready = true; SendCapture(); if (_pendingView is { } view) { _pendingView = null; Send(new { type = view }); } SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); SendShortcuts(); await SendStatusAsync();
                 if (_pendingNotice is not null) { Notify(_pendingNotice); _pendingNotice = null; }
                 return;
             }

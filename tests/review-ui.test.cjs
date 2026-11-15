@@ -16,7 +16,7 @@ class Element {
 const elements=new Map(),sent=[];
 const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
 let receive;
-const sandbox={setTimeout:()=>0,setInterval:()=>1,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
+const sandbox={setTimeout:()=>0,setInterval:()=>1,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),createTextNode:text=>({nodeType:3,nodeValue:text,textContent:text}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
 vm.createContext(sandbox);
 for(const file of ['diff.js','review-model.js','markup.js','i18n-de.js','i18n.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
 const message=m=>receive({data:m});
@@ -679,13 +679,17 @@ console.log('PASS: text size steps, limits and reset.');
 }
 console.log('PASS: pin toggles keeping the window in front.');
 {
- // Opening the window: without a captured text it opens on the clipboard history, with one it keeps its view.
- message({type:'capture',text:'',canReplace:false});element('close-history').onclick();
- message({type:'openHome'});assert.equal(sent.at(-1).action,'historyList','no text: opening shows the clipboard history');
- element('close-history').onclick();message({type:'capture',text:'Some text.',canReplace:true});const before=sent.length;
- message({type:'openHome'});assert.ok(!sent.slice(before).some(s=>s.action==='historyList'),'with a text: the last view stays');
+ // The tray and a normal start choose the view: openClipboard shows the history, openTextFixer the text tools.
+ message({type:'capture',text:'Some text.',canReplace:true});
+ let before=sent.length;
+ message({type:'openClipboard'});assert.ok(sandbox.historyVisible(),'openClipboard shows the history, also with a captured text');
+ assert.ok(sent.slice(before).some(s=>s.action==='historyList'),'the history is requested');
+ message({type:'openTextFixer'});assert.ok(!sandbox.historyVisible(),'openTextFixer shows the text tools');
+ element('view-toggle').onclick();assert.ok(sandbox.historyVisible(),'the title bar button opens the clipboard');
+ element('view-toggle').onclick();assert.ok(!sandbox.historyVisible(),'and leads back to the text tools');
+ element('view-toggle').onclick();message({type:'capture',text:'New text.',canReplace:true});assert.ok(!sandbox.historyVisible(),'a new capture shows the text tools');
 }
-console.log('PASS: opening the window shows the clipboard history without a captured text.');
+console.log('PASS: the clipboard view opens from the title bar, the tray and at start; a capture leads back.');
 {
  // Source format: clipboard facts and syntax candidates; matching export formats get a dot.
  message({type:'capture',captureId:90,task:'open',text:'Hallo **Welt** und *du*.\r\nZweite\u00a0Zeile',canReplace:false,readOnly:true});
@@ -879,23 +883,52 @@ console.log('PASS: shortcut recording, optional task shortcuts, cancel, reset, r
 }
 console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, task shortcuts.');
 {
- // Clipboard history cards: only the two copy buttons copy an entry.
+ // Clipboard view: list, search, kind filter and the preview with its copy buttons.
  sandbox.setTimeout=()=>0;sandbox.clearTimeout=()=>{};
- message({type:'history',enabled:true,entries:[{id:'a',preview:'Plain entry',copiedAt:Date.now(),hasFormatting:false},{id:'b',preview:'Bold entry',copiedAt:Date.now(),hasFormatting:true}]});
- const cards=()=>element('history-list').children;
- const buttons=i=>cards()[i].children[2].children[0].children;
- assert.equal(cards()[0].children[1].onclick,undefined,'the entry text does not copy');
- assert.deepEqual(buttons(0).map(b=>b.textContent),['Copy plain']);
- assert.equal(cards()[0].children[0].children[1].textContent,'×');
- cards()[0].children[0].children[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyDelete',id:'a'});
- assert.deepEqual(buttons(1).map(b=>b.textContent),['Copy plain','Copy formatted']);
- sent.length=0;
- buttons(1)[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'b',plain:true});
- buttons(1)[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'b',plain:false});
+ const now=Date.now();
+ message({type:'history',enabled:true,entries:[
+  {id:'a',text:'Plain entry about Mittwoch',copiedAt:now,hasFormatting:false},
+  {id:'b',text:'Bold entry\nsecond line Mittwoch and Mittwoch',copiedAt:now-1000,hasFormatting:true},
+  {id:'c',text:'https://example.com/page',copiedAt:now-2000,hasFormatting:false},
+  {id:'d',text:'C:\\Users\\me\\file.txt',copiedAt:now-3000,hasFormatting:false,truncated:true}]});
+ const rows=()=>element('history-list').children.filter(c=>c.className?.startsWith('hv-row'));
+ const pane=()=>element('history-pane').children;
+ const bar=()=>pane()[2].children;
+ assert.equal(rows().length,4,'every entry has a row');
+ assert.deepEqual(rows().map(r=>r.title),['Text','Formatted text','Link','Path'],'kinds from formatting, link and path');
+ assert.equal(pane()[1].children.map(n=>n.textContent??n.nodeValue).join(''),'Plain entry about Mittwoch','the newest entry is shown in full');
+ assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy',''],'plain entry: Copy and remove');
+ bar()[0].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'a',plain:true});
+ bar().at(-1).onclick();assert.deepEqual({...sent.at(-1)},{action:'historyDelete',id:'a'});
+ rows()[1].onclick();
+ assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Copy formatted',''],'formatted entry adds Copy formatted');
+ bar()[1].onclick();assert.deepEqual({...sent.at(-1)},{action:'historyRestore',id:'b',plain:false});
  message({type:'historyCopied',id:'b',plain:false});
- assert.deepEqual(buttons(1).map(b=>b.textContent),['Copy plain','Copied'],'only the used button confirms');
+ assert.deepEqual(bar().filter(b=>b.tag==='button').map(b=>b.textContent),['Copy','Copied',''],'only the used button confirms');
+ // Search is literal, finds text beyond the first line and marks every hit.
+ element('history-search').value='mittwoch';element('history-search').oninput({target:element('history-search')});
+ assert.equal(rows().length,2,'search keeps the matching entries');
+ assert.equal(element('history-hits').textContent,'2 entries');
+ assert.equal(pane()[1].children.filter(n=>n.tag==='mark').length,2,'both hits in the selected entry are marked');
+ assert.ok(rows()[1].children.some(c=>c.className==='snip')&&!rows()[0].children.some(c=>c.className==='snip'),'only a hit outside the first line gets an excerpt');
+ element('history-search').value='(';element('history-search').oninput({target:element('history-search')});
+ assert.equal(rows().length,0,'search does not use regular expressions');
+ element('history-search').value='';element('history-search').oninput({target:element('history-search')});
+ // Kind filter
+ element('history-filter').children[3].onclick();
+ assert.deepEqual(rows().map(r=>r.title),['Path'],'the Paths filter keeps paths');
+ assert.ok(bar().some(b=>b.className==='cut-note'),'a long entry notes that the preview is shortened');
+ element('history-filter').children[0].onclick();
+ // While a task runs, copying is blocked.
+ if(!sandbox.historyVisible())element('view-toggle').onclick();
+ message({type:'busy',busy:true});
+ assert.ok(bar().filter(b=>b.tag==='button'&&b.textContent.startsWith('Copy')).every(b=>b.disabled),'copy buttons are disabled while busy');
+ message({type:'busy',busy:false});
+ message({type:'history',enabled:false,entries:[]});
+ assert.equal(element('history-empty').hidden,false,'history off shows the hint');
+ assert.equal(element('history-body').hidden,true);
 }
-console.log('PASS: history cards copy only through plain or formatted copy buttons.');
+console.log('PASS: clipboard view lists, searches, filters and copies entries.');
 {
  // Composed headings and text field placeholders are translated; text field content is not.
  assert.equal(sandbox.tr('Summary: Key points','de'),'Zusammenfassung: Kernpunkte');

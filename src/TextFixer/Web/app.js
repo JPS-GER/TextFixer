@@ -615,7 +615,7 @@ $('fact-context').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault(
 $('fact-context-more').onkeydown=e=>{if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();startFactCheck($('fact-context-more').value);}};
 $('apply-translation').onclick=()=>{if(translationStructured)applyStructured('applyTranslation',translationText,translationOriginal);else post('applyTranslation',{text:translationText,original:translationOriginal});};
 $('open-source').onclick=()=>{if(!sourceText)return;if(historyVisible())showHistory(false);activeTask='';showTaskView();update();};
-$('open-history').onclick=()=>showHistory(!historyVisible());$('close-history').onclick=()=>showHistory(false);
+$('view-toggle').onclick=()=>showHistory(!historyVisible());
 $('history-clear').onclick=$('settings-history-clear').onclick=()=>post('historyClear');$('history-enabled').onchange=e=>post('historyEnabled',{enabled:e.target.checked});
 document.querySelectorAll('input[name=review-mode]').forEach(r=>r.onchange=()=>{if(r.checked)post('reviewMode',{mode:r.value});});
 $('autostart').onchange=e=>post('autostart',{enabled:e.target.checked});$('register-chrome').onclick=()=>post('registerChrome');$('extension-folder').onclick=()=>post('extensionFolder');$('refresh-chrome').onclick=()=>post('chromeStatus');
@@ -679,8 +679,9 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='models')renderModels(m);
   if(m.type==='connected'&&$('settings').open)post('models');
   if(m.type==='screenChanged'){textSize.rescreen();return;}
-  // Opened by the user (start, tray icon or tray menu): without a captured text, the clipboard history is shown.
-  if(m.type==='openHome'){if(!sourceText&&!historyVisible())showHistory(true);return;}
+  // The tray icon, the tray menu and a normal start choose the view.
+  if(m.type==='openClipboard'){showHistory(true);return;}
+  if(m.type==='openTextFixer'){showHistory(false);return;}
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
   if(m.type==='dialog'){const a=answers[dialogKey],r=m.answer||{};
     if(a){a.turns.push({role:'user',text:a.pending||m.question||''},{role:'assistant',text:r.text||'',sources:r.sources||[],searches:r.searches||0});a.pending='';}
@@ -688,7 +689,7 @@ window.chrome.webview.addEventListener('message',event=>{
     notice(r.searches?'Answer ready.':'Answer ready. No web search ran for it.');}
   // A failed or cancelled question goes back into the input field.
   if(m.type==='busy'&&!m.busy)for(const k of Object.keys(answers)){const a=answers[k];if(!a?.pending)continue;if(!$('dialog-question').value)$('dialog-question').value=a.pending;a.pending='';if(answerKey(activeTask)===k)renderDialog();}
-  if(m.type==='busy'){busy=m.busy;updateTaskMenu();setTimeout(updateWorking,0);if(factClaims.length)renderFacts();if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
+  if(m.type==='busy'){busy=m.busy;updateTaskMenu();updateViewToggle();if(historyShown)renderHistory();setTimeout(updateWorking,0);if(factClaims.length)renderFacts();if(!busy&&partialReview){partialReview=false;for(const k of focusOrder)if(tabState[k]==='running')tabState[k]='stopped';if(!$('results').hidden)renderTabs();}}
   if(m.type==='notice')notice(m.message);
   if(m.type==='connected')notice('Using ChatGPT plan. You can manage this connection and its usage in ChatGPT settings.');
   if(m.type==='shortcuts'){shortcutLabels={...shortcutLabels,...m.shortcuts};shortcutDefaults={...shortcutDefaults,...m.defaults};shortcutRegistered=m.registered||{};shortcutError=m.error?{task:m.errorTask,message:m.error}:null;recordingTask=null;renderShortcuts();}
@@ -764,34 +765,156 @@ function renderModels(m){
 }
 showTaskView();update();post('ready');
 
-// Clipboard history view
+// Clipboard view: the history of copied texts in full width, with search, kind filter and a preview of the full text.
 let historyEntries=[],historyEnabled=true,copiedId=null,copiedPlain=false,copiedTimer=0,historyClock=0;
+let historySel=null,historyQuery='',historyFilter='all',historyCur=0;
 function historyVisible(){return historyShown;}
-function showHistory(on){historyShown=on;$('main').classList.toggle('show-history',on);$('open-history').classList.toggle('active',on);updateTaskMenu();if(on){post('historyList');renderHistory();historyClock=historyClock||setInterval(()=>{if(historyVisible())renderHistory();},30000);}}
+function showHistory(on){
+  historyShown=on;document.body?.classList.toggle('clipboard',on);updateViewToggle();updateTaskMenu();
+  if(on){post('historyList');renderHistory();historyClock=historyClock||setInterval(()=>{if(historyVisible())renderHistory();},30000);$('history-search').focus?.();}
+}
+// The title bar button names the other view; a spinner on it shows a task running in the text tools.
+function updateViewToggle(){$('view-toggle').classList.toggle('running',busy&&historyShown);}
 function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return'Just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const d=Math.round(h/24);return d+(d===1?' day ago':' days ago');}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
+const historyKinds={rich:['Formatted','Formatted text','var(--accent)'],url:['Links','Link','var(--ask)'],path:['Paths','Path','var(--good)'],text:['Text','Text','var(--dim)']};
+const historyIcons={
+  up:'M6 15l6-6 6 6',down:'M6 9l6 6 6-6',x:'M6 6l12 12M18 6L6 18'};
+function historyIcon(name){
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS?.(ns,'svg');if(!svg)return el('span');
+  svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');
+  const path=document.createElementNS(ns,'path');path.setAttribute('d',historyIcons[name]);svg.append(path);return svg;
+}
+function entryText(e){return e.text??e.preview??'';}
+function entryKind(e){const t=entryText(e).trim();return e.hasFormatting?'rich':/^https?:\/\/\S+$/i.test(t)?'url':/^([A-Za-z]:\\|\\\\|\\)\S/.test(t)&&!t.includes('\n')?'path':'text';}
+const entryMono=e=>['url','path'].includes(entryKind(e));
+function entryGroup(e){
+  const now=new Date(),at=new Date(e.copiedAt);
+  if(Date.now()-e.copiedAt<3600e3)return'Last hour';
+  if(at.toDateString()===now.toDateString())return'Today';
+  const y=new Date(now);y.setDate(now.getDate()-1);
+  return at.toDateString()===y.toDateString()?'Yesterday':'Earlier';
+}
+const historyGroups=['Last hour','Today','Yesterday','Earlier'];
+function clockOf(e){const d=new Date(e.copiedAt),hm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');return entryGroup(e)==='Earlier'?d.getDate()+'.'+(d.getMonth()+1)+'. '+hm:hm;}
+function firstLine(s){return s.split('\n').find(l=>l.trim())||s;}
+// Search is literal and ignores case.
+function hitPositions(s,q){const out=[];if(!q)return out;const l=s.toLowerCase(),k=q.toLowerCase();for(let i=l.indexOf(k);i>=0;i=l.indexOf(k,i+k.length))out.push(i);return out;}
+// Appends s to parent with each hit as a mark element; cur marks the current hit.
+function appendMarked(parent,s,q,cur=-1){
+  if(!q){parent.append(document.createTextNode(s));return;}
+  let p=0;hitPositions(s,q).forEach((i,n)=>{if(i>p)parent.append(document.createTextNode(s.slice(p,i)));const m=el('mark',n===cur?'cur':'',s.slice(i,i+q.length));parent.append(m);p=i+q.length;});
+  if(p<s.length)parent.append(document.createTextNode(s.slice(p)));
+}
+// Text around one hit, starting and ending at word boundaries.
+function aroundHit(txt,i,q,before=30,after=50){
+  let a=Math.max(0,i-before),b=Math.min(txt.length,i+q.length+after);
+  if(a>0){const sp=txt.slice(a,i).search(/\s/);if(sp>=0)a+=sp+1;}
+  if(b<txt.length){const sp=txt.slice(i+q.length,b).search(/\s\S*$/);if(sp>=0)b=i+q.length+sp;}
+  return (a?'… ':'')+txt.slice(a,b).replace(/\s*\n\s*/g,' ')+(b<txt.length?' …':'');
+}
+// Middle truncation measured with the row font: start and end stay visible, paths and links keep their file name.
+let historyCanvas=null;
+function midFit(txt,width,font){
+  historyCanvas=historyCanvas||document.createElement('canvas').getContext?.('2d');
+  if(!historyCanvas||!(width>0))return txt;
+  historyCanvas.font=font;const fits=t=>historyCanvas.measureText(t).width<=width;
+  if(fits(txt))return txt;
+  const join=n=>{
+    const h=Math.ceil(n*.55);let head=txt.slice(0,h),tail=txt.slice(txt.length-(n-h));
+    const hs=Math.max(head.lastIndexOf(' '),head.search(/[\\\/][^\\\/]*$/)+1);if(hs>h*.6)head=head.slice(0,hs);
+    const sep=Math.max(txt.lastIndexOf('\\'),txt.lastIndexOf('/'));
+    if(sep>=h&&!/\s/.test(txt.slice(sep))&&txt.length-sep<=tail.length+12)tail=txt.slice(sep);
+    else{const ts=tail.search(/[ \\\/]/);if(ts>=0&&ts<tail.length*.4)tail=tail.slice(ts);}
+    return head.trimEnd()+' … '+tail.trimStart();
+  };
+  let lo=2,hi=txt.length;
+  while(lo<hi){const n=Math.ceil((lo+hi)/2);if(fits(join(n)))lo=n;else hi=n-1;}
+  return join(lo);
+}
+function historyVisibleEntries(){return historyEntries.filter(e=>(historyFilter==='all'||entryKind(e)===historyFilter)&&(!historyQuery||entryText(e).toLowerCase().includes(historyQuery.toLowerCase())));}
+function historyOrder(items){return historyGroups.flatMap(g=>items.filter(e=>entryGroup(e)===g));}
+function historySelected(items){return items.find(e=>e.id===historySel)||historyOrder(items)[0];}
+function historyCopy(entry,plain){if(!entry||busy)return;post('historyRestore',{id:entry.id,plain});}
 function renderHistory(){
-  const list=$('history-list');list.replaceChildren();
   $('history-count').textContent=historyEnabled?historyEntries.length:'';
   $('history-clear').hidden=!historyEnabled||!historyEntries.length;
   const empty=!historyEnabled?'Clipboard history is off. Turn it on in Settings.':historyEntries.length?'':'Copied text appears here.';
-  $('history-empty').textContent=empty;$('history-empty').hidden=!empty;
-  if(!historyEnabled)return;
-  for(const entry of historyEntries){
-    const card=el('article','history-entry'+(entry.id===copiedId?' copied':''));
-    const body=el('div','history-text',entry.preview);
-    const top=el('div','history-top');top.append(el('span','hint',ago(entry.copiedAt)));
-    const remove=el('button','history-remove','×');remove.type='button';remove.title='Remove from history';remove.onclick=()=>post('historyDelete',{id:entry.id});top.append(remove);
-    const meta=el('div','history-meta');
-    const actions=el('div','actions');
-    // The only ways to copy an entry: plain text, or with its HTML/RTF formatting when it has any.
-    const copied=plain=>entry.id===copiedId&&copiedPlain===plain;
-    const plain=el('button','link history-copy'+(copied(true)?' done':''),copied(true)?'Copied':'Copy plain');plain.title='Copy the text without formatting';plain.onclick=()=>post('historyRestore',{id:entry.id,plain:true});
-    actions.append(plain);
-    if(entry.hasFormatting){const rich=el('button','link history-copy'+(copied(false)?' done':''),copied(false)?'Copied':'Copy formatted');rich.title='Copy the text with its formatting';rich.onclick=()=>post('historyRestore',{id:entry.id,plain:false});actions.append(rich);}
-meta.append(actions);card.append(top,body,meta);list.append(card);
+  $('history-empty').textContent=empty;$('history-empty').hidden=!empty;$('history-body').hidden=!!empty;
+  if(empty)return;
+  // Kind filter
+  const seg=$('history-filter');seg.replaceChildren();
+  for(const k of ['all','rich','url','path','text']){
+    const b=el('button',historyFilter===k?'on':'');b.type='button';
+    if(k==='all'){b.textContent='All';b.title='Show all kinds';}
+    else{const i=el('i');i.style?.setProperty('--k',historyKinds[k][2]);b.append(i,el('span','',historyKinds[k][0]));b.title='Only '+historyKinds[k][0].toLowerCase();}
+    b.onclick=()=>{historyFilter=k;historyCur=0;renderHistory();};seg.append(b);
   }
+  const items=historyVisibleEntries(),order=historyOrder(items),selected=historySelected(items);
+  $('history-hits').textContent=historyQuery?(items.length===1?'1 entry':items.length+' entries'):'';
+  // List, grouped by time
+  const list=$('history-list');list.replaceChildren();const titles=[];
+  if(!items.length)list.append(el('p','hv-none','No entry matches. Change the search or the filter.'));
+  for(const g of historyGroups){
+    const inGroup=order.filter(e=>entryGroup(e)===g);if(!inGroup.length)continue;
+    list.append(el('div','hv-group',g));
+    for(const e of inGroup){
+      const txt=entryText(e),kind=entryKind(e),row=el('button','hv-row'+(e===selected?' sel':''));row.type='button';row.style?.setProperty('--k',historyKinds[kind][2]);row.title=historyKinds[kind][1];
+      const t=el('span','t'+(entryMono(e)?' mono':''));t.dataset.noTr='';
+      const m=el('span','m');m.append(el('span','time',clockOf(e)));
+      if(e.hasFormatting)m.append(el('span','rich-badge','formatted'));
+      const n=hitPositions(txt,historyQuery).length;if(historyQuery&&n>1)m.append(el('span','hitn',n+' matches'));
+      row.append(t,m);titles.push([row,t,e]);
+      row.onclick=()=>{historySel=e.id;historyCur=0;renderHistory();};
+      row.ondblclick=()=>historyCopy(e,true);
+      list.append(row);
+    }
+  }
+  renderHistoryPane(selected);
+  // Row titles are fitted after layout: middle truncation, then an excerpt when the hit is cut off.
+  for(const [row,t,e] of titles){
+    const txt=entryText(e),line=firstLine(txt);
+    const cs=typeof getComputedStyle==='function'?getComputedStyle(t):null;const fitted=cs?midFit(line,t.clientWidth-2,`${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`):line;
+    appendMarked(t,fitted,historyQuery);
+    if(historyQuery&&!fitted.toLowerCase().includes(historyQuery.toLowerCase())){
+      const pos=hitPositions(txt,historyQuery);const s=el('span','snip');s.dataset.noTr='';appendMarked(s,aroundHit(txt,pos[0],historyQuery),historyQuery);row.append(s);
+    }
+  }
+  list.querySelector?.('.hv-row.sel')?.scrollIntoView?.({block:'nearest'});
 }
+function renderHistoryPane(e){
+  const pane=$('history-pane');pane.replaceChildren();
+  if(!e){pane.append(el('p','hv-none','No entry matches.'));return;}
+  const txt=entryText(e),kind=entryKind(e),hits=hitPositions(txt,historyQuery),cur=Math.min(historyCur,Math.max(0,hits.length-1));
+  const meta=el('div','meta'),k=el('span','hv-kind'),bar=el('i');bar.style?.setProperty('--k',historyKinds[kind][2]);k.append(bar,el('span','',historyKinds[kind][1]));
+  meta.append(k,el('span','time',clockOf(e)),el('span','time',ago(e.copiedAt)),el('span','time',txt.length+(e.truncated?'+':'')+' characters'));
+  if(hits.length){
+    const nav=el('span','nav'),label=el('span','',`Match ${cur+1} of ${hits.length}`);
+    const step=d=>{historyCur=(cur+d+hits.length)%hits.length;renderHistoryPane(e);};
+    const up=el('button','hv-ib');up.type='button';up.title='Previous match';up.append(historyIcon('up'));up.onclick=()=>step(-1);up.disabled=hits.length<2;
+    const down=el('button','hv-ib');down.type='button';down.title='Next match';down.append(historyIcon('down'));down.onclick=()=>step(1);down.disabled=hits.length<2;
+    nav.append(label,up,down);meta.append(nav);
+  }
+  const full=el('div','full'+(entryMono(e)?' mono':''));full.dataset.noTr='';appendMarked(full,txt,historyQuery,cur);
+  const actions=el('div','bar');
+  const copied=plain=>e.id===copiedId&&copiedPlain===plain;
+  const lock=busy?'Copying is available when the running task has finished.':'';
+  const plain=el('button','primary'+(copied(true)?' done':''),copied(true)?'Copied':'Copy');plain.type='button';plain.title=lock||'Copy the text without formatting';plain.disabled=busy;plain.onclick=()=>historyCopy(e,true);actions.append(plain);
+  if(e.hasFormatting){const rich=el('button',copied(false)?'done':'',copied(false)?'Copied':'Copy formatted');rich.type='button';rich.title=lock||'Copy the text with bold, links and lists';rich.disabled=busy;rich.onclick=()=>historyCopy(e,false);actions.append(rich);}
+  if(e.truncated)actions.append(el('span','cut-note','Preview shows the first 100,000 characters. Copy uses the full text.'));
+  const remove=el('button','hv-ib remove');remove.type='button';remove.title='Remove from history';remove.append(historyIcon('x'));remove.onclick=()=>post('historyDelete',{id:e.id});actions.append(remove);
+  pane.append(meta,full,actions);
+  full.querySelector?.('mark.cur')?.scrollIntoView?.({block:'nearest'});
+}
+$('history-search').oninput=e=>{historyQuery=e.target.value;historyCur=0;renderHistory();};
+// Keys in the clipboard view: arrows choose an entry, Enter copies it, Esc clears the search and then opens the text tools.
+document.addEventListener?.('keydown',e=>{
+  if(!historyShown||e.ctrlKey||e.altKey||e.metaKey||document.querySelector?.('dialog[open]'))return;
+  const items=historyVisibleEntries(),order=historyOrder(items),sel=historySelected(items);
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){const n=order[order.indexOf(sel)+(e.key==='ArrowDown'?1:-1)];if(n){e.preventDefault();historySel=n.id;historyCur=0;renderHistory();}return;}
+  if(e.key==='Enter'&&(e.target===$('history-search')||e.target===document.body)){e.preventDefault();historyCopy(sel,true);return;}
+  if(e.key==='Escape'){e.preventDefault();if(historyQuery){historyQuery='';$('history-search').value='';historyCur=0;renderHistory();}else showHistory(false);}
+});
 
 // Settings > Shortcuts. The window records a combination; C# validates, registers and saves it, then sends 'shortcuts'.
 // While recording, C# suspends the global shortcuts so the pressed keys reach this window.

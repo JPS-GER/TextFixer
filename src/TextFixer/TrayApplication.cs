@@ -28,7 +28,8 @@ internal sealed class TrayApplication : ApplicationContext
             BackColor = PetrolMenuColors.Background,
             Renderer = new PetrolMenuRenderer()
         };
-        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.OpenHome());
+        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.OpenTextFixer());
+        var clipboard = menu.Items.Add("Clipboard", null, (_, _) => _review.OpenClipboard());
         menu.Items.Add(new ToolStripSeparator());
         var exit = menu.Items.Add("Exit", null, (_, _) => ExitThread());
         // The menu follows the app language from Settings each time it opens.
@@ -36,14 +37,15 @@ internal sealed class TrayApplication : ApplicationContext
         {
             var german = _settings.AppLanguage == ReviewPrompt.German;
             open.Text = german ? "TextFixer öffnen" : "Open TextFixer";
+            clipboard.Text = german ? "Zwischenablage" : "Clipboard";
             exit.Text = german ? "Beenden" : "Exit";
         };
         _tray = new NotifyIcon { Text = "TextFixer", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
-        _tray.DoubleClick += (_, _) => _review.OpenHome();
+        _tray.DoubleClick += (_, _) => _review.OpenClipboard();
         _hotkey.Pressed += async (_, task) => await CaptureAsync(task);
         _hotkey.Changed += (_, _) => UpdateTooltip();
         _review.FormClosed += (_, _) => ExitThread();
-        if (!startHidden) _review.OpenHome();
+        if (!startHidden) _review.OpenClipboard();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _review.ConfigureChrome(_chrome);
         _review.ConfigureHistory(_history, _clipboard, _settings);
