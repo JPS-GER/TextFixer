@@ -44,7 +44,9 @@ let reviewMode='single',partialReview=false,tabState={},tabResults={},tabErrors=
 const focusOrder=['spelling','grammar','punctuation','wording','worth'];
 function locked(){return busy&&!partialReview;}
 let activeTab='spelling',reviewFindings=[],wordings=[];
-const reviewTabs=[['spelling','Spelling'],['grammar','Grammar'],['punctuation','Punctuation'],['wording','Wording'],['worth','Worth checking'],['formatting','Formatting']];
+const reviewTabs=[['spelling','Spelling'],['grammar','Grammar'],['punctuation','Punctuation'],['wording','Wording']];
+// Names of every review part, including Worth checking, which has its own section instead of a tab.
+const reviewPartNames=Object.fromEntries([...reviewTabs,['worth','Worth checking']]);
 function activeCorrection(p){return p.category===activeTab&&!p.layoutProtected&&(p.category==='worth'||!reviewSuperseded(p,wordings));}
 function tabCount(key){
   if(key==='worth')return reviewFindings.filter(f=>!f.dismissed).length;
@@ -61,8 +63,6 @@ function renderTabs(){
     const name=document.createElement('span');name.textContent=title;
     const count=document.createElement('span');count.className='number';count.textContent=tabCount(key);
     if(state&&state!=='ready'){count.className='tab-state';count.textContent=state==='failed'?'!':state==='stopped'?'-':'';button.title=tabStateTitle[state];}
-    // Basics only skips these checks; "Not checked" keeps that apart from "nothing found".
-    if(readyOption.review==='errors'&&(key==='wording'||key==='worth')){count.className='not-checked';count.textContent='Not checked';button.title='Basics only skips this check. Run the full review to include it.';button.disabled=true;}
     button.append(name,count);
     button.onclick=()=>{if(button.disabled)return;autoTab=false;activeTab=key;showChanges();$('tab-'+key)?.focus();};
     button.onkeydown=e=>{
@@ -73,8 +73,9 @@ function renderTabs(){
     };
     container.append(button);
   });
-  $('worth-results').hidden=activeTab!=='worth';
-  $('formatting-results').hidden=activeTab!=='formatting'||captureMode==='chrome'||!formattingSuggestions.length;
+  // Basics only skips Worth checking, so its section is left out; in a tab-by-tab review it appears once its answer is in.
+  $('worth-results').hidden=readyOption.review==='errors'||(partialReview&&tabState.worth!=='ready');
+  $('formatting-results').hidden=captureMode==='chrome'||!formattingSuggestions.length;
 }
 const tabStateTitle={running:'Checking now',failed:'Could not be checked',stopped:'Stopped'};
 function focusParts(original){
@@ -107,7 +108,7 @@ function focusParts(original){
   return merged;
 }
 function tabProgressNotice(){
-  const names=focusOrder.filter(k=>tabState[k]==='running').map(k=>reviewTabs.find(([t])=>t===k)[1]);
+  const names=focusOrder.filter(k=>tabState[k]==='running').map(k=>reviewPartNames[k]);
   if(!names.length)return;
   const list=names.length>1?names.slice(0,-1).join(', ')+' and '+names.at(-1):names[0];
   notice(`Checking ${list}. Finished tabs are ready to review.`);
@@ -115,7 +116,7 @@ function tabProgressNotice(){
 function applyReviewMeta(m){captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;canReplace=m.canReplace;readOnlyCapture=!!m.readOnly;showFormatting(m.formattingSuggestions||[]);$('model').textContent=m.model||'';}
 function readyNotice(){
   const failed=focusOrder.filter(k=>tabState[k]==='failed');
-  if(failed.length){notice('Review ready. Not checked: '+failed.map(k=>reviewTabs.find(([t])=>t===k)[1]+' ('+tabErrors[k]+')').join('; '));return;}
+  if(failed.length){notice('Review ready. Not checked: '+failed.map(k=>(reviewPartNames[k]||k)+' ('+tabErrors[k]+')').join('; '));return;}
   notice(parts.some(p=>p.layoutProtected)?'Review ready. Suggestions that would change line breaks were excluded to preserve your paragraph layout.':(readOnlyCapture?'Review ready. Accept or reject corrections, then copy your text.':'Review ready. Accept or reject corrections, then copy or replace your text.'));
 }
 function startCapturedReview(){
@@ -126,7 +127,7 @@ function startCapturedReview(){
 // Task groups of the sidebar: [task, title, tooltip, options, color]. The colored bar runs the main action; each option
 // row runs a variant. Option kind: go (starts right away, the default) or ask (asks for something first); an optional tooltip follows.
 const taskCards=[
-  ['review','Review','Spelling, grammar, punctuation, wording and points worth checking.',[['errors','Basics only','go','Checks spelling, grammar and punctuation only. No wording suggestions and no points worth checking.']],'#1a7fa0'],
+  ['review','Review','Spelling, grammar, punctuation, wording and points worth checking.',[['errors','Basics only','go','Checks spelling, grammar, punctuation and wrong words only. No points worth checking.']],'#1a7fa0'],
   ['translate','Translate','German into English, other languages into German.',[['de','To German'],['en','To English']],'#2f5fd0'],
   ['factcheck','Fact check','Researches the claims on the web and cites sources.',[['context','Add context','ask']],'#b83555'],
   ['summary','Summary','The main points in a few lines.',[['sentence','One sentence'],['points','Key points'],['actions','Action items']],'#138d75'],
@@ -316,7 +317,7 @@ function update(){
   $('allow-plain-text').disabled=busy;$('plain-text-option').hidden=captureMode==='chrome'||!canReplace;
   $('apply').hidden=readOnlyCapture;$('readonly-hint').hidden=!readOnlyCapture;
   $('translation-request').disabled=busy;$('revise-translation-button').disabled=busy;$('apply-translation').disabled=busy||!canReplace||!translationIntact;$('apply-translation').textContent=translationStructured?'Replace selection':'Replace as plain text';$('apply-rewrite').textContent=rewriteStructured?'Replace selection':'Replace as plain text';$('rewrite-plain').hidden=rewriteStructured;$('apply-translation').hidden=readOnlyCapture;$('translation-readonly').hidden=!readOnlyCapture;
-  const bulkCount=activeTab==='worth'?wordings.filter(w=>w.created&&!w.layoutProtected).length:tabCount(activeTab);
+  const bulkCount=tabCount(activeTab);
   $('accept-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);$('reject-all').disabled=locked()||!bulkCount||(activeTab==='formatting'&&$('allow-plain-text').checked);
   document.querySelectorAll('#inline-text button, #changes input').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true'||control.dataset.inactive==='true');
   document.querySelectorAll('#findings button').forEach(control=>control.disabled=locked()||control.dataset.layoutProtected==='true');
@@ -341,7 +342,7 @@ let formattingSuggestions=[];
 function selectedFormatting(){return formattingSuggestions.filter(f=>f.accepted).map(f=>f.id);}
 function showFormatting(items){
   formattingSuggestions=items.map(f=>({...f,accepted:false}));
-  $('formatting-results').hidden=activeTab!=='formatting'||!items.length||captureMode==='chrome';
+  $('formatting-results').hidden=!items.length||captureMode==='chrome';
   renderFormatting();
 }
 function renderFormatting(){
@@ -470,7 +471,7 @@ function showFindings(){
         const use=document.createElement('button');use.type='button';use.className='use-wording';use.textContent=w.accepted?'Undo wording':'Use this wording';
         use.dataset.findingIndex=String(index);use.dataset.layoutProtected=String(w.layoutProtected);use.disabled=locked()||w.layoutProtected;
         use.title=w.layoutProtected?'This rewrite changes line breaks and cannot be applied.':w.accepted?'Restore the overlapping correction choices.':'Replace the uniquely matched quote with this wording.';
-        use.onclick=()=>{if(locked()||w.layoutProtected)return;if(w.accepted)w.accepted=false;else reviewAcceptWording(w,wordings);activeTab='worth';showChanges();};
+        use.onclick=()=>{if(locked()||w.layoutProtected)return;if(w.accepted)w.accepted=false;else reviewAcceptWording(w,wordings);showChanges();};
         card.append(use);
         if(w.layoutProtected){
           const reason=document.createElement('p');reason.className='hint wording-reason';
@@ -485,11 +486,7 @@ function showFindings(){
 }
 function bulkCorrections(accepted){
   if(locked())return;
-  if(activeTab==='formatting'){
-    if($('allow-plain-text').checked)return;formattingSuggestions.forEach(f=>f.accepted=accepted);renderFormatting();
-  }else if(activeTab==='worth'){
-    wordings.filter(w=>w.created&&!reviewFindings[w.findingIndex].dismissed).forEach(w=>{if(accepted)reviewAcceptWording(w,wordings);else w.accepted=false;});
-  }else parts.filter(p=>p.changed&&activeCorrection(p)).forEach(p=>p.accepted=accepted);
+  parts.filter(p=>p.changed&&activeCorrection(p)).forEach(p=>p.accepted=accepted);
   showChanges();
 }
 $('source').addEventListener('input',()=>{pendingAutoCheck=false;sourceText=$('source').value;canReplace=false;readOnlyCapture=false;richClipboard=false;$('formatting').hidden=true;$('results').hidden=true;update();});

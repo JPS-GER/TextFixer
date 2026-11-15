@@ -36,7 +36,7 @@ public static class ReviewFocus
 
     /// <summary>The tabs a basics review covers.</summary>
     public static readonly IReadOnlyList<string> BasicsTabs =
-        [ReviewCorrectionCategories.Spelling, ReviewCorrectionCategories.Grammar, ReviewCorrectionCategories.Punctuation];
+        [ReviewCorrectionCategories.Spelling, ReviewCorrectionCategories.Grammar, ReviewCorrectionCategories.Punctuation, ReviewCorrectionCategories.Wording];
 
     /// <summary>Request order: the review tabs from left to right.</summary>
     public static readonly IReadOnlyList<string> All =
@@ -132,8 +132,8 @@ internal static class ReviewPrompt
     /// <summary>Instructions for one review tab, or for the basics. The answer uses the same JSON shape as the full review.</summary>
     internal static string FocusedInstructions(string focus) => focus == ReviewFocus.Basics
         ? FocusedHeader + $"""
-            Check the text only for {FocusDescription(ReviewCorrectionCategories.Spelling)}; {FocusDescription(ReviewCorrectionCategories.Grammar)}; and {FocusDescription(ReviewCorrectionCategories.Punctuation)}.
-            Ignore every other kind of problem, including wording and style, and leave it exactly as it is. Produce three things:
+            Check the text only for {FocusDescription(ReviewCorrectionCategories.Spelling)}; {FocusDescription(ReviewCorrectionCategories.Grammar)}; {FocusDescription(ReviewCorrectionCategories.Punctuation)}; and {FocusDescription(ReviewCorrectionCategories.Wording)}.
+            Ignore every other kind of problem, including style, and leave it exactly as it is. Produce three things:
 
             1. corrected_text: the complete text with only these mistakes fixed.
             {KeepRules}
@@ -146,7 +146,7 @@ internal static class ReviewPrompt
                  that the change touches. For a punctuation mark added or removed between words, include the
                  word directly before it. Never overlap two entries; merge adjacent changes into one entry.
                - after: what that wording became in corrected_text.
-               - category: "spelling", "grammar" or "punctuation".
+               - category: "spelling", "grammar", "punctuation" or "wording" (a clearly wrong word, such as a confused homophone).
                Return an empty corrections list when corrected_text is unchanged.
             """
         : focus == ReviewFocus.Worth

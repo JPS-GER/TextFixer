@@ -132,7 +132,7 @@ public sealed class ChatGptReviewService : IReviewService
 
         var result = ReviewResultParser.Parse(text, output);
         if (focus is null) return result;
-        // Basics: no findings; a change outside the three categories counts as grammar, since nothing else was checked.
+        // Basics: no findings; a change outside the basics categories counts as grammar, since nothing else was checked.
         if (focus == ReviewFocus.Basics)
             return result with { Findings = [], Corrections = [.. result.Corrections.Select(c => ReviewFocus.BasicsTabs.Contains(c.Category) ? c : c with { Category = ReviewCorrectionCategories.Grammar })] };
         // A focused answer contributes only its own tab: corrections of that category, or findings for Worth checking.

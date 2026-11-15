@@ -108,7 +108,7 @@ console.log('PASS: review UI message contract, CRLF, source invalidation, busy g
 assert.ok(!fs.readFileSync('src/TextFixer/Web/index.html','utf8').includes('id="formatting-checks"'),'formatting checks need no Settings toggle');
 element('allow-plain-text').checked=false;
 message({type:'result',original:'word next',result:{correctedText:'word next',findings:[]},canReplace:true,canPreserveFormatting:true,formattingSuggestions:[{id:3,start:4,end:5,description:'Remove underline from trailing space',context:'word.',property:'underline',runStart:0,runEnd:5}]});
-assert.equal(element('formatting-results').hidden,false,'formatting opens when it is the first non-empty tab');selectTab('formatting');assert.equal(element('formatting-results').hidden,false);
+assert.equal(element('formatting-results').hidden,false,'formatting suggestions have their own section');
 element('copy').onclick();assert.equal(sent.at(-1).formattingIds.length,0,'formatting fixes are individually opt-in');
 const formatInput=element('formatting-findings').querySelectorAll('input')[0];formatInput.checked=true;formatInput.onchange();
 element('copy').onclick();assert.equal(sent.at(-1).formattingIds[0],3);
@@ -212,38 +212,37 @@ for(const [before,after] of categoryChanges)categoriesCorrected=categoriesCorrec
 const corrections=categoryChanges.map(([before,after,category])=>({start:categoriesOriginal.indexOf(before),end:categoriesOriginal.indexOf(before)+before.length,after,category}));
 message({type:'result',original:categoriesOriginal,result:{correctedText:categoriesCorrected,corrections,findings:[{kind:'term_misuse',quotes:['go there'],explanation:'Could this be clearer?',suggestedRewrite:'travels there'}]},canReplace:true,canPreserveFormatting:true});
 const tabs=()=>element('review-tabs').children;
-assert.deepEqual(tabs().map(t=>t.children[0].textContent),['Spelling','Grammar','Punctuation','Wording','Worth checking','Formatting']);
+assert.deepEqual(tabs().map(t=>t.children[0].textContent),['Spelling','Grammar','Punctuation','Wording'],'tabs switch only the text categories');
 assert.equal(tabs()[0].attributes['aria-selected'],'true','Spelling is default');
-assert.equal(tabs()[5].disabled,true,'zero-count tab visible but disabled');
-assert.equal(element('worth-results').hidden,true,'finding cards wait for Worth checking tab');
+assert.ok(tabs().filter(t=>t.children[1].textContent===0).every(t=>t.disabled),'zero-count tab visible but disabled');
+assert.equal(element('worth-results').hidden,false,'Worth checking has its own section');
 assert.equal(element('inline-text').querySelectorAll('button').length,1,'only active correction is clickable');
 assert.ok(element('inline-text').children.filter(c=>c.className==='inactive-correction').length>=3,'other corrections appear faded');
 element('reject-all').onclick();
 assert.equal(element('preview').textContent,categoriesCorrected.replace('test','tesst'),'reject all affects Spelling only');
 selectTab('grammar');element('reject-all').onclick();
 assert.equal(element('preview').textContent,categoriesCorrected.replace('test','tesst').replace('goes','go'),'Grammar bulk action leaves other choices');
-selectTab('worth');assert.equal(element('worth-results').hidden,false);
 let use=element('findings').querySelectorAll('button').find(b=>b.className==='use-wording');assert.equal(use.textContent,'Use this wording');
 use.onclick();assert.ok(element('preview').textContent.includes('He travels there'),'finding wording included');
-assert.equal(element('inline-text').querySelectorAll('button').length,1,'Worth checking highlights its replacement');
 selectTab('grammar');assert.equal(element('changes').querySelectorAll('input')[0].disabled,true,'overlapping grammar correction superseded');
 element('accept-all').onclick();assert.ok(element('preview').textContent.includes('travels there'),'superseded correction cannot be reactivated');
-selectTab('worth');element('inline-text').querySelectorAll('button')[0].onclick();
+element('findings').querySelectorAll('button').find(b=>b.className==='use-wording').onclick();
 assert.ok(element('preview').textContent.includes('He go there'),'reject wording restores previously rejected grammar');
 selectTab('grammar');element('accept-all').onclick();
-selectTab('worth');use=element('findings').querySelectorAll('button').find(b=>b.className==='use-wording');use.onclick();
+use=element('findings').querySelectorAll('button').find(b=>b.className==='use-wording');use.onclick();
 const undo=element('findings').querySelectorAll('button').find(b=>b.className==='use-wording');assert.equal(undo.textContent,'Undo wording');undo.onclick();
 assert.ok(element('preview').textContent.includes('He goes there'),'undo restores previously accepted grammar');
 // Repeated (including overlapping) quotes do not offer a replacement button.
 message({type:'result',original:'aaa one one',result:{correctedText:'aaa one one',findings:[{kind:'ambiguity',quotes:['aa'],explanation:'First',suggestedRewrite:'b'},{kind:'logic_gap',quotes:['one'],explanation:'Second',suggestedRewrite:'two'}]},canReplace:true});
-selectTab('worth');assert.equal(element('findings').querySelectorAll('button').filter(b=>b.className==='use-wording').length,0);
+assert.equal(element('findings').querySelectorAll('button').filter(b=>b.className==='use-wording').length,0);
 assert.deepEqual(element('findings').children.map(c=>c.children[0].children[0].textContent),['ambiguity','logic gap'],'all finding kinds retain labels');
 message({type:'result',original:'First.\r\nSecond.',result:{correctedText:'First.\r\nSecond.',findings:[{kind:'contradiction',quotes:['First.\r\nSecond.'],explanation:'Question',suggestedRewrite:'One.'}]},canReplace:true});
-selectTab('worth');assert.equal(element('findings').querySelectorAll('button').find(b=>b.className==='use-wording').disabled,true,'wording cannot change line breaks');
-message({type:'result',original:'word next',result:{correctedText:'Word next',findings:[]},canReplace:true,canPreserveFormatting:true,formattingSuggestions:[{id:7,start:4,end:5,runStart:0,runEnd:5,property:'underline',description:'Remove underline'}]});selectTab('formatting');
-element('accept-all').onclick();element('copy').onclick();assert.equal(sent.at(-1).formattingIds[0],7,'Formatting bulk action is explicitly scoped');
+assert.equal(element('findings').querySelectorAll('button').find(b=>b.className==='use-wording').disabled,true,'wording cannot change line breaks');
+message({type:'result',original:'word next',result:{correctedText:'Word next',findings:[]},canReplace:true,canPreserveFormatting:true,formattingSuggestions:[{id:7,start:4,end:5,runStart:0,runEnd:5,property:'underline',description:'Remove underline'}]});
+const formattingBox=()=>element('formatting-findings').querySelectorAll('input')[0];
+formattingBox().checked=true;formattingBox().onchange();element('copy').onclick();assert.equal(sent.at(-1).formattingIds[0],7,'formatting fix accepted in its own section');
 selectTab('spelling');element('reject-all').onclick();element('copy').onclick();assert.equal(sent.at(-1).formattingIds[0],7,'inactive category cannot reject formatting');
-selectTab('formatting');element('reject-all').onclick();element('copy').onclick();assert.equal(sent.at(-1).formattingIds.length,0);
+formattingBox().checked=false;formattingBox().onchange();element('copy').onclick();assert.equal(sent.at(-1).formattingIds.length,0);
 console.log('PASS: category tabs and counts, inert context, scoped bulk actions, wording acceptance/superseding/undo, unique quote guards.');
 
 const selectedTab=()=>tabs().find(t=>t.attributes['aria-selected']==='true').dataset.category;
@@ -254,8 +253,8 @@ for(const category of categoryNames){
  for(const t of tabs())if(t.dataset.category!==category){assert.equal(t.disabled,true);assert.equal(Number(t.children[1].textContent),0);}
 }
 message({type:'result',original:'original',result:{correctedText:'original',findings:[{kind:'ambiguity',quotes:['original'],explanation:'Check it',suggestedRewrite:'different'}]},canReplace:true});
-assert.equal(selectedTab(),'worth','findings open when language tabs are empty');
-formattingResult('underline');assert.equal(selectedTab(),'formatting','formatting opens when earlier tabs are empty');
+assert.equal(selectedTab(),'spelling','findings need no tab');assert.equal(element('worth-results').hidden,false,'findings show in their own section');
+formattingResult('underline');assert.equal(selectedTab(),'spelling','formatting needs no tab');assert.equal(element('formatting-results').hidden,false);
 message({type:'result',original:'fine',result:{correctedText:'fine',findings:[]},canReplace:true});
 assert.equal(selectedTab(),'spelling','all-empty review keeps Spelling selected');assert.ok(tabs().every(t=>t.disabled));
 message({type:'result',original:'First.\r\nSecond.',result:{correctedText:'First.\r\nSecond.',findings:[{kind:'logic_gap',quotes:['First.\r\nSecond.'],explanation:'Check',suggestedRewrite:'One.'}]},canReplace:true});
@@ -300,7 +299,7 @@ console.log('PASS: read-only Alt+Q capture offers copy only.');
  const step=(i,result,error=null)=>{open=open.filter(k=>k!==all[i]);message({type:'tabResult',original,focus:all[i],result,error,pending:open,...meta});};
  message({type:'tabProgress',original,running:all});
  const states=()=>element('review-tabs').children.map(b=>b.className.replace('review-tab','').replace('selected','').trim());
- assert.deepEqual(states().slice(0,5),['state-running','state-running','state-running','state-running','state-running'],'all tabs run at once');
+ assert.deepEqual(states(),['state-running','state-running','state-running','state-running'],'all tabs run at once');
  step(2,{correctedText:original.replace('frauen die','frauen, die'),findings:[],corrections:[]});
  assert.ok(element('notice').textContent.includes('Checking Spelling, Grammar, Wording and Worth checking.'),'notice lists the tabs still running');
  step(0,{correctedText:original.replace('frauen','Frauen'),findings:[],corrections:[]});
@@ -310,7 +309,7 @@ console.log('PASS: read-only Alt+Q capture offers copy only.');
  assert.equal(spelling.disabled,false,'finished tab can be reviewed while the rest run');
  spelling.onclick();
  step(1,{correctedText:original.replace('dass','das'),findings:[],corrections:[]});
- assert.deepEqual(states().slice(0,5),['state-ready','state-ready','state-ready','state-running','state-running'],'answered tabs ready, the others still running');
+ assert.deepEqual(states(),['state-ready','state-ready','state-ready','state-running'],'answered tabs ready, the others still running');
  step(3,null,'Network error');
  step(4,{correctedText:original,corrections:[],findings:[{kind:'ambiguity',explanation:'?',quotes:['Leute'],suggestedRewrite:null}]});
  message({type:'busy',busy:false});
@@ -584,7 +583,7 @@ console.log('PASS: fact-check context, questions on claims and single-claim re-c
  assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1))),{action:'check',text,captureId:50,scope:'basics'});
  message({type:'result',captureId:50,original:text,result:{correctedText:text,findings:[],corrections:[]},canReplace:false,readOnly:true,model:'m',mode:'clipboard'});
  const tab=key=>element('review-tabs').children.find(b=>b.dataset.category===key);
- assert.equal(tab('wording').children[1].textContent,'Not checked');assert.equal(tab('worth').children[1].textContent,'Not checked');assert.equal(tab('spelling').children[1].textContent,0);
+ assert.equal(tab('wording').children[1].textContent,0,'Basics checks wording');assert.equal(tab('worth'),undefined);assert.equal(element('worth-results').hidden,true,'Basics leaves out Worth checking');assert.equal(tab('spelling').children[1].textContent,0);
 }
 console.log('PASS: task menu options, per-option results and selection.');
 {
