@@ -65,6 +65,14 @@ var leading = Simple("<p>first<u> word</u></p>");
 Check(leading.FixFormatting("first word", [leading.FindFormatting("first word")[0].Id], []).Fragment == "<p>first <u>word</u></p>", "leading space moved outside underline");
 foreach (var fragment in new[] { "<p><u>word  </u>next</p>", "<p><u> </u>next</p>", "<p><u>word </u></p>", "<p><u>two words</u></p>", "<p><b>word </b>next</p>", "<p class='x'><u>word </u>next</p>", "<p><u><u>word </u>next</u></p>" })
     Check(Simple(fragment).FindFormatting("word next").Length == 0, "ambiguous or intentional formatting skipped: " + fragment);
+// Chrome adds its default text-decoration values to every copied element; they draw no line.
+const string chromeStyle = " style=\"white-space: normal; text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial;\"";
+Check(Simple("<p" + chromeStyle + "><u>word </u>next</p>").FindFormatting("word next").Length == 1, "Chrome default text-decoration values do not block suggestions");
+Check(Simple("<p style=\"text-decoration: none\"><u>word </u>next</p>").FindFormatting("word next").Length == 1, "text-decoration none does not block suggestions");
+foreach (var style in new[] { "text-decoration: underline", "text-decoration-line: underline", "text-decoration: line-through", "TEXT-DECORATION:underline", "text-decoration: inherit", "text-decoration: none !important", "text-decoration-line: initial; text-decoration: underline" })
+    Check(Simple("<p style=\"" + style + "\"><u>word </u>next</p>").FindFormatting("word next").Length == 0, "CSS that may draw a line blocks suggestions: " + style);
+Check(new HtmlClipboard("<html><body><div style=\"text-decoration: underline\"><!--StartFragment-->", "<p><u>word </u>next</p>", "<!--EndFragment--></div></body></html>").FindFormatting("word next").Length == 0, "decoration in the context before the fragment blocks suggestions");
+Check(Simple("<p" + chromeStyle + " class=\"x\"><u>word </u>next</p>").FindFormatting("word next").Length == 0, "class names still block suggestions with Chrome styles");
 var linked = Simple("<p><a href='https://example.test'>word </a>next</p>");
 Check(linked.FixFormatting("word next", [linked.FindFormatting("word next")[0].Id], []).Fragment == "<p><a href='https://example.test'>word</a> next</p>", "link preserved, space unlinked");
 var nbsp = Simple("<p><s>word&nbsp;</s>next</p>");
@@ -78,5 +86,12 @@ var post = headed.WithoutLeadingText("Der Txt & mehr.");
 Check(post?.Fragment == "<div><span></span><div data-testid=\"post-header\"><img alt=\"jp\"><b></b></div><p>Der Txt &amp; mehr.</p></div>", "texts in front of the post text removed, tags kept");
 Check(post!.Rewrite("Der Txt & mehr.", [new EditorEdit(4, 7, "Txt", "Text")]).Contains("<p>Der Text &amp; mehr.</p>"), "the post text maps after the header is removed");
 Check(headed.WithoutLeadingText("Anderer Text.") is null, "a text that is not the end of the HTML text is refused");
+{
+    // A real Chromium copy of a test page: inline default styles on every element, three edge spaces in u, s and a.
+    static string Fixture(string name, [System.Runtime.CompilerServices.CallerFilePath] string path = "") => File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, name));
+    var chrome = HtmlClipboard.Parse(Fixture("chrome-formatting-copy.html"))!;
+    var found = chrome.FindFormatting(Fixture("chrome-formatting-copy.txt"));
+    Check(found.Select(f => f.Property).SequenceEqual(["underline", "strikethrough", "link"]), "real Chrome copy offers the underline, strikethrough and link edge spaces");
+}
 count += RtfAndMarkupTests.Run();
 Console.WriteLine($"PASS: {count} rich clipboard paragraph, formatting, Unicode, entity, byte-offset, refusal, RTF and markup checks.");

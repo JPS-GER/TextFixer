@@ -10,7 +10,8 @@ internal sealed partial record HtmlClipboard
     // Deliberately limited to simple explicit runs. Ambiguous CSS and nested runs are ignored.
     internal FormattingSuggestion[] FindFormatting(string original)
     {
-        if (Regex.IsMatch(Prefix + Fragment, @"<style\b|\bclass\s*=|text-decoration|\b(?:display|float|position)\s*:", RegexOptions.IgnoreCase)
+        if (Regex.IsMatch(Prefix + Fragment, @"<style\b|\bclass\s*=|\b(?:display|float|position)\s*:", RegexOptions.IgnoreCase)
+            || DrawsCssDecoration(Prefix + Fragment)
             || Regex.IsMatch(Prefix, @"<(?:u|ins|s|strike|del|a)\b", RegexOptions.IgnoreCase)) return [];
         // Require the copied HTML text to agree with the captured text before offering fixes.
         if (Fragment.Contains("<!--", StringComparison.Ordinal) || Regex.IsMatch(Fragment, @"<(?:script|noscript)\b|\bhidden\b|display\s*:\s*none", RegexOptions.IgnoreCase)) return [];
@@ -48,6 +49,16 @@ internal sealed partial record HtmlClipboard
         }
         return found.ToArray();
     }
+
+    /// <summary>
+    /// True when CSS in the copy may draw a line: any text-decoration or text-decoration-line declaration whose value is
+    /// not exactly "none" or "initial". Chrome adds "text-decoration-thickness/style/color: initial" to every copy; those
+    /// properties draw no line on their own and are ignored. Anything else, including "inherit" or "!important", blocks
+    /// the formatting suggestions, because moving a space out of a tag would not remove a line drawn by CSS.
+    /// </summary>
+    private static bool DrawsCssDecoration(string html) =>
+        Regex.Matches(html, @"text-decoration(?:-line)?\s*:\s*(?<value>[^;""'<>]*)", RegexOptions.IgnoreCase)
+            .Any(m => m.Groups["value"].Value.Trim().ToLowerInvariant() is not ("none" or "initial"));
 
     internal HtmlClipboard FixFormatting(string original, int[] ids, EditorEdit[] edits)
     {
