@@ -16,7 +16,7 @@ class Element {
 const elements=new Map(),sent=[];
 const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
 let receive;
-const sandbox={setTimeout:()=>0,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
+const sandbox={setTimeout:()=>0,setInterval:()=>1,document:{getElementById:element,createElement:tag=>Object.assign(new Element(),{tag}),querySelectorAll:selector=>selector.split(',').flatMap(part=>{const match=part.trim().match(/^#([\w-]+) (\w+)$/);return match?element(match[1]).querySelectorAll(match[2]):[];})},window:{chrome:{webview:{postMessage:m=>sent.push(m),addEventListener:(_,handler)=>receive=handler}}}};
 vm.createContext(sandbox);
 for(const file of ['diff.js','review-model.js','markup.js','i18n-de.js','i18n.js','app.js'])vm.runInContext(fs.readFileSync(`src/TextFixer/Web/${file}`,'utf8'),sandbox);
 const message=m=>receive({data:m});
@@ -678,6 +678,14 @@ console.log('PASS: text size steps, limits and reset.');
  element('pin-window').onclick();assert.equal(sent.at(-1).on,false);
 }
 console.log('PASS: pin toggles keeping the window in front.');
+{
+ // Tray icon: without a captured text the window opens on the clipboard history, with one it keeps its view.
+ message({type:'capture',text:'',canReplace:false});element('close-history').onclick();
+ message({type:'trayOpen'});assert.equal(sent.at(-1).action,'historyList','no text: tray opens the clipboard history');
+ element('close-history').onclick();message({type:'capture',text:'Some text.',canReplace:true});const before=sent.length;
+ message({type:'trayOpen'});assert.ok(!sent.slice(before).some(s=>s.action==='historyList'),'with a text: the last view stays');
+}
+console.log('PASS: tray icon opens the clipboard history without a captured text.');
 {
  // Source format: clipboard facts and syntax candidates; matching export formats get a dot.
  message({type:'capture',captureId:90,task:'open',text:'Hallo **Welt** und *du*.\r\nZweite\u00a0Zeile',canReplace:false,readOnly:true});

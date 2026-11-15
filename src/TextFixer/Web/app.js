@@ -664,6 +664,8 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='models')renderModels(m);
   if(m.type==='connected'&&$('settings').open)post('models');
   if(m.type==='screenChanged'){textSize.rescreen();return;}
+  // Opened from the tray icon: without a captured text, the clipboard history is the useful view.
+  if(m.type==='trayOpen'){if(!sourceText&&!historyVisible())showHistory(true);return;}
   if(m.type==='status'){connected=m.status.connected;$('connection').textContent=m.status.message;$('daily-status').textContent=connected?'Using ChatGPT plan':'Connect ChatGPT in Settings';$('signin').hidden=connected;$('signout').hidden=!connected;startCapturedReview();}
   if(m.type==='dialog'){const a=answers[dialogKey],r=m.answer||{};
     if(a){a.turns.push({role:'user',text:a.pending||m.question||''},{role:'assistant',text:r.text||'',sources:r.sources||[],searches:r.searches||0});a.pending='';}

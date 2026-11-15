@@ -108,6 +108,13 @@ internal sealed class ReviewWindow : Form
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         if (!WindowFocus.BringOwnWindowForward(Handle)) Diagnostic("Foreground activation was refused by Windows.");
     }
+    // Opened from the tray icon: without a captured text the page shows the clipboard history.
+    private bool _trayOpenPending;
+    internal void OpenFromTray()
+    {
+        Open();
+        if (_ready) Send(new { type = "trayOpen" }); else _trayOpenPending = true;
+    }
     internal void Shutdown() { _shutdown = true; _operation?.Cancel(); Close(); Dispose(); }
     /// <param name="task">open shows the task choice; any other task from <see cref="Shortcuts.Tasks"/> starts right away.</param>
     internal void SetCapture(CapturedText capture, string task = "review")
@@ -502,7 +509,7 @@ internal sealed class ReviewWindow : Form
             var action = root.GetProperty("action").GetString();
             if (action == "ready")
             {
-                _ready = true; SendCapture(); SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); SendShortcuts(); await SendStatusAsync();
+                _ready = true; SendCapture(); if (_trayOpenPending) { _trayOpenPending = false; Send(new { type = "trayOpen" }); } SendChromeStatus(); SendAutostart(); SendHistory(); SendReviewMode(); SendShortcuts(); await SendStatusAsync();
                 if (_pendingNotice is not null) { Notify(_pendingNotice); _pendingNotice = null; }
                 return;
             }

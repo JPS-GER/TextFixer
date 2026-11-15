@@ -39,7 +39,7 @@ internal sealed class TrayApplication : ApplicationContext
             exit.Text = german ? "Beenden" : "Exit";
         };
         _tray = new NotifyIcon { Text = "TextFixer", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
-        _tray.DoubleClick += (_, _) => _review.Open();
+        _tray.DoubleClick += (_, _) => _review.OpenFromTray();
         _hotkey.Pressed += async (_, task) => await CaptureAsync(task);
         _hotkey.Changed += (_, _) => UpdateTooltip();
         _review.FormClosed += (_, _) => ExitThread();
