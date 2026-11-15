@@ -362,5 +362,20 @@ const string Original = "Der Eiffelturm steht in Rom. Er wurde 1889 fertig. Berl
     Check(doc.ModelText == "Text." && doc.Items.Count == 0 && doc.ContextText == "[Post by jp, 26.02.2026, 20:12. Title: Titel]\n\nText.", "avatar and profile link are not read as image and link; author, date and title are context");
 }
 
+{
+    // M! Forum line-block gaps: Chrome writes 2 + 2 x (empty paragraphs) line breaks per gap.
+    const string body = "<p>Eins.</p><p><br></p><p>Zwei.</p><p><br></p><p><br></p><p>Drei.</p><p>Vier.</p>";
+    const string text = "Eins.\r\n\r\n\r\n\r\nZwei.\r\n\r\n\r\n\r\n\r\n\r\nDrei.\r\n\r\nVier.";
+    var gaps = CaptureReader.LineGaps(body, text);
+    Check(gaps is { Length: 3 } && gaps[0].SequenceEqual([5, 8, 1]) && gaps[1].SequenceEqual([18, 12, 2]) && gaps[2].SequenceEqual([35, 4, 0]),
+        "line gaps: one, two and no empty paragraphs map to their exact runs");
+    Check(CaptureReader.LineGaps("<div class=\"header\">KO</div><p><br></p>" + body + "<p><br></p>", text + "\r\n") is { Length: 3 },
+        "line gaps: leading and trailing empty paragraphs are ignored");
+    Check(CaptureReader.LineGaps(body, text.Replace("Zwei.\r\n\r\n\r\n\r\n\r\n\r\n", "Zwei.\r\n\r\n")) is null, "line gaps: a run that does not match the empty paragraphs gives no mapping");
+    Check(CaptureReader.LineGaps("<p>A.</p><p><br></p><p>B<br><br>C.</p>", "A.\r\n\r\n\r\n\r\nB\r\n\r\nC.") is null, "line gaps: extra runs inside a paragraph give no mapping");
+    Check(CaptureReader.LineGaps("<blockquote><p>Q</p></blockquote><p><br></p><p>A.</p>", "Q\r\n\r\n\r\n\r\nA.") is null, "line gaps: quotes are left out");
+    Check(CaptureReader.LineGaps("<p>A.</p>", "A.") is null, "line gaps: a single paragraph has no gaps");
+}
+
 Console.WriteLine(failures == 0 ? "All fact-check tests passed." : $"{failures} fact-check test(s) failed.");
 return failures == 0 ? 0 : 1;

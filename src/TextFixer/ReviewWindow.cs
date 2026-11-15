@@ -242,7 +242,10 @@ internal sealed class ReviewWindow : Form
         var unknown = System.Text.RegularExpressions.Regex.Matches(fragment, @"<([a-zA-Z][\w:-]*)", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200))
             .Select(m => m.Groups[1].Value.ToLowerInvariant()).Where(t => !StandardTags.Contains(t)).Distinct().Take(8).ToArray();
         var (app, window) = Origin(_capture.Window);
-        return new { formats, host, found, unknown, app, window };
+        // Display only: paragraph gaps of the M! Forum editor, shown at the forum's spacing; the text stays unchanged.
+        var gaps = host is not null && (host == "maniac-forum.de" || host.EndsWith(".maniac-forum.de", StringComparison.OrdinalIgnoreCase))
+            ? CaptureReader.LineGaps(fragment, _capture.Text) : null;
+        return new { formats, host, found, unknown, app, window, gaps };
     }
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
     private static extern int GetWindowText(nint window, System.Text.StringBuilder text, int size);

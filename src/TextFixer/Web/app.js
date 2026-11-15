@@ -8,7 +8,22 @@ let captureTask='review',translationOriginal='',translationText='';
 // taskOption[task] is the chosen card option ('' = the card's main action); readyOption[task] is the option of the shown result.
 // captureId increases with every capture; answers for an older capture are dropped.
 let historyShown=false;
-let captureClip=null;
+let captureClip=null,captureText='';
+// Appends text to a node. Paragraph gaps the app mapped for this capture (M! Forum: one paragraph per line, an empty
+// paragraph per blank line) become gap elements that keep the original line breaks and take the forum's spacing in CSS.
+// offset: where text starts in the captured text; base: the text the offsets refer to.
+function appendGapped(node,text,offset=0,base=sourceText){
+  const gaps=base===captureText&&captureClip?.gaps||[];let pos=0;
+  if(!gaps.length){node.textContent=text;return;}
+  const piece=value=>{const span=document.createElement('span');span.textContent=value;return span;};
+  for(const [start,length,empty] of gaps){
+    const s=start-offset;if(s<pos||s+length>text.length)continue;
+    if(s>pos)node.append(piece(text.slice(pos,s)));
+    const gap=document.createElement('span');gap.className='line-gap';gap.style?.setProperty?.('--empty',String(empty));gap.textContent=text.slice(s,s+length);
+    node.append(gap);pos=s+length;
+  }
+  if(pos<text.length)node.append(piece(text.slice(pos)));
+}
 let captureId=0,activeTask='review',taskReady={},taskOption={},readyOption={},requestedOption={},factSetup=false,dialogKey='',menuButtons=[];
 // Fact check: claims with their correction wordings (exact quote replacements, applied like review edits).
 // factContext and factClarifications (answers to the questions of needs_context claims) belong to the current capture.
@@ -378,9 +393,10 @@ function toggleCorrection(p){
   p.accepted=!p.accepted;showChanges();
 }
 function showInline(){
-  const container=$('inline-text');container.replaceChildren();
+  const container=$('inline-text');container.replaceChildren();let pos=0;
   reviewSegments(reviewOriginal,parts,wordings).forEach(p=>{
-    if(!p.changed){const span=document.createElement('span');span.textContent=p.before;if(p.superseded)span.className='inactive-correction';container.append(span);return;}
+    const at=pos;pos+=(p.before||'').length;
+    if(!p.changed){const span=document.createElement('span');appendGapped(span,p.before,at,reviewOriginal);if(p.superseded)span.className='inactive-correction';container.append(span);return;}
     if(p.category!==activeTab){
       const span=document.createElement('span');span.className='inactive-correction';span.textContent=p.accepted?p.after:p.before;
       span.title=(p.accepted?'Accepted':'Rejected')+' '+(p.category==='worth'?'wording from Worth checking':p.category)+' correction';container.append(span);return;
@@ -506,7 +522,7 @@ $('accept-all').onclick=()=>bulkCorrections(true);$('reject-all').onclick=()=>bu
 window.chrome.webview.addEventListener('message',event=>{
   const m=event.data;
   if(['result','tabProgress','tabResult','translation','factCheck','writing','dialog'].includes(m.type)&&m.captureId!==undefined&&m.captureId!==captureId)return;
-  if(m.type==='capture'){captureClip=m.clip||null;formatInfo=detectFormat(m.text||'',m);captureDoc=m.doc&&m.text?{text:m.text,model:m.doc.model||'',title:m.doc.title||'',items:new Map((m.doc.items||[]).map(i=>[String(i.id),i])),ranges:m.doc.ranges||[]}:null;markupSetItems(captureDoc?.items);revisedRows();renderPostInfo(m.text?m.doc:null);translationStructured=false;translationIntact=true;rewriteStructured=false;rewriteIntact=true;captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
+  if(m.type==='capture'){captureClip=m.clip||null;captureText=m.text||'';formatInfo=detectFormat(m.text||'',m);captureDoc=m.doc&&m.text?{text:m.text,model:m.doc.model||'',title:m.doc.title||'',items:new Map((m.doc.items||[]).map(i=>[String(i.id),i])),ranges:m.doc.ranges||[]}:null;markupSetItems(captureDoc?.items);revisedRows();renderPostInfo(m.text?m.doc:null);translationStructured=false;translationIntact=true;rewriteStructured=false;rewriteIntact=true;captureTask=['open','translate','factcheck','rewrite','summary','explain'].includes(m.task)?m.task:'review';activeTask=captureTask==='open'?'':captureTask;if(m.captureId!==undefined)captureId=m.captureId;taskReady={};taskOption={};readyOption={};requestedOption={};factSetup=false;dialogKey='';rewriteSteps=[];answers={};$('rewrite-request').value='';factClaims=[];factWordings=[];factMeta=null;factContext='';factClarifications=[];$('fact-context').value='';$('fact-context-more').value='';$('fact-more').open=false;$('fact-plain').checked=false;$('factcheck-view').hidden=true;$('translation-view').hidden=true;$('translation-request').value='';activeTab='spelling';partialReview=false;tabState={};tabResults={};parts=[];wordings=[];reviewFindings=[];$('source-section').hidden=!m.text;if($('help').open)$('help').close();showFormatting([]);if($('settings').open)$('settings').close();captureMode=m.mode||'clipboard';richClipboard=!!m.canPreserveFormatting;readOnlyCapture=!!m.readOnly;$('allow-plain-text').checked=false;sourceText=m.text;$('source').value=m.text;$('original-text').textContent=m.text;$('source-section').open=false;canReplace=m.canReplace;renderFormatInfo();$('formatting').hidden=!m.hasFormatting||captureMode==='chrome';$('results').hidden=true;pendingAutoCheck=!!m.text&&!!activeTask;notice(m.text&&!connected?(captureTask==='translate'?'Connect ChatGPT in Settings to translate this selection.':captureTask==='review'?'Connect ChatGPT in Settings to review this selection.':'Connect ChatGPT in Settings to work with this selection.'):'');showTaskView();startCapturedReview();if(m.reused)notice('The result is the captured text. Choose what TextFixer should do with it.');}
   if(m.type==='revisedExport'){
     if(!exportFormats.some(([f])=>f===m.format))return;
     let out;markupSetItems(m.items);
@@ -987,7 +1003,7 @@ function captureWords(){return (sourceText.match(/\S+/g)||[]).length;}
 function renderBand(){
   if($('open-source')){$('open-source').disabled=!sourceText;$('open-source').classList?.toggle?.('selected',!activeTask&&!!sourceText&&!historyVisible());}
   // Before a task is chosen, the captured text fills the card under the band.
-  $('choose-preview').hidden=!!activeTask||!sourceText||$('choose-view').hidden;$('choose-preview-text').textContent=sourceText;if(!$('choose-preview').hidden)renderPreviewFacts();
+  $('choose-preview').hidden=!!activeTask||!sourceText||$('choose-view').hidden;$('choose-preview-text').replaceChildren();appendGapped($('choose-preview-text'),sourceText);if(!$('choose-preview').hidden)renderPreviewFacts();
   const card=taskCards.find(c=>c[0]===activeTask);
   document.documentElement?.style?.setProperty?.('--band',card?.[4]||'#264859');
   $('band-task').textContent=card?.[1]||'Choose a task';

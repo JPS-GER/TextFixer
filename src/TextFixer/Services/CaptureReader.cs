@@ -437,6 +437,48 @@ internal static partial class CaptureReader
     private static partial Regex AuthorPattern();
     [GeneratedRegex(@"href=""[^""]*/profile/[^""]*""[^>]*>[\s\S]{0,400}?<img[^>]*\balt=""([^""]+)""")]
     private static partial Regex AvatarPattern();
+    /// <summary>
+    /// Paragraph gaps of a line-block editor (one paragraph per line without spacing, an empty paragraph per blank
+    /// line, as in the M! Forum). Chrome's plain text gives every paragraph a blank line, so one blank line on the page
+    /// arrives as 2 + 2 x (empty paragraphs) line breaks. Returns each such run in <paramref name="plain"/> as
+    /// [start, length, empty paragraphs], for display only; the text stays unchanged. Returns null unless every
+    /// paragraph boundary of the fragment matches one run exactly; lists, quotes, headings, tables and code are left out.
+    /// </summary>
+    internal static int[][]? LineGaps(string fragment, string plain)
+    {
+        try
+        {
+            if (UnsupportedBlockPattern().IsMatch(fragment)) return null;
+            var paragraphs = ParagraphPattern().Matches(fragment).Select(m => EmptyParagraphPattern().IsMatch(m.Value)).ToList();
+            while (paragraphs.Count > 0 && paragraphs[0]) paragraphs.RemoveAt(0);
+            while (paragraphs.Count > 0 && paragraphs[^1]) paragraphs.RemoveAt(paragraphs.Count - 1);
+            var empties = new List<int>();
+            for (var i = 1; i < paragraphs.Count; i++)
+            {
+                if (!paragraphs[i - 1]) empties.Add(0);
+                if (paragraphs[i]) empties[^1]++;
+            }
+            if (empties.Count == 0) return null;
+            var trimmed = plain.TrimEnd('\r', '\n');
+            var runs = LineBreakRunPattern().Matches(trimmed).Where(m => m.Index > 0).ToList();
+            if (runs.Count != empties.Count) return null;
+            var gaps = new int[runs.Count][];
+            for (var i = 0; i < runs.Count; i++)
+            {
+                var breaks = runs[i].Value.Count(c => c == '\n');
+                if (breaks != 2 + 2 * empties[i]) return null;
+                gaps[i] = [runs[i].Index, runs[i].Length, empties[i]];
+            }
+            return gaps;
+        }
+        catch (RegexMatchTimeoutException) { return null; }
+    }
+    [GeneratedRegex(@"<(ul|ol|li|blockquote|pre|code|h[1-6]|table)\b", RegexOptions.IgnoreCase, 500)]
+    private static partial Regex UnsupportedBlockPattern();
+    [GeneratedRegex(@"<p\b[^>]*>.*?</p>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 500)]
+    private static partial Regex ParagraphPattern();
+    [GeneratedRegex(@"(?:\r?\n){2,}", RegexOptions.None, 500)]
+    private static partial Regex LineBreakRunPattern();
     [GeneratedRegex(@">\s*(\d{1,2}\.\d{1,2}\.\d{2,4},?\s+\d{1,2}:\d{2})\s*<")]
     private static partial Regex DatePattern();
     [GeneratedRegex(@"class=""[^""]*\bfont-bold\b[^""]*""[^>]*>\s*([^<\s][^<]*)<")]

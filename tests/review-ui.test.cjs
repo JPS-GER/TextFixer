@@ -883,3 +883,20 @@ console.log('PASS: composed headings and placeholders in German.');
  assert.equal(k('NumpadSubtract','-'),'Ctrl+Alt+NumpadSubtract');assert.equal(k('KeyT','t'),'Ctrl+Alt+T');
 }
 console.log('PASS: shortcut recorder reads period, comma and minus by label.');
+{
+ // M! Forum paragraph gaps: the original line breaks stay in the text, mapped gaps render as gap elements.
+ const forum='Eins tesst.\r\n\r\n\r\n\r\nZwei.\r\n\r\n\r\n\r\n\r\n\r\nDrei.\r\nVier.';
+ const gaps=[[11,8,1],[24,12,2]];
+ message({type:'capture',text:forum,canReplace:false,readOnly:true,hasFormatting:true,clip:{formats:['HTML','Plain text'],host:'remix.maniac-forum.de',found:[],unknown:[],gaps}});
+ message({type:'result',original:forum,result:{correctedText:forum.replace('tesst','test'),findings:[]},canReplace:false,model:'test'});
+ const flat=n=>n.tag==='del'?n.textContent:n.tag==='ins'?'':n.children.length?n.children.map(flat).join(''):n.textContent;
+ assert.equal(element('inline-text').children.map(flat).join(''),forum,'gap elements keep the exact original text');
+ const shown=[];const walk=n=>{if(n.className==='line-gap')shown.push([n.textContent,n.style?.empty]);n.children.forEach(walk);};
+ element('inline-text').children.forEach(walk);
+ assert.deepEqual(shown.map(g=>g[0]),['\r\n\r\n\r\n\r\n','\r\n\r\n\r\n\r\n\r\n\r\n'],'each mapped gap is one gap element');
+ message({type:'capture',text:'A.\r\n\r\nB.',canReplace:false,readOnly:true,hasFormatting:true,clip:{formats:['Plain text'],found:[],unknown:[]}});
+ message({type:'result',original:'A.\r\n\r\nB.',result:{correctedText:'A.\r\n\r\nB.',findings:[]},canReplace:false,model:'test'});
+ const plainGaps=[];const walk2=n=>{if(n.className==='line-gap')plainGaps.push(n);n.children.forEach(walk2);};element('inline-text').children.forEach(walk2);
+ assert.equal(plainGaps.length,0,'captures without mapped gaps keep plain line breaks');
+}
+console.log('PASS: M! Forum paragraph gaps keep the original text.');

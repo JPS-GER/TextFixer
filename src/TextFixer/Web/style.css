@@ -407,3 +407,5 @@ button.export-button.matches { border-color:var(--accent-edge); }
 @media (max-width:700px) { .preview-facts { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 #rewrite-form[hidden] { display:none; }
 #rewrite-result.original-only .result-aside, #rewrite-result.original-only .correction-details, #rewrite-result.original-only .hint { display:none; }
+/* Mapped paragraph gaps (M! Forum): the original line breaks stay in the text; the gap shows one line break plus one blank line per empty paragraph. */
+.line-gap { display:block; white-space:normal; height:calc(var(--empty,0) * 1lh); }
