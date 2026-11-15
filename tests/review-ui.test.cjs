@@ -127,9 +127,7 @@ assert.ok(!main.includes('right-click')&&!main.includes('Alt+Q'),'capture instru
 assert.equal(element('route').hidden,false,'capture shows its source');
 element('source').value='manually edited';element('source').listeners.input();assert.equal(element('route').hidden,true,'manual text no longer claims a captured source');
 
-message({type:'capture',text:'',canReplace:false});assert.equal(element('source-section').hidden,true,'empty startup capture hides text section');
-message({type:'capture',text:'selected text',canReplace:true,mode:'clipboard'});assert.equal(element('source-section').hidden,false,'Alt+Q capture shows text section');
-message({type:'capture',text:'Chrome text',canReplace:true,mode:'chrome'});assert.equal(element('source-section').hidden,false,'Chrome capture shows text section');
+assert.ok(!fs.readFileSync('src/TextFixer/Web/index.html','utf8').includes('id="original-text"'),'the review has no separate original text section; Source text shows it');
 
 message({type:'busy',busy:false});message({type:'status',status:{connected:true,message:'Using ChatGPT plan'}});
 let checkCount=sent.filter(m=>m.action==='check').length;
@@ -150,10 +148,8 @@ assert.ok(!fs.readFileSync('src/TextFixer/Web/index.html','utf8').includes('id="
 assert.ok(!fs.readFileSync('src/TextFixer/Web/index.html','utf8').includes('id="scope"'),'redundant review scope removed');
 
 message({type:'capture',text:'Original unmarked text',canReplace:true});
-assert.equal(element('original-text').textContent,'Original unmarked text');
-assert.equal(element('source-section').open,false,'original text starts collapsed');
 const reviewHtml=fs.readFileSync('src/TextFixer/Web/index.html','utf8');
-assert.ok(reviewHtml.indexOf('Corrections in context')<reviewHtml.indexOf('Show original text'),'corrections appear before collapsed original');
+assert.ok(!reviewHtml.includes('id="source-section"'),'no separate original text link in the review');
 assert.ok(!reviewHtml.includes('Your text</h2>'),'old source heading removed');
 
 message({type:'notice',message:'Review ready.'});assert.equal(element('notice').textContent,'Review ready.');

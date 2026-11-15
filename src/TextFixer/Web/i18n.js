@@ -18,7 +18,7 @@ function tr(text,lang=appLanguage){
   return text;
 }
 // Captured text, results, answers, quotes and clipboard entries are content, never UI text.
-const i18nContent='[data-no-tr],script,style,textarea,pre,code,blockquote,#choose-text,#source-summary,#band-model,.fact-value[data-no-tr],#post-info,#inline-text,#original-text,#source,#preview,#translation-text,#translation-original,#rewrite-text,#rewrite-changes,#rewrite-steps,#fact-preview,.msg-text,.fact-explanation,.change-content,.history-text,.md';
+const i18nContent='[data-no-tr],script,style,textarea,pre,code,blockquote,#choose-text,#source-summary,#band-model,.fact-value[data-no-tr],#post-info,#inline-text,#source,#preview,#translation-text,#translation-original,#rewrite-text,#rewrite-changes,#rewrite-steps,#fact-preview,.msg-text,.fact-explanation,.change-content,.history-text,.md';
 function i18nSkipped(el){return !el||el.closest?.(i18nContent)!=null;}
 function i18nKey(el){
   let n=0,hasText=false;const parts=[];

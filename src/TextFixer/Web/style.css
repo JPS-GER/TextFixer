@@ -231,7 +231,6 @@ header { flex-wrap:nowrap; padding:22px 24px; }
 
 .review-details { display:flex; flex-wrap:wrap; gap:0 24px; align-items:flex-start; }
 .review-details details[open] { flex-basis:100%; }
-.review-details #original-text { max-height:360px; }
 
 body { padding-bottom:48px; }
 .status-bar { position:fixed; bottom:0; left:0; right:0; z-index:10; margin:0; border:0; border-top:1px solid var(--edge); border-radius:0; padding:9px 20px; background:var(--room-2); color:var(--muted); text-align:left; font-size:calc(12px * var(--text-scale)); line-height:1.5; max-height:25vh; overflow:auto; box-shadow:0 -2px 8px #0002; }
