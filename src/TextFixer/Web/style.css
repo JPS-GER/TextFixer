@@ -43,7 +43,7 @@ header p { margin:4px 0 0; color:var(--muted); }
 .shortcut { font-size:calc(12px * var(--text-scale)); border:1px solid var(--edge); border-bottom-width:3px; padding:7px 11px; border-radius:7px; color:var(--muted); }
 .header-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
 .header-actions .hint { margin:0; font-size:calc(11px * var(--text-scale)); }
-main { max-width:1100px; margin:auto; padding:24px 34px; }
+main { max-width:1100px; margin:auto; padding:20px 34px 24px; }
 .actions { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
 button { border:1px solid var(--edge); background:var(--control); color:var(--text); padding:9px 14px; border-radius:7px; font:600 calc(13px * var(--text-scale)) "Segoe UI",Arial; cursor:pointer; }
 button:hover { background:var(--control-hover); border-color:var(--edge-strong); }
