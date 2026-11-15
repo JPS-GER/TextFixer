@@ -6,7 +6,7 @@ internal static class WindowLayout
 {
     // Window width in CSS px that keeps the review tabs on one line at the default text size of 15 px, measured from
     // the page. Once loaded, the page reports the exact value for the chosen text size.
-    internal const int DefaultTabLineWidth = 1145;
+    internal const int DefaultTabLineWidth = 1147;
 
     internal static int MinimumWidth(double css, int dpi, Rectangle area) =>
         Math.Min(area.Width, (int)Math.Ceiling(css * Math.Max(96, dpi) / 96d));

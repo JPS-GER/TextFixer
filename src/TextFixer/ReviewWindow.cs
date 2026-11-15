@@ -70,7 +70,8 @@ internal sealed class ReviewWindow : Form
     {
         if (!root.TryGetProperty("width", out var value) || !value.TryGetDouble(out var css) || css <= 0) return;
         var area = Screen.FromControl(this).WorkingArea;
-        var width = WindowLayout.MinimumWidth(css, DeviceDpi, area);
+        // The page needs the width inside the window; MinimumSize counts the outer size with the window frame.
+        var width = Math.Min(area.Width, WindowLayout.MinimumWidth(css, DeviceDpi, area) + Math.Max(0, Width - ClientSize.Width));
         MinimumSize = new Size(width, MinimumSize.Height);
         if (WindowState == FormWindowState.Normal && Right > area.Right) Left = Math.Max(area.Left, area.Right - Width);
     }

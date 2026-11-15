@@ -868,7 +868,8 @@ function tabLineWidth(px,base){
   for(const frame of [...probe.children].slice(2))bar=Math.max(bar,frame.getBoundingClientRect().width);
   const css=getComputedStyle(main),width=sidebar.getBoundingClientRect().width+(gutter.offsetWidth-gutter.clientWidth)+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight)+bar;
   probe.remove();
-  return Math.ceil(width);
+  // 2 px for rounding to device pixels at scaled displays.
+  return Math.ceil(width)+2;
 }
 // Text size for the whole window, kept in this WebView profile. Sizes are the body text in px; every font scales with it.
 // The largest size is the one whose one-line tab bar still fits the screen; the window's minimum width keeps the
