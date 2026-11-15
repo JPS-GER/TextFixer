@@ -915,7 +915,7 @@ console.log('PASS: Open chooser, Rewrite presets and chaining, Summary cache, ta
  assert.equal(rows().length,0,'search does not use regular expressions');
  element('history-search').value='';element('history-search').oninput({target:element('history-search')});
  // Kind filter
- element('history-filter').children[0].children[3].onclick();
+ element('history-filter').children[1].children[4].onclick();
  assert.deepEqual(rows().map(r=>r.title),['Path'],'the Paths filter keeps paths');
  assert.ok(bar().some(b=>b.className==='cut-note'),'a long entry notes that the preview is shortened');
  element('history-filter').children[0].children[0].onclick();
@@ -1004,6 +1004,41 @@ console.log('PASS: clipboard kinds for code, e-mail, commands, images, videos an
  message({type:'busy',busy:false});
 }
 console.log('PASS: YouTube player on click and clipboard actions send only id and action.');
+{
+ // Image and HTML links: web addresses and copied paths. Images show at once, a page only on request in a sandbox.
+ const kind=text=>sandbox.entryKind({text});
+ assert.equal(kind('https://i.imgur.com/NNzScyH.png'),'imagelink');
+ assert.equal(kind('https://example.com/pic.JPG?size=2'),'imagelink','the query does not hide the extension');
+ assert.equal(kind('https://example.com/docs/index.html'),'htmllink');
+ assert.equal(kind('https://example.com/png'),'url');
+ assert.equal(kind('C:\\Users\\me\\shot.png'),'imagelink');
+ assert.equal(kind('C:\\Users\\me\\report.htm'),'htmllink');
+ assert.equal(kind('C:\\Users\\me\\notes.txt'),'path');
+ message({type:'history',enabled:true,entries:[
+  {id:'il',text:'https://i.imgur.com/NNzScyH.png',copiedAt:Date.now()},
+  {id:'hl',text:'https://example.com/a.html',copiedAt:Date.now()-1},
+  {id:'lp',text:'C:\\x\\shot.png',copiedAt:Date.now()-2,local:{url:'https://textfixer.local/history/file/lp/p',exists:true}},
+  {id:'lg',text:'C:\\x\\gone.html',copiedAt:Date.now()-3,local:{url:'https://textfixer.local/history/file/lg/p',exists:false}}]});
+ if(!sandbox.historyVisible())element('view-toggle').onclick();
+ const rows=()=>element('history-list').children.filter(c=>c.className?.startsWith('hv-row'));
+ const full=()=>element('history-pane').children[1];
+ const actions=()=>element('history-pane').children[2].children.filter(b=>b.dataset?.how);
+ assert.equal(rows()[0].children[0].src,'https://i.imgur.com/NNzScyH.png','an image link row shows the image');
+ assert.equal(full().children[0].tag,'img');assert.equal(full().children[0].src,'https://i.imgur.com/NNzScyH.png');
+ assert.deepEqual(actions().map(b=>b.dataset.how),['browser']);
+ rows()[1].onclick();
+ assert.ok(!full().children.some(c=>c.tag==='iframe'),'a page loads only on request');
+ const replaced=[];full().children[0].replaceWith=n=>replaced.push(n);full().children[0].onclick();
+ assert.equal(replaced[0].tag,'iframe');assert.equal(replaced[0].src,'https://example.com/a.html');
+ assert.equal(replaced[0].attributes.sandbox,'allow-scripts','the page runs sandboxed, without the app origin');
+ rows()[2].onclick();
+ assert.equal(full().children[0].src,'https://textfixer.local/history/file/lp/p','a copied image path shows through the file route');
+ assert.deepEqual(actions().map(b=>[b.dataset.how,b.disabled]),[['app',false],['explorer',false]]);
+ rows()[3].onclick();
+ assert.equal(full().children[0].className,'missing-badge','a missing file says so');
+ assert.ok(actions().every(b=>b.disabled),'a missing file cannot be opened');
+}
+console.log('PASS: image and HTML links show a preview; pages load sandboxed on request.');
 {
  // Composed headings and text field placeholders are translated; text field content is not.
  assert.equal(sandbox.tr('Summary: Key points','de'),'Zusammenfassung: Kernpunkte');

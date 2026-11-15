@@ -777,9 +777,9 @@ function showHistory(on){
 function updateViewToggle(){$('view-toggle').classList.toggle('running',busy&&historyShown);}
 function ago(ms){const s=Math.max(0,Math.round((Date.now()-ms)/1000));if(s<60)return'Just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+(h===1?' hour ago':' hours ago');const d=Math.round(h/24);return d+(d===1?' day ago':' days ago');}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
-// Kinds: filter label, name of one entry, edge color. The first filter row holds text kinds, the second media.
-const historyKinds={text:['Text','Text','#7893a2'],url:['Links','Link','#8ecbff'],path:['Paths','Path','#3de8bb'],code:['Code','Code','#b9a2ff'],email:['E-Mail','E-mail address','#ffb066'],command:['Commands','Command','#a8e05f'],image:['Images','Image','#f08ad8'],video:['Videos','Video','#ff9f6b'],youtube:['YouTube','YouTube video','#ff5c5c'],files:['Files','Files','#d6c08a']};
-const historyFilterRows=[['all','text','url','path','code','email','command'],['image','video','youtube','files']];
+// Kinds: filter label, name of one entry, edge color. Filter rows: text kinds, links and paths, media.
+const historyKinds={text:['Text','Text','#7893a2'],url:['Links','Link','#8ecbff'],path:['Paths','Path','#3de8bb'],code:['Code','Code','#b9a2ff'],email:['E-Mail','E-mail address','#ffb066'],command:['Commands','Command','#a8e05f'],image:['Images','Image','#f08ad8'],video:['Videos','Video','#ff9f6b'],youtube:['YouTube','YouTube video','#ff5c5c'],imagelink:['Image links','Image link','#f7b6e6'],htmllink:['HTML links','HTML link','#9db4ff'],files:['Files','Files','#d6c08a']};
+const historyFilterRows=[['all','text','code','email','command'],['url','imagelink','htmllink','youtube','path'],['image','video','files']];
 const historyIcons={
   up:'M6 15l6-6 6 6',down:'M6 9l6 6 6-6',x:'M6 6l12 12M18 6L6 18'};
 function historyIcon(name){
@@ -793,9 +793,13 @@ function entryKind(e){
   if(e.image)return'image';
   if(e.files?.length)return e.files.every(f=>f.media==='video')?'video':'files';
   const t=entryText(e).trim();
-  if(/^https?:\/\/\S+$/i.test(t))return youtubeId(t)?'youtube':'url';
+  if(/^https?:\/\/\S+$/i.test(t)){
+    if(youtubeId(t))return'youtube';
+    let path='';try{path=new URL(t).pathname;}catch{}
+    return /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(path)?'imagelink':/\.html?$/i.test(path)?'htmllink':'url';
+  }
   if(/^(mailto:)?[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i.test(t))return'email';
-  if(/^([A-Za-z]:\\|\\\\|\\)\S/.test(t)&&!t.includes('\n'))return'path';
+  if(/^([A-Za-z]:\\|\\\\|\\)\S/.test(t)&&!t.includes('\n'))return /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(t)?'imagelink':/\.html?$/i.test(t)?'htmllink':'path';
   if(isCommandText(t))return'command';
   if(isCodeText(t))return'code';
   return'text';
@@ -821,7 +825,9 @@ function isCodeText(t){
   const lines=t.split(/\r?\n/).filter(l=>l.trim()),n=lines.filter(l=>codeLine.test(l)).length;
   return n>=2&&n>=lines.length*0.3;
 }
-const entryMono=e=>['url','youtube','path','code','command','email'].includes(entryKind(e));
+const entryMono=e=>['url','youtube','imagelink','htmllink','path','code','command','email'].includes(entryKind(e));
+// Image and HTML links: a web address is shown as it is, a copied path through the app's file route.
+function linkSource(e){const t=entryText(e).trim();return /^https?:/i.test(t)?t:e.local?.exists?e.local.url:null;}
 function fileName(path){return path.replace(/[\\\/]+$/,'').split(/[\\\/]/).pop()||path;}
 // The line shown in the list: the first text line, the file names, or the image size.
 function entryTitle(e){
@@ -832,7 +838,8 @@ function entryTitle(e){
 function formatBytes(b){return b<1048576?Math.max(1,Math.round(b/1024))+' KB':(b/1048576).toFixed(1)+' MB';}
 function entryThumb(e){
   const yt=!e.image&&!e.files?youtubeId(entryText(e)):null;
-  const f=e.files?.length===1&&e.files[0].exists&&e.files[0].media==='image'?e.files[0]:null,src=e.image?.url||f?.url||(yt&&`https://i.ytimg.com/vi/${yt}/mqdefault.jpg`);
+  const link=!e.image&&!e.files&&entryKind(e)==='imagelink'?linkSource(e):null;
+  const f=e.files?.length===1&&e.files[0].exists&&e.files[0].media==='image'?e.files[0]:null,src=e.image?.url||f?.url||link||(yt&&`https://i.ytimg.com/vi/${yt}/mqdefault.jpg`);
   if(!src)return null;const img=el('img','thumb');img.src=src;img.alt='';img.loading='lazy';return img;
 }
 function entryGroup(e){
@@ -938,7 +945,7 @@ function renderHistoryPane(e){
   const pane=$('history-pane');
   // A playing video survives a redraw of the same entry (the 30-second clock, a new copy, a busy change):
   // only the header and the buttons are replaced, because moving a frame or video in the page restarts it.
-  const live=e&&pane.dataset.id===e.id&&pane.children?.length===3?pane.querySelector?.('iframe.hv-yt, video'):null;
+  const live=e&&pane.dataset.id===e.id&&pane.children?.length===3?pane.querySelector?.('iframe.hv-yt, iframe.hv-page, video'):null;
   if(!live)pane.replaceChildren();pane.dataset.id=e?.id||'';
   if(!e){pane.append(el('p','hv-none','No entry matches.'));return;}
   const txt=entryText(e),kind=entryKind(e),hits=hitPositions(txt,historyQuery),cur=Math.min(historyCur,Math.max(0,hits.length-1));
@@ -958,6 +965,7 @@ function renderHistoryPane(e){
   if(e.image){full.className='full media';const img=el('img','checker');img.src=e.image.url;img.alt='';full.append(img);}
   else if(e.files)renderHistoryFiles(full,e,cur);
   else if(kind==='youtube')renderHistoryYouTube(full,e,txt,cur);
+  else if(kind==='imagelink'||kind==='htmllink')renderHistoryLink(full,e,kind,txt,cur);
   else appendMarked(full,txt,historyQuery,cur);
   const actions=el('div','bar');
   const copied=plain=>e.id===copiedId&&copiedPlain===plain;
@@ -969,7 +977,7 @@ function renderHistoryPane(e){
   if(e.hasFormatting){const rich=el('button',copied(false)?'done':'',copied(false)?'Copied':'Copy formatted');rich.type='button';rich.title=lock||'Copy the text with bold, links and lists';rich.disabled=busy;rich.onclick=()=>historyCopy(e,false);actions.append(rich);}
   for(const [how,label,title,needsFile] of historyActions(e,kind)){
     const b=el('button','',label);b.type='button';b.title=title;b.dataset.how=how;
-    b.disabled=(how==='use'&&busy)||(needsFile&&gone);
+    b.disabled=(how==='use'&&busy)||(needsFile&&(gone||(e.local&&!e.local.exists)));
     b.onclick=()=>how==='save'?post('historySave',{id:e.id}):how==='use'?post('historyUse',{id:e.id}):post('historyOpen',{id:e.id,how});
     actions.append(b);
   }
@@ -984,12 +992,34 @@ function historyActions(e,kind){
   const one=e.files?.length===1?e.files[0]:null;
   switch(kind){
     case'url':case'youtube':return[['browser','Open in browser','Open the link in your default browser']];
+    case'imagelink':case'htmllink':return /^https?:/i.test(entryText(e).trim())?[['browser','Open in browser','Open the link in your default browser']]
+      :[['app','Open','Open the file in its default app',true],['explorer','Show in Explorer','Show the file or folder in Explorer',true]];
     case'email':return[['mail','Write e-mail','Write an e-mail to this address in your mail app']];
     case'path':return[['explorer','Show in Explorer','Show the file or folder in Explorer']];
     case'image':return[['app','Open','Open a temporary copy in the default app for images'],['save','Save as...','Save the image as a file']];
     case'video':case'files':return[...(one?.openable?[['app','Open','Open the file in its default app',true]]:[]),['folder',e.files.length>1?'Open folder':'Show in Explorer','Open the folder with the file selected',true]];
     default:return[['use','Use as captured text','Work on this text with the text tools']];
   }
+}
+// A page loads only on request, in a frame without access to the app: scripts run, but the page gets its own origin.
+function historyPageButton(src){
+  const b=el('button','hv-page');b.type='button';b.title='Some websites do not allow being shown inside an app; Open in browser always works.';
+  b.append(el('span','page-icon'),el('span','','Show the page here'));
+  b.onclick=()=>{
+    const frame=el('iframe','hv-page');frame.src=src;
+    frame.setAttribute('sandbox','allow-scripts');frame.setAttribute('referrerpolicy','no-referrer');frame.title='Page preview';
+    b.replaceWith(frame);
+  };
+  return b;
+}
+// Image and HTML links: the image shows right away, a page on request.
+function renderHistoryLink(full,e,kind,txt,cur){
+  full.className='full media';
+  const src=linkSource(e);
+  if(!src)full.append(el('span','missing-badge',tr('not found')));
+  else if(kind==='imagelink'){const img=el('img','checker');img.src=src;img.alt='';img.referrerPolicy='no-referrer';full.append(img);}
+  else full.append(historyPageButton(src));
+  const link=el('div','hv-yt-link');link.dataset.noTr='';appendMarked(link,txt,historyQuery,cur);full.append(link);
 }
 // YouTube: the thumbnail first, the player (youtube-nocookie.com) only after a click.
 function renderHistoryYouTube(full,e,txt,cur){
@@ -1010,6 +1040,7 @@ function renderHistoryFiles(full,e,cur){
   const one=e.files.length===1&&e.files[0].exists?e.files[0]:null;
   if(one?.media==='image'){const img=el('img','checker');img.src=one.url;img.alt='';full.append(img);}
   if(one?.media==='video'){const v=el('video');v.controls=true;v.preload='metadata';v.src=one.url;full.append(v);}
+  if(one?.media==='text')full.append(historyPageButton(one.url));
   const list=el('ul','hv-files');let offset=0;
   for(const f of e.files){
     const li=el('li',f.exists?'':'missing'),name=el('span','name'),dir=el('span','dir');

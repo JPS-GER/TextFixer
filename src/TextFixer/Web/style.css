@@ -307,6 +307,10 @@ button.hv-row.media { display:grid; grid-template-columns:56px minmax(0,1fr); co
 .hv-pane button.hv-yt .play { position:absolute; left:50%; top:50%; width:68px; height:48px; margin:-24px 0 0 -34px; border-radius:12px; background:#ff0033; box-shadow:0 2px 10px #0006; }
 .hv-pane button.hv-yt .play::after { content:""; position:absolute; left:27px; top:14px; border-style:solid; border-width:10px 0 10px 17px; border-color:transparent transparent transparent #fff; }
 .hv-pane button.hv-yt:hover .play { background:#ff2a55; }
+.hv-pane button.hv-page { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; width:100%; max-width:960px; aspect-ratio:16 / 10; flex:none; border:1px dashed var(--edge-strong); border-radius:8px; background:var(--room-2); color:var(--text); font-weight:600; }
+.hv-pane button.hv-page:hover { border-color:var(--accent-edge); background:var(--room-3); }
+.hv-pane .page-icon { width:44px; height:34px; border:2px solid var(--muted); border-radius:5px; box-shadow:inset 0 7px 0 -2px var(--muted); }
+.hv-pane iframe.hv-page { width:100%; flex:1; min-height:320px; border:0; border-radius:8px; background:#fff; }
 .hv-yt-link { align-self:stretch; font-family:Consolas,"Cascadia Mono",monospace; font-size:calc(13px * var(--text-scale)); color:var(--muted); overflow-wrap:anywhere; }
 .hv-files { list-style:none; margin:0; padding:0; width:100%; align-self:stretch; display:flex; flex-direction:column; gap:6px; }
 .hv-files li { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; padding:6px 10px; border-radius:7px; background:var(--room-2); }

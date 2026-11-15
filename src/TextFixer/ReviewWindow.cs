@@ -397,11 +397,18 @@ internal sealed class ReviewWindow : Form
                     media = HistoryMedia.ContentType(path)?.Split('/')[0],
                     openable = HistoryMedia.IsOpenable(path),
                 }),
+                // A copied path to an image or HTML file: the page can show it through the file route.
+                local = TextPath(e) is { } localPath && HistoryMedia.ContentType(localPath) is not null
+                    ? new { url = $"{HistoryFileRoute}{e.Id}/{TextPathIndex}", exists = HistoryFileExists(localPath) } : null,
             }),
         });
     }
 
     private const string HistoryImageRoute = "https://textfixer.local/history/image/", HistoryFileRoute = "https://textfixer.local/history/file/";
+    private const string TextPathIndex = "p";
+    /// <returns>The path of a text entry that is one fully qualified path, or null.</returns>
+    private static string? TextPath(ClipboardEntry entry) =>
+        entry.IsText && entry.Text.Trim() is var single && !single.Contains('\n') && Path.IsPathFullyQualified(single) ? single : null;
     // Network paths are not checked: an unreachable server would stall the window.
     private static bool HistoryFileExists(string path) => path.StartsWith(@"\\", StringComparison.Ordinal) || File.Exists(path) || Directory.Exists(path);
 
@@ -421,10 +428,12 @@ internal sealed class ReviewWindow : Form
         }
         if (!uri.StartsWith(HistoryFileRoute, StringComparison.Ordinal)) return null;
         var parts = uri[HistoryFileRoute.Length..].Split('/');
-        if (parts.Length != 2 || !int.TryParse(parts[1], out var index) || _history.Find(parts[0]) is not { IsFiles: true } owner
-            || index < 0 || index >= owner.Files!.Length) return null;
-        var path = owner.Files[index];
-        if (HistoryMedia.ContentType(path) is not { } type || !File.Exists(path)) return null;
+        if (parts.Length != 2 || _history.Find(parts[0]) is not { } owner) return null;
+        string? path = parts[1] == TextPathIndex ? TextPath(owner)
+            : owner.IsFiles && int.TryParse(parts[1], out var index) && index >= 0 && index < owner.Files!.Length ? owner.Files[index] : null;
+        if (path is null || HistoryMedia.ContentType(path) is not { } type || !File.Exists(path)) return null;
+        // An HTML file is shown in a sandboxed frame; the header keeps it sandboxed, so it can never reach the app page.
+        var sandbox = type == "text/html" ? "\r\nContent-Security-Policy: sandbox allow-scripts" : "";
         FileStream stream;
         try { stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
@@ -435,9 +444,9 @@ internal sealed class ReviewWindow : Form
         {
             stream.Position = start;
             return core.Environment.CreateWebResourceResponse(new HistoryMedia.Slice(stream, end - start + 1), 206, "Partial Content",
-                $"Content-Type: {type}\r\nAccept-Ranges: bytes\r\nContent-Range: bytes {start}-{end}/{length}\r\nContent-Length: {end - start + 1}\r\nCache-Control: no-store");
+                $"Content-Type: {type}\r\nAccept-Ranges: bytes\r\nContent-Range: bytes {start}-{end}/{length}\r\nContent-Length: {end - start + 1}\r\nCache-Control: no-store{sandbox}");
         }
-        return core.Environment.CreateWebResourceResponse(stream, 200, "OK", $"Content-Type: {type}\r\nAccept-Ranges: bytes\r\nContent-Length: {length}\r\nCache-Control: no-store");
+        return core.Environment.CreateWebResourceResponse(stream, 200, "OK", $"Content-Type: {type}\r\nAccept-Ranges: bytes\r\nContent-Length: {length}\r\nCache-Control: no-store{sandbox}");
     }
 
     // The page searches and shows the full text; very long entries are cut for the page only, copying uses the stored text.
@@ -493,7 +502,7 @@ internal sealed class ReviewWindow : Form
     private void OpenHistoryEntry(ClipboardEntry entry, string? how)
     {
         var single = entry.IsText ? entry.Text.Trim() : "";
-        var path = entry.IsText && !single.Contains('\n') && Path.IsPathFullyQualified(single) ? single : null;
+        var path = TextPath(entry);
         var firstFile = entry.Files?.FirstOrDefault(HistoryFileExists);
         try
         {
@@ -502,6 +511,10 @@ internal sealed class ReviewWindow : Form
                 case "browser" when entry.IsText && HistoryMedia.WebUrl(single) is { } url: Shell(url.AbsoluteUri); return;
                 case "mail" when entry.IsText && HistoryMedia.MailAddress(single) is { } address && address.IndexOfAny(['?', '&', '%', '#', '/', '\\']) < 0:
                     Shell("mailto:" + address); return;
+                case "app" when path is not null:
+                    if (!File.Exists(path)) { Notify("The file is no longer there."); return; }
+                    if (!HistoryMedia.IsOpenable(path)) { Notify("This file type is not opened from the history."); return; }
+                    Shell(path); return;
                 case "explorer" when path is not null:
                     if (!HistoryFileExists(path)) { Notify("The file is no longer there."); return; }
                     ShowInExplorer(path); return;

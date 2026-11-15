@@ -113,6 +113,8 @@ try
         && HistoryMedia.YouTubeId("https://evil.example/watch?v=dQw4w9WgXcQ") is null && HistoryMedia.YouTubeId("javascript:alert(1)") is null, "YouTube video ids");
     Check(HistoryMedia.IsOpenable(@"C:\a\Brief.PDF") && HistoryMedia.IsOpenable("clip.mp4") && !HistoryMedia.IsOpenable("tool.exe") && !HistoryMedia.IsOpenable("run.bat")
         && !HistoryMedia.IsOpenable("app.lnk") && !HistoryMedia.IsOpenable("x.ps1") && !HistoryMedia.IsOpenable("noext"), "only media and listed documents open in their app");
+    Check(HistoryMedia.ContentType("page.HTML") == "text/html" && HistoryMedia.ContentType("a.htm") == "text/html" && HistoryMedia.ContentType("a.svg") is null,
+        "HTML files are served for the page preview, SVG files are not");
     Check(HistoryMedia.WebUrl("https://example.com/a?b=1") is not null && HistoryMedia.WebUrl("file:///C:/x") is null && HistoryMedia.WebUrl("javascript:alert(1)") is null
         && HistoryMedia.WebUrl("https://a.com b") is null, "only http and https links open in the browser");
     Check(HistoryMedia.MailAddress("max@example.de") == "max@example.de" && HistoryMedia.MailAddress("mailto:max@example.de") == "max@example.de"

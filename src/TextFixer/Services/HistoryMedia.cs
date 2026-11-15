@@ -9,9 +9,10 @@ internal static class HistoryMedia
         [".webp"] = "image/webp", [".bmp"] = "image/bmp", [".avif"] = "image/avif",
         [".mp4"] = "video/mp4", [".m4v"] = "video/mp4", [".webm"] = "video/webm", [".mov"] = "video/quicktime",
         [".mkv"] = "video/x-matroska", [".avi"] = "video/x-msvideo", [".wmv"] = "video/x-ms-wmv",
+        [".html"] = "text/html", [".htm"] = "text/html",
     };
 
-    /// <returns>The content type of an image or video file, or null for any other file.</returns>
+    /// <returns>The content type of an image, video or HTML file, or null for any other file.</returns>
     internal static string? ContentType(string path) => Types.GetValueOrDefault(Path.GetExtension(path));
 
     // Documents the history may open in their default app. Programs, scripts and shortcuts are never opened.
