@@ -616,7 +616,7 @@ window.chrome.webview.addEventListener('message',event=>{
   if(m.type==='applied'){canReplace=false;notice('Paste sent. TextFixer cannot verify the result in the editor. Please check it there.'+(m.clipboardRestored===false?(captureTask==='translate'?' The translation remains on the clipboard.':' The revised text remains on the clipboard.'):''));}
   if(m.type==='chromeApplied'){canReplace=false;notice(m.message);}
   if(m.type==='targetLost'){canReplace=false;}
-  if(m.type==='error'){notice(`${m.message}${m.code?'\nCode: '+m.code:''}${m.param?' ('+m.param+')':''}`);$('usage').classList.toggle('primary',!!m.usageLimit);if(m.requiresSignIn){connected=false;$('signin').hidden=false;}}
+  if(m.type==='error'){notice(`${tr(m.message)}${m.code?'\nCode: '+m.code:''}${m.param?' ('+m.param+')':''}`);$('usage').classList.toggle('primary',!!m.usageLimit);if(m.requiresSignIn){connected=false;$('signin').hidden=false;}}
   update();
 });
 // Settings > Model: Automatic uses the first model the account lists; translations can follow the review model.
