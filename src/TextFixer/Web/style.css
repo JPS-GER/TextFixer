@@ -251,9 +251,10 @@ body.clipboard main { flex:1; min-height:0; width:100%; max-width:1600px; displa
 body.clipboard main > :not(#history-view) { display:none !important; }
 body.clipboard main > #history-view { flex:1; min-height:0; display:flex; flex-direction:column; }
 #history-view .section-heading { flex:none; }
+/* Left: search above the list. Right: the kind filter above the preview, so the top row spans the main area. */
 .hv { flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px,440px) minmax(0,1fr); gap:16px; }
+.hv-col { display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0; }
 .hv[hidden] { display:none; }
-.hv-left { display:flex; flex-direction:column; gap:12px; min-height:0; min-width:0; }
 .hv-search { position:relative; display:flex; align-items:center; flex:none; }
 .hv-search svg { position:absolute; left:11px; width:16px; height:16px; color:var(--dim); pointer-events:none; }
 .hv-search input { width:100%; box-sizing:border-box; background:var(--room-1); border:1px solid var(--edge); border-radius:9px; color:var(--text); padding:8px 96px 8px 34px; font:calc(14px * var(--text-scale)) "Segoe UI",Arial; }
@@ -261,14 +262,13 @@ body.clipboard main > #history-view { flex:1; min-height:0; display:flex; flex-d
 .hv-search input:focus,.hv-search input:focus-visible { outline:none; border-color:var(--accent-edge); }
 .hv-search .hits { position:absolute; right:11px; font-size:calc(12.5px * var(--text-scale)); color:var(--dim); pointer-events:none; }
 .hv-card { flex:1; display:flex; flex-direction:column; min-height:0; border:1px solid var(--edge); border-radius:12px; background:var(--room-1); overflow:hidden; }
-.hv-seg { flex:none; display:flex; flex-direction:column; margin:8px; border:1px solid var(--edge-strong); border-radius:9px; overflow:hidden; }
-.hv-seg-row { display:flex; }
-.hv-seg-row + .hv-seg-row { border-top:1px solid var(--edge); }
-.hv-seg button { flex:1 1 auto; min-width:0; justify-content:center; border:0; border-radius:0; background:transparent; color:var(--muted); font:600 calc(12.5px * var(--text-scale)) "Segoe UI",Arial; padding:6px 4px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.hv-seg { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
+.hv-seg-row { flex:1 1 auto; display:flex; border:1px solid var(--edge-strong); border-radius:9px; overflow:hidden; background:var(--room-1); }
+.hv-seg button { flex:1 1 auto; min-width:0; justify-content:center; border:0; border-radius:0; background:transparent; color:var(--muted); font:600 calc(12.5px * var(--text-scale)) "Segoe UI",Arial; padding:7px 9px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .hv-seg button + button { border-left:1px solid var(--edge); }
 .hv-seg button.on { background:var(--room-3); color:var(--text); }
 .hv-seg i { width:4px; height:13px; border-radius:2px; background:var(--k,var(--dim)); flex:none; }
-.hv-scroll { flex:1; overflow:auto; overflow-x:hidden; padding:4px 6px 8px; border-top:1px solid var(--edge); }
+.hv-scroll { flex:1; overflow:auto; overflow-x:hidden; padding:4px 6px 8px; }
 .hv-keys { flex:none; display:flex; gap:6px; align-items:center; justify-content:center; padding:8px 10px; border-top:1px solid var(--edge); background:rgba(0,0,0,.14); font-size:calc(12.5px * var(--text-scale)); color:var(--dim); }
 .hv kbd { font:600 calc(11.5px * var(--text-scale)) "Segoe UI",Arial; color:var(--text); background:var(--room-2); border:1px solid var(--edge-strong); border-bottom-width:2px; border-radius:5px; padding:0 5px; }
 .hv mark { background:rgba(245,204,87,.28); color:var(--text); border-radius:3px; padding:0 1px; }
@@ -290,7 +290,7 @@ button.hv-row.media { display:grid; grid-template-columns:56px minmax(0,1fr); co
 .hv .mono { font-family:Consolas,"Cascadia Mono",monospace; font-size:calc(13.5px * var(--text-scale)); }
 .hv .rich-badge { font-size:calc(11.5px * var(--text-scale)); font-weight:600; border-radius:6px; padding:1px 7px; white-space:nowrap; color:var(--accent); background:rgba(245,204,87,.10); border:1px solid var(--accent-edge); }
 .hv-none { color:var(--dim); padding:18px 14px; font-size:calc(14px * var(--text-scale)); margin:0; }
-.hv-pane { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.hv-pane { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; }
 .hv-pane .meta { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; min-height:32px; }
 .hv-pane .hv-kind { font-size:calc(13px * var(--text-scale)); font-weight:600; display:inline-flex; align-items:center; gap:7px; }
 .hv-pane .hv-kind i { width:4px; height:16px; border-radius:2px; background:var(--k,var(--dim)); }
