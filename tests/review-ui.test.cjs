@@ -679,13 +679,13 @@ console.log('PASS: text size steps, limits and reset.');
 }
 console.log('PASS: pin toggles keeping the window in front.');
 {
- // Tray icon: without a captured text the window opens on the clipboard history, with one it keeps its view.
+ // Opening the window: without a captured text it opens on the clipboard history, with one it keeps its view.
  message({type:'capture',text:'',canReplace:false});element('close-history').onclick();
- message({type:'trayOpen'});assert.equal(sent.at(-1).action,'historyList','no text: tray opens the clipboard history');
+ message({type:'openHome'});assert.equal(sent.at(-1).action,'historyList','no text: opening shows the clipboard history');
  element('close-history').onclick();message({type:'capture',text:'Some text.',canReplace:true});const before=sent.length;
- message({type:'trayOpen'});assert.ok(!sent.slice(before).some(s=>s.action==='historyList'),'with a text: the last view stays');
+ message({type:'openHome'});assert.ok(!sent.slice(before).some(s=>s.action==='historyList'),'with a text: the last view stays');
 }
-console.log('PASS: tray icon opens the clipboard history without a captured text.');
+console.log('PASS: opening the window shows the clipboard history without a captured text.');
 {
  // Source format: clipboard facts and syntax candidates; matching export formats get a dot.
  message({type:'capture',captureId:90,task:'open',text:'Hallo **Welt** und *du*.\r\nZweite\u00a0Zeile',canReplace:false,readOnly:true});

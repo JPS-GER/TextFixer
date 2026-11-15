@@ -28,7 +28,7 @@ internal sealed class TrayApplication : ApplicationContext
             BackColor = PetrolMenuColors.Background,
             Renderer = new PetrolMenuRenderer()
         };
-        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
+        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.OpenHome());
         menu.Items.Add(new ToolStripSeparator());
         var exit = menu.Items.Add("Exit", null, (_, _) => ExitThread());
         // The menu follows the app language from Settings each time it opens.
@@ -39,11 +39,11 @@ internal sealed class TrayApplication : ApplicationContext
             exit.Text = german ? "Beenden" : "Exit";
         };
         _tray = new NotifyIcon { Text = "TextFixer", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
-        _tray.DoubleClick += (_, _) => _review.OpenFromTray();
+        _tray.DoubleClick += (_, _) => _review.OpenHome();
         _hotkey.Pressed += async (_, task) => await CaptureAsync(task);
         _hotkey.Changed += (_, _) => UpdateTooltip();
         _review.FormClosed += (_, _) => ExitThread();
-        if (!startHidden) _review.Open();
+        if (!startHidden) _review.OpenHome();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _review.ConfigureChrome(_chrome);
         _review.ConfigureHistory(_history, _clipboard, _settings);
