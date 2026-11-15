@@ -293,7 +293,7 @@ main.task-active #choose-text { max-height:180px; }
 .task-group { --group:#757575; display:flex; flex-direction:column; }
 .task-group.idle { opacity:.5; }
 .history-group { margin-top:auto; padding-top:4px; }
-.source-group { --group:#264859; margin-bottom:10px; }
+.source-group { --group:#264859; margin-top:8px; margin-bottom:10px; }
 button.group-head { display:flex; align-items:center; gap:10px; width:100%; min-height:38px; padding:4px 6px 4px 11px; border:0; border-radius:10px; background:var(--group); color:#fff; text-align:left; }
 button.group-head:hover { background:var(--group); filter:brightness(1.12); }
 button.group-head strong { flex:1; min-width:0; font:700 calc(16px * var(--text-scale)) "Segoe UI",Arial; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
