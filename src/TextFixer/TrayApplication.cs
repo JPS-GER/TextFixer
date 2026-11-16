@@ -14,8 +14,6 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly HotkeyManager _hotkey;
     private readonly ReviewWindow _review = new(new ChatGptReviewService());
     private readonly ChromeBridgeServer _chrome = new();
-    private readonly ClipboardHistory _history = new();
-    private readonly ClipboardMonitor _clipboard = new();
     private bool _capturing;
     private bool _exiting;
 
@@ -28,8 +26,7 @@ internal sealed class TrayApplication : ApplicationContext
             BackColor = PetrolMenuColors.Background,
             Renderer = new PetrolMenuRenderer()
         };
-        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.OpenTextFixer());
-        var clipboard = menu.Items.Add("Clipboard", null, (_, _) => _review.OpenClipboard());
+        var open = menu.Items.Add("Open TextFixer", null, (_, _) => _review.Open());
         menu.Items.Add(new ToolStripSeparator());
         var exit = menu.Items.Add("Exit", null, (_, _) => ExitThread());
         // The menu follows the app language from Settings each time it opens.
@@ -37,27 +34,18 @@ internal sealed class TrayApplication : ApplicationContext
         {
             var german = _settings.AppLanguage == ReviewPrompt.German;
             open.Text = german ? "TextFixer öffnen" : "Open TextFixer";
-            clipboard.Text = german ? "Zwischenablage" : "Clipboard";
             exit.Text = german ? "Beenden" : "Exit";
         };
         _tray = new NotifyIcon { Text = "TextFixer", Icon = _trayIcon, ContextMenuStrip = menu, Visible = true };
-        _tray.DoubleClick += (_, _) => _review.OpenClipboard();
+        _tray.DoubleClick += (_, _) => _review.Open();
         _hotkey.Pressed += async (_, task) => await CaptureAsync(task);
         _hotkey.Changed += (_, _) => UpdateTooltip();
         _review.FormClosed += (_, _) => ExitThread();
-        if (!startHidden) _review.OpenClipboard();
+        if (!startHidden) _review.Open();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _review.ConfigureChrome(_chrome);
-        _review.ConfigureHistory(_history, _clipboard, _settings);
+        _review.ConfigureSettings(_settings);
         _review.ConfigureShortcuts(_hotkey);
-        _clipboard.Copied += (_, c) =>
-        {
-            if (c.Files is { } files) _history.AddFiles(files, DateTime.UtcNow);
-            else if (c.Image is { } image) _history.AddImage(image, c.ImageType!, c.ImageWidth, c.ImageHeight, DateTime.UtcNow);
-            else _history.Add(c.Text, c.Html, c.Rtf, DateTime.UtcNow);
-        };
-        _clipboard.ImagesEnabled = _settings.ClipboardImages;
-        _clipboard.Enabled = _settings.ClipboardHistory;
         _chrome.MessageReceived += (_, e) => Dispatch(() => _review.ReceiveChromeMessage(e.SessionId, e.Message));
         _chrome.SessionConnected += (_, _) => Dispatch(_review.ChromeConnected);
         _chrome.SessionDisconnected += (_, e) => Dispatch(() => _review.ChromeDisconnected(e.SessionId));
@@ -105,7 +93,6 @@ internal sealed class TrayApplication : ApplicationContext
         var target = TextTransfer.GetForegroundWindow();
         if (target == _review.Handle) { _review.Open(); return; }
         _capturing = true;
-        _clipboard.Paused = true;
         try
         {
             var text = await TextTransfer.CaptureAsync(target);
@@ -117,7 +104,7 @@ internal sealed class TrayApplication : ApplicationContext
             ReviewWindow.Diagnostic($"{_hotkey.Label(task)} capture failed in {ProcessName(target)}: {ex.Message}");
             _review.Open(); _review.Notify(ex.Message);
         }
-        finally { _capturing = false; _clipboard.Paused = false; }
+        finally { _capturing = false; }
     }
 
     private static string ProcessName(nint window)
@@ -138,8 +125,6 @@ internal sealed class TrayApplication : ApplicationContext
         _trayIcon.Dispose();
         _hotkey.Dispose();
         _chrome.Dispose();
-        _clipboard.Dispose();
-        _history.Dispose();
         _review.Shutdown();
         base.ExitThreadCore();
     }
